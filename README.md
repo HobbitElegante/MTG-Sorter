@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.1)
+## Features (v0.2)
 
 - Local SQLite inventory of physical card copies
 - Moxfield text import (`Copy for MTGO` format)
@@ -11,6 +11,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Unlimited basics and tokens (display only, never block reassembly)
 - ILP optimizer to minimize the number of armed decks to dismantle
 - Bilingual UI (English default, Spanish available)
+- **Browse tab** to inspect cards, decks, inventory, and Scryfall sync status
+- **Offline card resolution** via local cache + optional Scryfall `oracle-cards` bulk download
 
 ## Requirements
 
@@ -66,6 +68,13 @@ uv run pytest
 2. Import decks and mark currently assembled ones as **Armed**.
 3. Open **Optimize**, pick a dismantled target deck, and run the plan.
 4. If multiple optimal dismantle sets exist, choose one from the dropdown.
+
+## Offline Scryfall cache
+
+1. Open the **Browse** tab → **Scryfall**.
+2. Click **Download oracle-cards bulk pack** (one-time download, ~170 MB).
+3. After sync, imports and inventory lookups work without network for cached cards.
+4. Individual API lookups are also saved automatically when online.
 
 ## Project layout
 
