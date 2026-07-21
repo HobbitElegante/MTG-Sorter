@@ -1,0 +1,28 @@
+# Database and local data
+data/*.db
+data/*.db-journal
+data/images/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ignore all files in the data directory
+data/*
+handoff.md

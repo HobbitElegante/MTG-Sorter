@@ -1,0 +1,32 @@
+[project]
+name = "mtg-sorter"
+version = "0.1.0"
+description = "Desktop app to manage a physical MTG Commander collection and optimize deck reassembly."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.0",
+    "ortools>=9.12",
+    "pyside6>=6.8.0",
+    "sqlalchemy>=2.0.36",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-qt>=4.4.0",
+]
+
+[project.scripts]
+mtg-sorter = "mtg_sorter.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mtg_sorter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,165 @@
+MTG Commander Collection Manager - Project Handoff
+
+Objetivo
+========
+Desarrollar una aplicación de escritorio para administrar una colección física de Magic: The Gathering enfocada en Commander.
+
+La aplicación debe permitir:
+
+- Mantener un inventario físico de cartas.
+- Guardar listas de mazos.
+- Saber qué mazos están armados y cuáles desarmados.
+- Saber exactamente qué cartas están ocupadas por cada mazo.
+- Calcular automáticamente la mejor forma de rearmar un mazo desarmando el menor número posible de mazos existentes.
+
+La idea central NO es hacer un deckbuilder, sino un optimizador de colección.
+
+Tecnologías
+===========
+- Python 3.13+
+- SQLite
+- SQLAlchemy 2.x
+- PySide6
+- uv
+- Git
+- API de Scryfall
+
+Arquitectura
+============
+ui/
+services/
+repositories/
+models/
+algorithms/
+database/
+api/
+tests/
+
+Toda la lógica debe vivir en services y algorithms.
+
+Modelo de datos
+===============
+
+Card
+- oracle_id
+- name
+- mana_cost
+- type_line
+- oracle_text
+- colors
+- color_identity
+- cmc
+- image_uri
+
+CardCopy
+- id
+- card_id
+- edition
+- language
+- foil
+- condition
+- location
+
+Inventory
+- Derivado de las CardCopy existentes.
+
+Deck
+- id
+- name
+- commander
+- status (ARMED / DISMANTLED)
+
+DeckCard
+- deck_id
+- card_id
+- quantity
+
+CardAssignment
+- card_copy_id
+- deck_id
+
+Cada copia física puede pertenecer temporalmente a un mazo armado.
+
+Integración con Scryfall
+========================
+- Buscar cartas por nombre.
+- Guardar siempre el Oracle ID.
+- Descargar y almacenar únicamente la información necesaria.
+- Nunca depender de IDs internos de Scryfall.
+
+Importación
+===========
+Primera versión:
+Aceptar listas simples del tipo:
+
+1 Sol Ring
+1 Arcane Signet
+1 Cultivate
+
+Posteriormente:
+- Moxfield
+- Archidekt
+- MTGO
+- Arena
+
+Objetivo principal
+==================
+Resolver automáticamente qué mazos deben desarmarse para armar otro utilizando la menor cantidad posible de desmontajes.
+
+Modelamiento matemático
+=======================
+Sea:
+- D = conjunto de mazos armados.
+- C = conjunto de cartas requeridas.
+- I = inventario libre.
+
+Cada carta requerida puede provenir del inventario libre o de uno o más mazos armados.
+
+El problema consiste en encontrar el conjunto mínimo de mazos cuya unión libera todas las cartas necesarias.
+
+Esto corresponde a un problema de Set Cover.
+
+Implementación propuesta
+========================
+Fase 1
+-------
+Algoritmo Greedy.
+
+Mientras existan cartas faltantes:
+1. Calcular qué mazo libera la mayor cantidad de cartas pendientes.
+2. Seleccionarlo.
+3. Eliminar esas cartas del conjunto pendiente.
+4. Repetir.
+
+Fase 2
+-------
+Implementar una solución exacta mediante Programación Lineal Entera.
+
+Evaluar:
+- OR-Tools
+- PuLP
+- scipy.optimize
+
+Comparar la calidad de la solución respecto del algoritmo Greedy.
+
+Funciones futuras
+=================
+- Bloquear mazos para que nunca puedan desmontarse.
+- Prioridades por mazo.
+- Minimizar cantidad de cartas movidas.
+- Preferir mantener mazos favoritos.
+- Historial de movimientos.
+- Planificador para dejar varios mazos armados simultáneamente.
+- Estadísticas de inventario.
+- Sincronización automática con Scryfall.
+
+Buenas prácticas
+================
+- Código tipado.
+- Tests unitarios.
+- Separación estricta entre UI y lógica.
+- ORM moderno.
+- Diseño extensible.
+- No duplicar lógica.
+
+Este proyecto debe tratarse como un motor de optimización de una colección física de Commander, donde la interfaz gráfica es únicamente una capa sobre un modelo de datos sólido y algoritmos de optimización bien definidos.
