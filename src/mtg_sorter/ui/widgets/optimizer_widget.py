@@ -27,9 +27,7 @@ class OptimizerWidget(QWidget):
     def retranslate(self) -> None:
         self._target_label.setText(self._translator.t("optimize.target"))
         self._run_button.setText(self._translator.t("optimize.run"))
-        self._inventory_group.setTitle(self._translator.t("optimize.from_inventory"))
-        self._solution_group.setTitle(self._translator.t("optimize.decks_to_dismantle"))
-        self._missing_group.setTitle(self._translator.t("optimize.missing"))
+        self._apply_section_titles_from_plan()
         self.refresh_decks()
 
     def _build_ui(self) -> None:
@@ -49,13 +47,13 @@ class OptimizerWidget(QWidget):
         self._summary.setWordWrap(True)
         layout.addWidget(self._summary)
 
-        self._inventory_group = QGroupBox(self._translator.t("optimize.from_inventory"))
+        self._inventory_group = QGroupBox()
         inventory_layout = QVBoxLayout(self._inventory_group)
         self._inventory_list = QListWidget()
         inventory_layout.addWidget(self._inventory_list)
         layout.addWidget(self._inventory_group)
 
-        self._solution_group = QGroupBox(self._translator.t("optimize.decks_to_dismantle"))
+        self._solution_group = QGroupBox()
         solution_layout = QVBoxLayout(self._solution_group)
         self._solution_combo = QComboBox()
         solution_layout.addWidget(self._solution_combo)
@@ -63,11 +61,59 @@ class OptimizerWidget(QWidget):
         solution_layout.addWidget(self._solution_list)
         layout.addWidget(self._solution_group)
 
-        self._missing_group = QGroupBox(self._translator.t("optimize.missing"))
+        self._missing_group = QGroupBox()
         missing_layout = QVBoxLayout(self._missing_group)
         self._missing_list = QListWidget()
         missing_layout.addWidget(self._missing_list)
         layout.addWidget(self._missing_group)
+
+        self._set_section_titles(0, 0, 0)
+
+    def _counted_title(self, label_key: str, count: int, unit_key: str) -> str:
+        return (
+            f"{self._translator.t(label_key)} - {count} "
+            f"{self._translator.t(unit_key)}"
+        )
+
+    def _set_section_titles(
+        self,
+        inventory_cards: int,
+        decks: int,
+        missing_cards: int,
+    ) -> None:
+        self._inventory_group.setTitle(
+            self._counted_title(
+                "optimize.from_inventory",
+                inventory_cards,
+                "optimize.unit.cards",
+            )
+        )
+        self._solution_group.setTitle(
+            self._counted_title(
+                "optimize.decks_to_dismantle",
+                decks,
+                "optimize.unit.decks",
+            )
+        )
+        self._missing_group.setTitle(
+            self._counted_title(
+                "optimize.missing",
+                missing_cards,
+                "optimize.unit.cards",
+            )
+        )
+
+    def _apply_section_titles_from_plan(self) -> None:
+        plan = self._current_plan
+        if plan is None:
+            self._set_section_titles(0, 0, 0)
+            return
+        inventory_cards = sum(plan.free_inventory_used.values())
+        missing_cards = sum(plan.still_missing.values())
+        decks = 0
+        if not plan.still_missing and plan.result.solutions:
+            decks = plan.result.minimum_decks_to_dismantle
+        self._set_section_titles(inventory_cards, decks, missing_cards)
 
     def refresh_decks(self) -> None:
         current = self._deck_combo.currentData()
@@ -90,6 +136,7 @@ class OptimizerWidget(QWidget):
         self._solution_combo.clear()
         self._missing_list.clear()
         self._current_plan = None
+        self._set_section_titles(0, 0, 0)
 
         try:
             with get_session() as session:
@@ -103,6 +150,12 @@ class OptimizerWidget(QWidget):
             return
 
         self._current_plan = plan
+        self._apply_section_titles_from_plan()
+
+        if plan.already_armed:
+            self._summary.setText(self._translator.t("optimize.already_armed"))
+            self._inventory_list.addItem("—")
+            return
 
         if plan.free_inventory_used:
             for card_id, qty in sorted(

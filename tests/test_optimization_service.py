@@ -64,6 +64,40 @@ def test_plan_assembly_exposes_readable_card_and_deck_names(session: Session) ->
     assert any("Donor Deck" in label for label in plan.solution_labels.values())
 
 
+def test_plan_assembly_skips_already_armed_target(session: Session) -> None:
+    sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    target = Deck(name="Already Armed", status=DeckStatus.ARMED)
+    donor = Deck(name="Donor Deck", status=DeckStatus.ARMED)
+    session.add_all([sol, target, donor])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=target.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=donor.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+        ]
+    )
+    session.flush()
+
+    plan = OptimizationService(session).plan_assembly(target.id)
+
+    assert plan.already_armed is True
+    assert plan.free_inventory_used == {}
+    assert plan.still_missing == {}
+    assert plan.result.minimum_decks_to_dismantle == 0
+    assert plan.result.solutions == (frozenset(),)
+    assert plan.solution_labels == {}
+
+
 def test_plan_assembly_names_still_missing_cards(session: Session) -> None:
     sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
     target = Deck(name="Target", status=DeckStatus.DISMANTLED)

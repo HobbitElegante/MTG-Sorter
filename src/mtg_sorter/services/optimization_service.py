@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.deck_optimizer import DeckSupply, OptimizationResult, find_all_optimal_solutions
 from mtg_sorter.models import Card, Deck
+from mtg_sorter.models.enums import DeckStatus
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 
 
@@ -17,6 +18,7 @@ class AssemblyPlan:
     solution_labels: dict[frozenset[str], str]
     card_names: dict[str, str]
     deck_names: dict[str, str]
+    already_armed: bool = False
 
 
 class OptimizationService:
@@ -29,6 +31,22 @@ class OptimizationService:
         target = self._decks.get_deck(target_deck_id)
         if target is None:
             raise ValueError(f"Deck {target_deck_id} not found")
+
+        if target.status == DeckStatus.ARMED:
+            return AssemblyPlan(
+                target_deck=target,
+                result=OptimizationResult(
+                    minimum_decks_to_dismantle=0,
+                    solutions=(frozenset(),),
+                    unmet_needs={},
+                ),
+                free_inventory_used={},
+                still_missing={},
+                solution_labels={},
+                card_names={},
+                deck_names={},
+                already_armed=True,
+            )
 
         requirements = self._decks.deck_requirements(target_deck_id)
         free = self._inventory.free_counts()

@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.3)
+## Features (v0.3.4)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
 - Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
@@ -12,6 +12,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Commander roles: commander, partner, companion, background
 - Unlimited basics and tokens (never block reassembly; flagged in Browse → Cards)
 - ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
+- Optimize section titles show counts (free coverage, decks to dismantle, still missing)
+- Already-armed target decks skip optimization with a clear message
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
 - **Browse tab:** overview, cached card catalog, availability search, Scryfall bulk sync
 - **Inventory tab:** searchable collection table
@@ -58,7 +60,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-42 tests passing.
+43 tests passing.
 
 ## First-time setup
 
@@ -89,8 +91,10 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 
 1. Import decks and mark currently assembled ones as **Armed**.
 2. For dismantled decks, register available copies during import or while editing.
-3. Open **Optimize**, pick a target deck, and run the plan.
-4. If multiple optimal dismantle sets exist, choose one from the dropdown.
+3. Open **Optimize**, pick a **dismantled** target deck, and run the plan.
+4. Section titles show counts: free inventory coverage, decks to dismantle, and still-missing cards.
+5. If the target is already **Armed**, optimization is skipped (“already armed”).
+6. If multiple optimal dismantle sets exist, choose one from the dropdown.
 
 ## Offline Scryfall cache
 
