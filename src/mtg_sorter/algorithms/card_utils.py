@@ -29,3 +29,14 @@ def is_token_type_line(type_line: str | None) -> bool:
     if not type_line:
         return False
     return "Token" in type_line
+
+
+def is_art_series_type_line(type_line: str | None) -> bool:
+    """Scryfall Art Series entries use the placeholder type 'Card // Card'."""
+    return type_line == "Card // Card"
+
+
+def is_scryfall_art_series(payload: dict) -> bool:
+    if payload.get("layout") == "art_series":
+        return True
+    return is_art_series_type_line(payload.get("type_line"))

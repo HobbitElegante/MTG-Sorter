@@ -1,9 +1,13 @@
 import re
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from mtg_sorter.algorithms.card_utils import is_basic_land_type_line, is_token_type_line
+from mtg_sorter.algorithms.card_utils import (
+    is_art_series_type_line,
+    is_basic_land_type_line,
+    is_token_type_line,
+)
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.models import Card
 
@@ -61,7 +65,10 @@ class ScryfallService:
             return None
 
         exact = self._session.scalar(
-            select(Card).where(func.lower(Card.name) == trimmed.casefold()).limit(1)
+            select(Card)
+            .where(func.lower(Card.name) == trimmed.casefold())
+            .where(or_(Card.type_line.is_(None), Card.type_line != "Card // Card"))
+            .limit(1)
         )
         if exact is not None:
             return exact
@@ -69,14 +76,18 @@ class ScryfallService:
         normalized_query = normalize_card_name(trimmed)
         if normalized_query:
             for card in self._session.scalars(select(Card)).all():
+                if is_art_series_type_line(card.type_line):
+                    continue
                 if normalize_card_name(card.name) == normalized_query:
                     return card
 
-        fuzzy_matches = list(
-            self._session.scalars(
-                select(Card).where(Card.name.ilike(f"%{trimmed}%")).limit(5)
+        fuzzy_matches = [
+            card
+            for card in self._session.scalars(
+                select(Card).where(Card.name.ilike(f"%{trimmed}%")).limit(10)
             ).all()
-        )
+            if not is_art_series_type_line(card.type_line)
+        ]
         if len(fuzzy_matches) == 1:
             return fuzzy_matches[0]
 

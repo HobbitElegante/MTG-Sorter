@@ -103,6 +103,64 @@ def test_fetch_and_cache_raises_when_offline_and_missing(session: Session) -> No
         service.fetch_and_cache("Unknown Card")
 
 
+def test_lookup_local_prefers_playable_over_art_series(session: Session) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="playable",
+                name="Kellan, the Kid",
+                type_line="Legendary Creature — Human Faerie Rogue",
+                is_basic_land=False,
+                is_token=False,
+            ),
+            Card(
+                oracle_id="art",
+                name="Kellan, the Kid // Kellan, the Kid",
+                type_line="Card // Card",
+                is_basic_land=False,
+                is_token=False,
+            ),
+        ]
+    )
+    session.flush()
+
+    service = ScryfallService(session, FakeScryfallClient())
+    card = service.lookup_local("Kellan, the Kid")
+
+    assert card is not None
+    assert card.oracle_id == "playable"
+
+
+def test_bulk_sync_skips_art_series(session: Session) -> None:
+    payloads = [
+        {
+            "oracle_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Arcane Signet",
+            "type_line": "Artifact",
+            "cmc": 2.0,
+            "colors": [],
+            "color_identity": [],
+        },
+        {
+            "oracle_id": "22222222-2222-2222-2222-222222222222",
+            "name": "Kellan, the Kid // Kellan, the Kid",
+            "layout": "art_series",
+            "type_line": "Card // Card",
+            "cmc": 0.0,
+            "colors": [],
+            "color_identity": [],
+        },
+    ]
+    client = FakeScryfallClient(payloads=payloads)
+    service = ScryfallBulkService(session, client)
+
+    result = service.sync_oracle_cards()
+
+    assert result.imported_cards == 1
+    assert session.get(Card, payloads[0]["oracle_id"]) is not None
+    assert session.get(Card, payloads[1]["oracle_id"]) is None
+
+
 def test_bulk_sync_imports_oracle_cards(session: Session) -> None:
     payload = {
         "oracle_id": "11111111-1111-1111-1111-111111111111",

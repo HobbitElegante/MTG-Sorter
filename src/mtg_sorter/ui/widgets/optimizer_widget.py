@@ -13,17 +13,23 @@ from PySide6.QtWidgets import (
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import DeckService, OptimizationService
+from mtg_sorter.services.optimization_service import AssemblyPlan
 
 
 class OptimizerWidget(QWidget):
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._current_plan: AssemblyPlan | None = None
         self._build_ui()
         self.refresh_decks()
 
     def retranslate(self) -> None:
+        self._target_label.setText(self._translator.t("optimize.target"))
         self._run_button.setText(self._translator.t("optimize.run"))
+        self._inventory_group.setTitle(self._translator.t("optimize.from_inventory"))
+        self._solution_group.setTitle(self._translator.t("optimize.decks_to_dismantle"))
+        self._missing_group.setTitle(self._translator.t("optimize.missing"))
         self.refresh_decks()
 
     def _build_ui(self) -> None:
@@ -31,7 +37,8 @@ class OptimizerWidget(QWidget):
 
         form = QFormLayout()
         self._deck_combo = QComboBox()
-        form.addRow(self._translator.t("optimize.target"), self._deck_combo)
+        self._target_label = QLabel(self._translator.t("optimize.target"))
+        form.addRow(self._target_label, self._deck_combo)
         layout.addLayout(form)
 
         self._run_button = QPushButton(self._translator.t("optimize.run"))
@@ -82,6 +89,7 @@ class OptimizerWidget(QWidget):
         self._solution_list.clear()
         self._solution_combo.clear()
         self._missing_list.clear()
+        self._current_plan = None
 
         try:
             with get_session() as session:
@@ -94,19 +102,26 @@ class OptimizerWidget(QWidget):
             )
             return
 
+        self._current_plan = plan
+
         if plan.free_inventory_used:
             for card_id, qty in sorted(
                 plan.free_inventory_used.items(),
-                key=lambda item: item[0],
+                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
-                self._inventory_list.addItem(f"{card_id}: {qty}")
+                name = plan.card_names.get(card_id, card_id)
+                self._inventory_list.addItem(f"{name}: {qty}")
         else:
             self._inventory_list.addItem("—")
 
         if plan.still_missing:
             self._summary.setText(self._translator.t("optimize.no_solutions"))
-            for card_id, qty in plan.still_missing.items():
-                self._missing_list.addItem(f"{card_id}: {qty}")
+            for card_id, qty in sorted(
+                plan.still_missing.items(),
+                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+            ):
+                name = plan.card_names.get(card_id, card_id)
+                self._missing_list.addItem(f"{name}: {qty}")
             return
 
         result = plan.result
@@ -142,5 +157,9 @@ class OptimizerWidget(QWidget):
         self._solution_list.clear()
         if not solution:
             return
-        for deck_id in sorted(solution):
-            self._solution_list.addItem(deck_id)
+        deck_names = self._current_plan.deck_names if self._current_plan else {}
+        for deck_id in sorted(
+            solution,
+            key=lambda item: deck_names.get(item, item).lower(),
+        ):
+            self._solution_list.addItem(deck_names.get(deck_id, deck_id))

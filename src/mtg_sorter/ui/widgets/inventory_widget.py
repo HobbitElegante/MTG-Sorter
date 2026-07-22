@@ -1,22 +1,17 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
     QLineEdit,
-    QListWidget,
-    QMessageBox,
-    QPushButton,
-    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.services import InventoryService, ScryfallService
+from mtg_sorter.services import BrowseService
+from mtg_sorter.services.browse_service import InventorySummaryRow
+from mtg_sorter.ui.inventory_display import format_inventory_assigned
 
 
 class InventoryWidget(QWidget):
@@ -25,75 +20,64 @@ class InventoryWidget(QWidget):
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._rows: list[InventorySummaryRow] = []
         self._build_ui()
         self.refresh()
 
     def retranslate(self) -> None:
-        self._search_input.setPlaceholderText(self._translator.t("inventory.search"))
-        self._add_button.setText(self._translator.t("inventory.add"))
-        self._quantity_label.setText(self._translator.t("inventory.quantity"))
-        self.refresh()
+        self._search.setPlaceholderText(
+            self._translator.t("inventory.search.collection")
+        )
+        self._table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.cards.name"),
+                self._translator.t("browse.inventory.copies"),
+                self._translator.t("browse.inventory.assigned"),
+            ]
+        )
+        self._populate_table()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        form = QFormLayout()
-        self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText(self._translator.t("inventory.search"))
-        form.addRow(self._search_input)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText(
+            self._translator.t("inventory.search.collection")
+        )
+        self._search.textChanged.connect(self._populate_table)
+        layout.addWidget(self._search)
 
-        qty_row = QHBoxLayout()
-        self._quantity_label = QLabel(self._translator.t("inventory.quantity"))
-        self._quantity_spin = QSpinBox()
-        self._quantity_spin.setMinimum(1)
-        self._quantity_spin.setMaximum(999)
-        qty_row.addWidget(self._quantity_label)
-        qty_row.addWidget(self._quantity_spin)
-        qty_row.addStretch()
-        form.addRow(qty_row)
-
-        self._add_button = QPushButton(self._translator.t("inventory.add"))
-        self._add_button.clicked.connect(self._add_card)
-        form.addRow(self._add_button)
-
-        layout.addLayout(form)
-
-        self._list = QListWidget()
-        layout.addWidget(self._list)
+        self._table = QTableWidget(0, 3)
+        self._table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.cards.name"),
+                self._translator.t("browse.inventory.copies"),
+                self._translator.t("browse.inventory.assigned"),
+            ]
+        )
+        self._table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self._table)
 
     def refresh(self) -> None:
-        self._list.clear()
         with get_session() as session:
-            service = InventoryService(session)
-            copies = service.list_unassigned_copies()
-            if not copies:
-                self._list.addItem(self._translator.t("inventory.empty"))
-                return
-            for copy in copies:
-                card = copy.card
-                self._list.addItem(f"{card.name} (#{copy.id})")
+            self._rows = BrowseService(session).list_inventory()
+        self._populate_table()
 
-    def _add_card(self) -> None:
-        name = self._search_input.text().strip()
-        if not name:
-            return
-        quantity = self._quantity_spin.value()
-        try:
-            with get_session() as session:
-                scryfall = ScryfallService(session)
-                try:
-                    card = scryfall.fetch_and_cache(name)
-                finally:
-                    scryfall.close()
-                InventoryService(session).add_copy(card.oracle_id, quantity)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                self._translator.t("common.error"),
-                str(exc),
+    def _populate_table(self) -> None:
+        rows = self._rows
+        search = self._search.text().strip()
+        if search:
+            needle = search.casefold()
+            rows = [row for row in rows if needle in row.card_name.casefold()]
+
+        self._table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            copies_item = QTableWidgetItem(str(row.total_copies))
+            copies_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._table.setItem(index, 0, QTableWidgetItem(row.card_name))
+            self._table.setItem(index, 1, copies_item)
+            self._table.setItem(
+                index,
+                2,
+                QTableWidgetItem(format_inventory_assigned(row, self._translator)),
             )
-            return
-
-        self._search_input.clear()
-        self.refresh()
-        self.changed.emit()

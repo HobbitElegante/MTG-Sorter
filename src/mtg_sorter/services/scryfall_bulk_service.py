@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from mtg_sorter.algorithms.card_utils import is_scryfall_art_series
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.config import (
     SCRYFALL_BULK_BATCH_SIZE,
@@ -17,7 +18,8 @@ from mtg_sorter.config import (
     SETTING_BULK_ORACLE_SYNCED_AT,
     SETTING_BULK_ORACLE_UPDATED_AT,
 )
-from mtg_sorter.models import AppSetting, Card
+from mtg_sorter.models import AppSetting, Card, CardCopy
+from mtg_sorter.models.deck import DeckCard
 from mtg_sorter.services.scryfall_service import card_from_scryfall
 
 
@@ -123,6 +125,9 @@ class ScryfallBulkService:
             for line_number, payload in enumerate(
                 _iter_bulk_card_payloads(temp_path), start=1
             ):
+                if is_scryfall_art_series(payload):
+                    continue
+
                 card = card_from_scryfall(payload)
                 existing = self._session.get(Card, card.oracle_id)
                 if existing is None:
@@ -153,6 +158,8 @@ class ScryfallBulkService:
                 self._session.add_all(batch)
                 self._session.flush()
 
+            removed_art_series = self._purge_orphan_art_series()
+
             total_cards = int(
                 self._session.scalar(select(func.count()).select_from(Card)) or 0
             )
@@ -162,7 +169,10 @@ class ScryfallBulkService:
                 self._set_setting(SETTING_BULK_ORACLE_UPDATED_AT, updated_at_text)
             self._set_setting(SETTING_BULK_ORACLE_CARD_COUNT, str(imported))
 
-            report(f"Sync complete — {imported:,} oracle cards processed.")
+            report(
+                f"Sync complete — {imported:,} oracle cards processed"
+                f" ({removed_art_series:,} Art Series entries removed)."
+            )
             return BulkSyncResult(
                 imported_cards=imported,
                 total_cards=total_cards,
@@ -170,6 +180,19 @@ class ScryfallBulkService:
             )
         finally:
             temp_path.unlink(missing_ok=True)
+
+    def _purge_orphan_art_series(self) -> int:
+        referenced = (
+            select(CardCopy.card_id).union(select(DeckCard.card_id))
+        ).subquery()
+        result = self._session.execute(
+            delete(Card).where(
+                Card.type_line == "Card // Card",
+                Card.oracle_id.not_in(select(referenced.c.card_id)),
+            )
+        )
+        self._session.flush()
+        return int(result.rowcount or 0)
 
     def _find_bulk_entry(self, bulk_type: str) -> dict:
         for entry in self._client.fetch_bulk_data():

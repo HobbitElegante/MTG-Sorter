@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck, DeckCard
@@ -32,36 +32,32 @@ class CardSummary:
 
 
 @dataclass(frozen=True)
-class DeckSummary:
-    deck_id: int
-    name: str
-    status: DeckStatus
-    card_entries: int
-    total_cards: int
-
-
-@dataclass(frozen=True)
-class DeckCardRow:
-    name: str
-    quantity: int
-    role: str
-
-
-@dataclass(frozen=True)
-class InventoryRow:
-    copy_id: int
+class InventorySummaryRow:
     card_name: str
-    assigned_deck: str | None
+    total_copies: int
+    free_copies: int
+    assigned_decks: tuple[str, ...]
 
 
 class BrowseService:
+    @staticmethod
+    def _playable_card_clause():
+        return or_(Card.type_line.is_(None), Card.type_line != "Card // Card")
+
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def overview(self) -> OverviewStats:
         assigned_copy_ids = select(CardAssignment.card_copy_id)
         return OverviewStats(
-            cards=int(self._session.scalar(select(func.count()).select_from(Card)) or 0),
+            cards=int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(Card)
+                    .where(self._playable_card_clause())
+                )
+                or 0
+            ),
             copies=int(
                 self._session.scalar(select(func.count()).select_from(CardCopy)) or 0
             ),
@@ -100,7 +96,11 @@ class BrowseService:
             ).all()
         )
 
-        query = select(Card).order_by(Card.name)
+        query = (
+            select(Card)
+            .where(self._playable_card_clause())
+            .order_by(Card.name)
+        )
         trimmed = search.strip()
         if trimmed:
             query = query.where(Card.name.ilike(f"%{trimmed}%"))
@@ -119,50 +119,51 @@ class BrowseService:
             for card in self._session.scalars(query).all()
         ]
 
-    def list_decks(self) -> list[DeckSummary]:
-        summaries: list[DeckSummary] = []
-        for deck in self._session.scalars(select(Deck).order_by(Deck.name)).all():
-            card_entries = len(deck.cards)
-            total_cards = sum(entry.quantity for entry in deck.cards)
+    def list_inventory(self) -> list[InventorySummaryRow]:
+        copy_rows = self._session.execute(
+            select(
+                Card.oracle_id,
+                Card.name,
+                func.count(CardCopy.id),
+            )
+            .join(Card, Card.oracle_id == CardCopy.card_id)
+            .group_by(Card.oracle_id, Card.name)
+            .order_by(Card.name)
+        ).all()
+
+        summaries: list[InventorySummaryRow] = []
+        for oracle_id, name, total in copy_rows:
+            assigned_count = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(CardCopy)
+                    .join(
+                        CardAssignment,
+                        CardAssignment.card_copy_id == CardCopy.id,
+                    )
+                    .where(CardCopy.card_id == oracle_id)
+                )
+                or 0
+            )
+            deck_names = tuple(
+                self._session.scalars(
+                    select(Deck.name)
+                    .join(CardAssignment, CardAssignment.deck_id == Deck.id)
+                    .join(CardCopy, CardCopy.id == CardAssignment.card_copy_id)
+                    .where(CardCopy.card_id == oracle_id)
+                    .distinct()
+                    .order_by(Deck.name)
+                ).all()
+            )
             summaries.append(
-                DeckSummary(
-                    deck_id=deck.id,
-                    name=deck.name,
-                    status=deck.status,
-                    card_entries=card_entries,
-                    total_cards=total_cards,
+                InventorySummaryRow(
+                    card_name=name,
+                    total_copies=int(total),
+                    free_copies=int(total) - assigned_count,
+                    assigned_decks=deck_names,
                 )
             )
         return summaries
-
-    def list_deck_cards(self, deck_id: int) -> list[DeckCardRow]:
-        rows = self._session.execute(
-            select(Card.name, DeckCard.quantity, DeckCard.role)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(DeckCard.deck_id == deck_id)
-            .order_by(DeckCard.role, Card.name)
-        ).all()
-        return [
-            DeckCardRow(name=name, quantity=quantity, role=role.value)
-            for name, quantity, role in rows
-        ]
-
-    def list_inventory(self) -> list[InventoryRow]:
-        rows = self._session.execute(
-            select(
-                CardCopy.id,
-                Card.name,
-                Deck.name,
-            )
-            .join(Card, Card.oracle_id == CardCopy.card_id)
-            .outerjoin(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
-            .outerjoin(Deck, Deck.id == CardAssignment.deck_id)
-            .order_by(Card.name, CardCopy.id)
-        ).all()
-        return [
-            InventoryRow(copy_id=copy_id, card_name=card_name, assigned_deck=deck_name)
-            for copy_id, card_name, deck_name in rows
-        ]
 
     def scryfall_status(self) -> BulkSyncStatus:
         return ScryfallBulkService(self._session).status()

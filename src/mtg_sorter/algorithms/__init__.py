@@ -1,6 +1,8 @@
 from mtg_sorter.algorithms.card_utils import (
+    is_art_series_type_line,
     is_basic_land_name,
     is_basic_land_type_line,
+    is_scryfall_art_series,
     is_token_type_line,
 )
 from mtg_sorter.algorithms.deck_optimizer import (
@@ -13,7 +15,9 @@ __all__ = [
     "DeckSupply",
     "OptimizationResult",
     "find_all_optimal_solutions",
+    "is_art_series_type_line",
     "is_basic_land_name",
     "is_basic_land_type_line",
+    "is_scryfall_art_series",
     "is_token_type_line",
 ]

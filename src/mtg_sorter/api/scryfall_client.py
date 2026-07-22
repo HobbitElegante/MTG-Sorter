@@ -11,7 +11,7 @@ class ScryfallClient:
     def __init__(self) -> None:
         self._client = httpx.Client(
             base_url=SCRYFALL_API_BASE,
-            headers={"User-Agent": "MTG-Sorter/0.2"},
+            headers={"User-Agent": "MTG-Sorter/0.3"},
             timeout=30.0,
         )
         self._last_request_at = 0.0

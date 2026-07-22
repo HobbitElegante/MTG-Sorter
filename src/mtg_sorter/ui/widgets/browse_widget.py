@@ -1,4 +1,5 @@
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -19,8 +20,11 @@ from PySide6.QtWidgets import (
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.models.enums import DeckStatus
 from mtg_sorter.services import BrowseService, ScryfallBulkService
+from mtg_sorter.ui.inventory_display import (
+    format_availability_status,
+    format_inventory_assigned,
+)
 
 
 class BulkSyncWorker(QThread):
@@ -55,17 +59,41 @@ class BrowseWidget(QWidget):
     def retranslate(self) -> None:
         self._section_list.item(0).setText(self._translator.t("browse.section.overview"))
         self._section_list.item(1).setText(self._translator.t("browse.section.cards"))
-        self._section_list.item(2).setText(self._translator.t("browse.section.decks"))
-        self._section_list.item(3).setText(
-            self._translator.t("browse.section.inventory")
+        self._section_list.item(2).setText(
+            self._translator.t("browse.section.availability")
         )
-        self._section_list.item(4).setText(
+        self._section_list.item(3).setText(
             self._translator.t("browse.section.scryfall")
         )
         self._card_search.setPlaceholderText(self._translator.t("browse.cards.search"))
         self._sync_button.setText(self._translator.t("browse.scryfall.sync"))
         self._language_group.setTitle(self._translator.t("config.language"))
         self._language_label.setText(self._translator.t("config.language"))
+        self._inventory_summary_group.setTitle(
+            self._translator.t("inventory.summary.title")
+        )
+        self._inventory_search.setPlaceholderText(
+            self._translator.t("inventory.search.collection")
+        )
+        self._inventory_hint.setText(self._translator.t("inventory.search.hint"))
+        self._cards_table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.cards.name"),
+                self._translator.t("browse.cards.type"),
+                self._translator.t("browse.cards.cmc"),
+                self._translator.t("browse.cards.copies"),
+                self._translator.t("browse.cards.flags"),
+            ]
+        )
+        self._card_refresh_button.setText(self._translator.t("common.refresh"))
+        self._inventory_results_table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.cards.name"),
+                self._translator.t("browse.inventory.copies"),
+                self._translator.t("browse.inventory.assigned"),
+            ]
+        )
+        self._scryfall_group.setTitle(self._translator.t("browse.section.scryfall"))
         self._sync_language_combo()
         self.refresh()
 
@@ -77,8 +105,7 @@ class BrowseWidget(QWidget):
         self._section_list = QListWidget()
         self._section_list.addItem(self._translator.t("browse.section.overview"))
         self._section_list.addItem(self._translator.t("browse.section.cards"))
-        self._section_list.addItem(self._translator.t("browse.section.decks"))
-        self._section_list.addItem(self._translator.t("browse.section.inventory"))
+        self._section_list.addItem(self._translator.t("browse.section.availability"))
         self._section_list.addItem(self._translator.t("browse.section.scryfall"))
         splitter.addWidget(self._section_list)
 
@@ -88,7 +115,6 @@ class BrowseWidget(QWidget):
 
         self._panels.addWidget(self._build_overview_panel())
         self._panels.addWidget(self._build_cards_panel())
-        self._panels.addWidget(self._build_decks_panel())
         self._panels.addWidget(self._build_inventory_panel())
         self._panels.addWidget(self._build_scryfall_panel())
 
@@ -98,6 +124,20 @@ class BrowseWidget(QWidget):
     def _build_overview_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
+
+        self._greeting_label = QLabel()
+        self._greeting_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        greeting_font = QFont("Monospace")
+        greeting_font.setStyleHint(QFont.StyleHint.Monospace)
+        self._greeting_label.setFont(greeting_font)
+        layout.addWidget(self._greeting_label)
+
+        self._tagline_label = QLabel()
+        self._tagline_label.setWordWrap(True)
+        layout.addWidget(self._tagline_label)
+
         self._overview_label = QLabel()
         self._overview_label.setWordWrap(True)
         layout.addWidget(self._overview_label)
@@ -135,11 +175,12 @@ class BrowseWidget(QWidget):
         search_row = QHBoxLayout()
         self._card_search = QLineEdit()
         self._card_search.setPlaceholderText(self._translator.t("browse.cards.search"))
+        self._card_search.textChanged.connect(self._refresh_cards)
         self._card_search.returnPressed.connect(self._refresh_cards)
-        search_button = QPushButton(self._translator.t("common.refresh"))
-        search_button.clicked.connect(self._refresh_cards)
+        self._card_refresh_button = QPushButton(self._translator.t("common.refresh"))
+        self._card_refresh_button.clicked.connect(self._refresh_cards)
         search_row.addWidget(self._card_search)
-        search_row.addWidget(search_button)
+        search_row.addWidget(self._card_refresh_button)
         layout.addLayout(search_row)
 
         self._cards_table = QTableWidget(0, 5)
@@ -156,50 +197,52 @@ class BrowseWidget(QWidget):
         layout.addWidget(self._cards_table)
         return panel
 
-    def _build_decks_panel(self) -> QWidget:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-
-        split = QSplitter()
-        self._deck_list = QListWidget()
-        self._deck_list.currentItemChanged.connect(self._refresh_deck_cards)
-        split.addWidget(self._deck_list)
-
-        self._deck_cards_table = QTableWidget(0, 3)
-        self._deck_cards_table.setHorizontalHeaderLabels(
-            [
-                self._translator.t("browse.cards.name"),
-                self._translator.t("browse.decks.quantity"),
-                self._translator.t("browse.decks.role"),
-            ]
-        )
-        self._deck_cards_table.horizontalHeader().setStretchLastSection(True)
-        split.addWidget(self._deck_cards_table)
-        split.setStretchFactor(1, 1)
-        layout.addWidget(split)
-        return panel
-
     def _build_inventory_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        self._inventory_table = QTableWidget(0, 3)
-        self._inventory_table.setHorizontalHeaderLabels(
+
+        self._inventory_summary_group = QGroupBox(
+            self._translator.t("inventory.summary.title")
+        )
+        summary_layout = QVBoxLayout(self._inventory_summary_group)
+        self._inventory_summary_label = QLabel()
+        self._inventory_summary_label.setWordWrap(True)
+        summary_layout.addWidget(self._inventory_summary_label)
+        layout.addWidget(self._inventory_summary_group)
+
+        self._inventory_search = QLineEdit()
+        self._inventory_search.setPlaceholderText(
+            self._translator.t("inventory.search.collection")
+        )
+        self._inventory_search.textChanged.connect(self._refresh_inventory)
+        layout.addWidget(self._inventory_search)
+
+        self._inventory_status = QLabel("")
+        self._inventory_status.setWordWrap(True)
+        layout.addWidget(self._inventory_status)
+
+        self._inventory_hint = QLabel(self._translator.t("inventory.search.hint"))
+        self._inventory_hint.setWordWrap(True)
+        layout.addWidget(self._inventory_hint)
+
+        self._inventory_results_table = QTableWidget(0, 3)
+        self._inventory_results_table.setHorizontalHeaderLabels(
             [
-                self._translator.t("browse.inventory.copy"),
                 self._translator.t("browse.cards.name"),
+                self._translator.t("browse.inventory.copies"),
                 self._translator.t("browse.inventory.assigned"),
             ]
         )
-        self._inventory_table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self._inventory_table)
+        self._inventory_results_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self._inventory_results_table)
         return panel
 
     def _build_scryfall_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        group = QGroupBox(self._translator.t("browse.section.scryfall"))
-        form = QFormLayout(group)
+        self._scryfall_group = QGroupBox(self._translator.t("browse.section.scryfall"))
+        form = QFormLayout(self._scryfall_group)
         self._scryfall_status_label = QLabel()
         self._scryfall_status_label.setWordWrap(True)
         form.addRow(self._scryfall_status_label)
@@ -211,7 +254,7 @@ class BrowseWidget(QWidget):
         self._sync_button = QPushButton(self._translator.t("browse.scryfall.sync"))
         self._sync_button.clicked.connect(self._start_bulk_sync)
         form.addRow(self._sync_button)
-        layout.addWidget(group)
+        layout.addWidget(self._scryfall_group)
 
         info = QLabel(self._translator.t("browse.scryfall.info"))
         info.setWordWrap(True)
@@ -222,11 +265,12 @@ class BrowseWidget(QWidget):
     def refresh(self) -> None:
         self._refresh_overview()
         self._refresh_cards()
-        self._refresh_decks()
         self._refresh_inventory()
         self._refresh_scryfall_status()
 
     def _refresh_overview(self) -> None:
+        self._greeting_label.setText(self._translator.t("browse.overview.greeting"))
+        self._tagline_label.setText(self._translator.t("browse.overview.tagline"))
         with get_session() as session:
             stats = BrowseService(session).overview()
         self._overview_label.setText(
@@ -250,9 +294,9 @@ class BrowseWidget(QWidget):
         for row, card in enumerate(cards):
             flags: list[str] = []
             if card.is_basic_land:
-                flags.append("basic")
+                flags.append(self._translator.t("browse.cards.flag.basic"))
             if card.is_token:
-                flags.append("token")
+                flags.append(self._translator.t("browse.cards.flag.token"))
             self._cards_table.setItem(row, 0, QTableWidgetItem(card.name))
             self._cards_table.setItem(row, 1, QTableWidgetItem(card.type_line or ""))
             self._cards_table.setItem(
@@ -261,68 +305,69 @@ class BrowseWidget(QWidget):
             self._cards_table.setItem(row, 3, QTableWidgetItem(str(card.copy_count)))
             self._cards_table.setItem(row, 4, QTableWidgetItem(", ".join(flags)))
 
-    def _refresh_decks(self) -> None:
-        self._deck_list.clear()
-        with get_session() as session:
-            decks = BrowseService(session).list_decks()
-
-        if not decks:
-            self._deck_list.addItem(self._translator.t("decks.empty"))
-            self._deck_cards_table.setRowCount(0)
-            return
-
-        for deck in decks:
-            status = (
-                self._translator.t("decks.status.armed")
-                if deck.status == DeckStatus.ARMED
-                else self._translator.t("decks.status.dismantled")
-            )
-            self._deck_list.addItem(
-                f"[{status}] {deck.name} ({deck.total_cards})"
-            )
-            item = self._deck_list.item(self._deck_list.count() - 1)
-            if item is not None:
-                item.setData(256, deck.deck_id)
-
-        if self._deck_list.count() > 0:
-            self._deck_list.setCurrentRow(0)
-
-    def _selected_deck_id(self) -> int | None:
-        item = self._deck_list.currentItem()
-        if item is None:
-            return None
-        deck_id = item.data(256)
-        return deck_id if isinstance(deck_id, int) else None
-
-    def _refresh_deck_cards(self) -> None:
-        deck_id = self._selected_deck_id()
-        if deck_id is None:
-            self._deck_cards_table.setRowCount(0)
-            return
-
-        with get_session() as session:
-            rows = BrowseService(session).list_deck_cards(deck_id)
-
-        self._deck_cards_table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            self._deck_cards_table.setItem(index, 0, QTableWidgetItem(row.name))
-            self._deck_cards_table.setItem(
-                index, 1, QTableWidgetItem(str(row.quantity))
-            )
-            self._deck_cards_table.setItem(index, 2, QTableWidgetItem(row.role))
-
     def _refresh_inventory(self) -> None:
         with get_session() as session:
-            rows = BrowseService(session).list_inventory()
+            all_rows = BrowseService(session).list_inventory()
 
-        self._inventory_table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            self._inventory_table.setItem(
-                index, 0, QTableWidgetItem(str(row.copy_id))
+        if not all_rows:
+            self._inventory_summary_label.setText(
+                self._translator.t("inventory.summary.empty")
             )
-            self._inventory_table.setItem(index, 1, QTableWidgetItem(row.card_name))
-            assigned = row.assigned_deck or self._translator.t("browse.inventory.free")
-            self._inventory_table.setItem(index, 2, QTableWidgetItem(assigned))
+        else:
+            total_copies = sum(row.total_copies for row in all_rows)
+            free_copies = sum(row.free_copies for row in all_rows)
+            assigned_copies = total_copies - free_copies
+            self._inventory_summary_label.setText(
+                self._translator.t("inventory.summary.body").format(
+                    unique=len(all_rows),
+                    copies=total_copies,
+                    free=free_copies,
+                    assigned=assigned_copies,
+                )
+            )
+
+        search = self._inventory_search.text().strip()
+        rows = all_rows
+        if search:
+            needle = search.casefold()
+            rows = [row for row in rows if needle in row.card_name.casefold()]
+
+        self._inventory_results_table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            copies_item = QTableWidgetItem(str(row.total_copies))
+            copies_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._inventory_results_table.setItem(
+                index, 0, QTableWidgetItem(row.card_name)
+            )
+            self._inventory_results_table.setItem(index, 1, copies_item)
+            self._inventory_results_table.setItem(
+                index,
+                2,
+                QTableWidgetItem(format_inventory_assigned(row, self._translator)),
+            )
+
+        if not search:
+            self._inventory_status.setText("")
+            self._inventory_hint.setVisible(True)
+            self._inventory_results_table.setVisible(False)
+            return
+
+        self._inventory_hint.setVisible(False)
+        self._inventory_results_table.setVisible(True)
+
+        if not rows:
+            self._inventory_status.setText(self._translator.t("inventory.not_owned"))
+            return
+
+        if len(rows) == 1:
+            self._inventory_status.setText(
+                format_availability_status(rows[0], self._translator)
+            )
+            return
+
+        self._inventory_status.setText(
+            self._translator.t("inventory.matches").format(count=len(rows))
+        )
 
     def _refresh_scryfall_status(self) -> None:
         with get_session() as session:

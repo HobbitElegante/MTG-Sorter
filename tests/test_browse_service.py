@@ -46,6 +46,60 @@ def test_overview_counts(session: Session) -> None:
     assert stats.armed_decks == 1
 
 
+def test_list_cards_excludes_art_series(session: Session) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="1",
+                name="Kellan, the Kid",
+                type_line="Legendary Creature — Human Faerie Rogue",
+                is_basic_land=False,
+                is_token=False,
+            ),
+            Card(
+                oracle_id="2",
+                name="Kellan, the Kid // Kellan, the Kid",
+                type_line="Card // Card",
+                is_basic_land=False,
+                is_token=False,
+            ),
+        ]
+    )
+    session.flush()
+
+    cards = BrowseService(session).list_cards("kellan")
+
+    assert len(cards) == 1
+    assert cards[0].name == "Kellan, the Kid"
+
+
+def test_list_inventory_groups_copies_by_card(session: Session) -> None:
+    from mtg_sorter.models import CardAssignment
+
+    card = Card(
+        oracle_id="abc",
+        name="Sol Ring",
+        is_basic_land=False,
+        is_token=False,
+    )
+    deck = Deck(name="Test Deck", status=DeckStatus.ARMED)
+    session.add_all([card, deck])
+    session.flush()
+    copies = [CardCopy(card_id="abc"), CardCopy(card_id="abc"), CardCopy(card_id="abc")]
+    session.add_all(copies)
+    session.flush()
+    session.add(CardAssignment(card_copy_id=copies[0].id, deck_id=deck.id))
+    session.flush()
+
+    rows = BrowseService(session).list_inventory()
+
+    assert len(rows) == 1
+    assert rows[0].card_name == "Sol Ring"
+    assert rows[0].total_copies == 3
+    assert rows[0].free_copies == 2
+    assert rows[0].assigned_decks == ("Test Deck",)
+
+
 def test_list_cards_filters_by_name(session: Session) -> None:
     session.add_all(
         [

@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.deck_optimizer import DeckSupply, OptimizationResult, find_all_optimal_solutions
-from mtg_sorter.models import Deck
+from mtg_sorter.models import Card, Deck
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 
 
@@ -14,6 +15,8 @@ class AssemblyPlan:
     free_inventory_used: dict[str, int]
     still_missing: dict[str, int]
     solution_labels: dict[frozenset[str], str]
+    card_names: dict[str, str]
+    deck_names: dict[str, str]
 
 
 class OptimizationService:
@@ -43,15 +46,18 @@ class OptimizationService:
 
         armed = self._decks.armed_deck_supplies(exclude_deck_id=target_deck_id)
         supplies: dict[str, DeckSupply] = {}
+        deck_names: dict[str, str] = {}
         for deck_id, cards in armed.items():
             deck = self._decks.get_deck(deck_id)
             if deck is None:
                 continue
-            supplies[str(deck_id)] = DeckSupply(
-                deck_id=str(deck_id),
+            deck_key = str(deck_id)
+            supplies[deck_key] = DeckSupply(
+                deck_id=deck_key,
                 deck_name=deck.name,
                 cards=cards,
             )
+            deck_names[deck_key] = deck.name
 
         result = find_all_optimal_solutions(needs, supplies)
 
@@ -62,10 +68,23 @@ class OptimizationService:
             for solution in result.solutions
         }
 
+        card_ids = set(free_used) | set(result.unmet_needs)
+        card_names = self._card_names(card_ids)
+
         return AssemblyPlan(
             target_deck=target,
             result=result,
             free_inventory_used=free_used,
             still_missing=result.unmet_needs,
             solution_labels=labels,
+            card_names=card_names,
+            deck_names=deck_names,
         )
+
+    def _card_names(self, card_ids: set[str]) -> dict[str, str]:
+        if not card_ids:
+            return {}
+        rows = self._session.scalars(
+            select(Card).where(Card.oracle_id.in_(card_ids))
+        ).all()
+        return {card.oracle_id: card.name for card in rows}

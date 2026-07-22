@@ -11,6 +11,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add": "Add to inventory",
         "inventory.quantity": "Quantity",
         "inventory.empty": "No unassigned copies in inventory.",
+        "inventory.summary.title": "Collection summary",
+        "inventory.summary.empty": "No physical copies registered yet. Import a deck to start mapping your collection.",
+        "inventory.summary.body": (
+            "{unique} unique cards · {copies} physical copies · "
+            "{free} free · {assigned} assigned to armed decks"
+        ),
+        "inventory.search.collection": "Search your collection…",
+        "inventory.search.hint": "Type a card name to check whether you have free copies.",
+        "inventory.status.available": "Available — {count} free",
+        "inventory.status.unavailable": "Not available — all {count} assigned",
+        "inventory.not_owned": "That card is not in your collection.",
+        "inventory.matches": "{count} matching cards in your collection.",
         "decks.import": "Import Moxfield list",
         "decks.name": "Deck name",
         "decks.commander": "Commander name (optional)",
@@ -19,6 +31,61 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
         "decks.empty": "No decks imported yet.",
+        "decks.details": "{name}: {count} list entries",
+        "decks.details.armed": "{count} list entries — complete",
+        "decks.details.dismantled": "{count} list entries — {available} cards available",
+        "decks.import.status.title": "Deck status",
+        "decks.import.status.question": "Is this deck currently armed or dismantled?",
+        "decks.import.available.title": "Available cards",
+        "decks.import.available.question": (
+            "Which cards from this list do you still have available in your collection?"
+        ),
+        "decks.import.available.in_list": "In list",
+        "decks.import.available.available": "Available",
+        "decks.import.available.all": "Mark all available",
+        "decks.list.title": "Your decks",
+        "decks.edit_list": "Edit list",
+        "decks.delete_list": "Delete list",
+        "decks.delete.confirm.title": "Delete deck list",
+        "decks.delete.confirm.question": (
+            "Delete “{name}”? Choose below how many physical copies to remove "
+            "with the list."
+        ),
+        "decks.delete.copies.hint": (
+            "You can remove all removable copies, some, or none. "
+            "If Quitar stays at 0, those copies belong to other armed decks."
+        ),
+        "decks.delete.copies.inventory": "In inventory",
+        "decks.delete.copies.inventory_elsewhere": "{total} ({elsewhere} in other decks)",
+        "decks.delete.copies.elsewhere_tip": (
+            "{count} cop(y/ies) assigned to other armed decks and cannot be removed here."
+        ),
+        "decks.delete.copies.remove": "Remove",
+        "decks.delete.copies.remaining": "Remaining",
+        "decks.delete.copies.keep_all": "Keep all copies",
+        "decks.delete.copies.remove_all": "Remove all removable",
+        "decks.show_import": "Import Moxfield list",
+        "decks.load_file": "Load file",
+        "decks.submit_import": "Confirm list",
+        "decks.cancel_import": "Cancel",
+        "decks.load_file.dialog_title": "Open Moxfield export",
+        "decks.edit.title": "Edit deck list",
+        "decks.edit.save": "Save list",
+        "decks.edit.total": "Cards in list: {current} / {target}",
+        "decks.edit.slots": "Open slots: {slots}",
+        "decks.edit.free": "Free",
+        "decks.edit.replace": "Replace",
+        "decks.edit.add": "Add card",
+        "decks.edit.add.title": "Add card to list",
+        "decks.edit.replace.title": "Replace card",
+        "decks.edit.search": "Search card name",
+        "decks.edit.quantity": "Quantity in list",
+        "decks.edit.available": "Available copies (0 = missing)",
+        "decks.edit.remove_outgoing": "Also remove copies of the outgoing card",
+        "decks.edit.remove_outgoing_qty": "Copies to remove",
+        "decks.edit.pick": "Use selected card",
+        "decks.edit.no_selection": "Select a card from the search results.",
+        "decks.edit.over_target": "List total cannot exceed the original size.",
         "optimize.target": "Deck to assemble",
         "optimize.run": "Find optimal dismantle plan",
         "optimize.no_solutions": "No feasible dismantle plan found.",
@@ -36,8 +103,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.section.overview": "Overview",
         "browse.section.cards": "Cards",
         "browse.section.decks": "Decks",
-        "browse.section.inventory": "Inventory",
+        "browse.section.availability": "Availability",
         "browse.section.scryfall": "Scryfall",
+        "browse.overview.greeting": (
+            " __  __  _______   _____          _____\n"
+            "|  \\/  ||__   __| / ____|        / ____|\n"
+            "| \\  / |   | |   | |  __ ______ | (___\n"
+            "| |\\/| |   | |   | | |_ |______| \\___ \\\n"
+            "| |  | |   | |   | |__| |       ____) |\n"
+            "|_|  |_|   |_|    \\_____|      |_____/"
+        ),
+        "browse.overview.tagline": "Commander Collection Manager",
         "browse.overview.body": (
             "Cached cards: {cards}\n"
             "Physical copies: {copies} ({unassigned} unassigned)\n"
@@ -51,9 +127,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.cmc": "CMC",
         "browse.cards.copies": "Copies",
         "browse.cards.flags": "Flags",
+        "browse.cards.flag.basic": "basic",
+        "browse.cards.flag.token": "token",
         "browse.decks.quantity": "Qty",
         "browse.decks.role": "Role",
         "browse.inventory.copy": "Copy #",
+        "browse.inventory.copies": "Copies",
+        "browse.inventory.mixed": "{free} free · {decks}",
         "browse.inventory.assigned": "Assigned to",
         "browse.inventory.free": "Free",
         "browse.scryfall.sync": "Download oracle-cards bulk pack",
@@ -82,6 +162,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add": "Añadir al inventario",
         "inventory.quantity": "Cantidad",
         "inventory.empty": "No hay copias libres en el inventario.",
+        "inventory.summary.title": "Resumen de la colección",
+        "inventory.summary.empty": (
+            "Aún no hay copias físicas registradas. Importa un mazo para empezar a mapear tu colección."
+        ),
+        "inventory.summary.body": (
+            "{unique} cartas únicas · {copies} copias físicas · "
+            "{free} libres · {assigned} asignadas a mazos armados"
+        ),
+        "inventory.search.collection": "Buscar en tu colección…",
+        "inventory.search.hint": "Escribe el nombre de una carta para ver si tienes copias libres.",
+        "inventory.status.available": "Disponible — {count} libre(s)",
+        "inventory.status.unavailable": "No disponible — las {count} copia(s) están asignadas",
+        "inventory.not_owned": "Esa carta no está en tu colección.",
+        "inventory.matches": "{count} cartas coinciden en tu colección.",
         "decks.import": "Importar lista Moxfield",
         "decks.name": "Nombre del mazo",
         "decks.commander": "Nombre del commander (opcional)",
@@ -90,6 +184,61 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
         "decks.empty": "Aún no hay mazos importados.",
+        "decks.details": "{name}: {count} entradas en el listado",
+        "decks.details.armed": "{count} entradas en el listado — completado",
+        "decks.details.dismantled": "{count} entradas en el listado — {available} cartas disponibles",
+        "decks.import.status.title": "Estado del mazo",
+        "decks.import.status.question": "¿Este mazo está armado o desarmado?",
+        "decks.import.available.title": "Cartas disponibles",
+        "decks.import.available.question": (
+            "¿Cuáles cartas de este listado sigues teniendo disponibles en tu colección?"
+        ),
+        "decks.import.available.in_list": "En listado",
+        "decks.import.available.available": "Disponibles",
+        "decks.import.available.all": "Marcar todas disponibles",
+        "decks.list.title": "Tus mazos",
+        "decks.edit_list": "Editar listado",
+        "decks.delete_list": "Eliminar listado",
+        "decks.delete.confirm.title": "Eliminar listado",
+        "decks.delete.confirm.question": (
+            "¿Eliminar “{name}”? Elige abajo cuántas copias físicas quitar "
+            "junto con el listado."
+        ),
+        "decks.delete.copies.hint": (
+            "Puedes quitar todas las copias eliminables, algunas o ninguna. "
+            "Si Quitar se queda en 0, esas copias están en otros mazos armados."
+        ),
+        "decks.delete.copies.inventory": "En inventario",
+        "decks.delete.copies.inventory_elsewhere": "{total} ({elsewhere} en otros mazos)",
+        "decks.delete.copies.elsewhere_tip": (
+            "{count} copia(s) asignada(s) a otros mazos armados; no se pueden quitar aquí."
+        ),
+        "decks.delete.copies.remove": "Quitar",
+        "decks.delete.copies.remaining": "Quedarían",
+        "decks.delete.copies.keep_all": "Conservar todas las copias",
+        "decks.delete.copies.remove_all": "Quitar todas las eliminables",
+        "decks.show_import": "Importar lista Moxfield",
+        "decks.load_file": "Cargar archivo",
+        "decks.submit_import": "Confirmar listado",
+        "decks.cancel_import": "Cancelar",
+        "decks.load_file.dialog_title": "Abrir export de Moxfield",
+        "decks.edit.title": "Editar listado del mazo",
+        "decks.edit.save": "Guardar listado",
+        "decks.edit.total": "Cartas en listado: {current} / {target}",
+        "decks.edit.slots": "Huecos libres: {slots}",
+        "decks.edit.free": "Libres",
+        "decks.edit.replace": "Reemplazar",
+        "decks.edit.add": "Añadir carta",
+        "decks.edit.add.title": "Añadir carta al listado",
+        "decks.edit.replace.title": "Reemplazar carta",
+        "decks.edit.search": "Buscar carta por nombre",
+        "decks.edit.quantity": "Cantidad en listado",
+        "decks.edit.available": "Copias disponibles (0 = faltan)",
+        "decks.edit.remove_outgoing": "También quitar copias de la carta que sale",
+        "decks.edit.remove_outgoing_qty": "Copias a quitar",
+        "decks.edit.pick": "Usar carta seleccionada",
+        "decks.edit.no_selection": "Selecciona una carta de los resultados.",
+        "decks.edit.over_target": "El total del listado no puede superar el tamaño original.",
         "optimize.target": "Mazo a armar",
         "optimize.run": "Calcular plan óptimo",
         "optimize.no_solutions": "No hay plan viable de desmontaje.",
@@ -107,8 +256,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.section.overview": "Resumen",
         "browse.section.cards": "Cartas",
         "browse.section.decks": "Mazos",
-        "browse.section.inventory": "Inventario",
+        "browse.section.availability": "Disponibilidad",
         "browse.section.scryfall": "Scryfall",
+        "browse.overview.greeting": (
+            " __  __  _______   _____          _____\n"
+            "|  \\/  ||__   __| / ____|        / ____|\n"
+            "| \\  / |   | |   | |  __ ______ | (___\n"
+            "| |\\/| |   | |   | | |_ |______| \\___ \\\n"
+            "| |  | |   | |   | |__| |       ____) |\n"
+            "|_|  |_|   |_|    \\_____|      |_____/"
+        ),
+        "browse.overview.tagline": "Gestor de Colección Commander",
         "browse.overview.body": (
             "Cartas en caché: {cards}\n"
             "Copias físicas: {copies} ({unassigned} libres)\n"
@@ -122,9 +280,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.cmc": "CMC",
         "browse.cards.copies": "Copias",
         "browse.cards.flags": "Etiquetas",
+        "browse.cards.flag.basic": "básica",
+        "browse.cards.flag.token": "token",
         "browse.decks.quantity": "Cant.",
         "browse.decks.role": "Rol",
         "browse.inventory.copy": "Copia #",
+        "browse.inventory.copies": "Copias",
+        "browse.inventory.mixed": "{free} libres · {decks}",
         "browse.inventory.assigned": "Asignada a",
         "browse.inventory.free": "Libre",
         "browse.scryfall.sync": "Descargar pack bulk oracle-cards",

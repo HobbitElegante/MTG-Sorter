@@ -9,6 +9,7 @@ SCRYFALL_BULK_ORACLE_TYPE = "oracle_cards"
 SCRYFALL_BULK_BATCH_SIZE = 500
 DEFAULT_LOCALE = "en"
 
+SETTING_UI_LOCALE = "ui_locale"
 SETTING_BULK_ORACLE_UPDATED_AT = "scryfall_bulk_oracle_updated_at"
 SETTING_BULK_ORACLE_SYNCED_AT = "scryfall_bulk_oracle_synced_at"
 SETTING_BULK_ORACLE_CARD_COUNT = "scryfall_bulk_oracle_card_count"

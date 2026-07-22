@@ -2,17 +2,21 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.2)
+## Features (v0.3.3)
 
-- Local SQLite inventory of physical card copies
-- Moxfield text import (`Copy for MTGO` format)
-- Deck list storage with armed/dismantled status
+- Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
+- Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
+- Deck list storage with armed/dismantled status and automatic copy assignment
+- Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
+- Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
-- Unlimited basics and tokens (display only, never block reassembly)
-- ILP optimizer to minimize the number of armed decks to dismantle
-- Bilingual UI (English default, Spanish available)
-- **Browse tab** to inspect cards, decks, inventory, and Scryfall sync status
-- **Offline card resolution** via local cache + optional Scryfall `oracle-cards` bulk download
+- Unlimited basics and tokens (never block reassembly; flagged in Browse → Cards)
+- ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
+- Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
+- **Browse tab:** overview, cached card catalog, availability search, Scryfall bulk sync
+- **Inventory tab:** searchable collection table
+- Offline card resolution via local cache + optional Scryfall `oracle-cards` bulk download
+- Art Series cards filtered from bulk import and Browse catalog
 
 ## Requirements
 
@@ -23,7 +27,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 ```bash
 cd MTG-Sorter
-uv sync
+uv sync --all-extras
 ```
 
 Or with pip:
@@ -54,46 +58,68 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
+42 tests passing.
+
+## First-time setup
+
+1. Run the app.
+2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
+3. Import decks from the **Decks** tab.
+4. Optional: **Browse → Overview** → switch language to Spanish (persisted).
+
 ## Importing a deck
 
-1. Open the **Decks** tab.
-2. Export from Moxfield: `More → Export → Copy for MTGO`.
-3. Paste the list or load the `.txt` file.
-4. Set deck name and optional commander name (e.g. `Kellan, the Kid`).
-5. Mark armed decks with **Mark armed**.
+1. Open the **Decks** tab → **Import Moxfield list**.
+2. Enter deck name and optional commander name.
+3. Paste the list or click **Load file** to open a `.txt` export.
+4. Click **Confirm list**.
+5. Choose **Armed** or **Dismantled**:
+   - **Armed:** physical copies are created/assigned automatically. Shared cards across armed decks get additional copies.
+   - **Dismantled:** mark which cards from the list you still have available (−/+) → free inventory copies.
+
+Export from Moxfield: `More → Export → Copy for MTGO`.
+
+## Editing and deleting decks
+
+- **Edit list:** table of cards with list quantity, free inventory (−/+), replace, and add cards into open slots (list size preserved).
+- **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
+- Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”.
 
 ## Optimizer
 
-1. Add physical copies in **Inventory**.
-2. Import decks and mark currently assembled ones as **Armed**.
-3. Open **Optimize**, pick a dismantled target deck, and run the plan.
+1. Import decks and mark currently assembled ones as **Armed**.
+2. For dismantled decks, register available copies during import or while editing.
+3. Open **Optimize**, pick a target deck, and run the plan.
 4. If multiple optimal dismantle sets exist, choose one from the dropdown.
 
 ## Offline Scryfall cache
 
-1. Open the **Browse** tab → **Scryfall**.
-2. Click **Download oracle-cards bulk pack** (one-time download, ~170 MB).
-3. After sync, imports and inventory lookups work without network for cached cards.
+1. Open **Browse → Scryfall**.
+2. Click **Download oracle-cards bulk pack**.
+3. After sync, imports and lookups work offline for cached cards.
 4. Individual API lookups are also saved automatically when online.
 
 ## Project layout
 
 ```
 src/mtg_sorter/
-  algorithms/   # ILP deck dismantle optimizer
+  algorithms/   # ILP deck dismantle optimizer, card helpers
   api/          # Scryfall HTTP client
   database/     # SQLite session bootstrap
+  i18n/         # EN/ES translations
   models/       # SQLAlchemy models
   services/     # Business logic
   ui/           # PySide6 desktop UI
 tests/
+  fixtures/     # Sample deck exports (e.g. kellan_deck.txt)
 ```
 
-## Known armed decks (seed data reference)
+## Seed decks (reference)
 
-- Kellan, the Top Decker Kid
-- Lord Xander, today i'm kinda villain
-- Legolas, 2 Arrows and a Dream
-- Ghen, but i love giving poop as a gift
+Local DB typically includes armed seeds (Kellan, Athreos, Ghen, Legolas, Lord Xander) plus dismantled test decks (e.g. Emmara, Saskia).
 
 Fixture: `tests/fixtures/kellan_deck.txt`
+
+## Continuity
+
+See [`handoff.md`](handoff.md) for full project state, decisions, and next steps.

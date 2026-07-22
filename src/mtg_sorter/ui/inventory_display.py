@@ -1,0 +1,21 @@
+from mtg_sorter.i18n import Translator
+from mtg_sorter.services.browse_service import InventorySummaryRow
+
+
+def format_inventory_assigned(row: InventorySummaryRow, translator: Translator) -> str:
+    if row.free_copies == row.total_copies:
+        return translator.t("browse.inventory.free")
+    if row.free_copies == 0:
+        return ", ".join(row.assigned_decks)
+    if not row.assigned_decks:
+        return translator.t("browse.inventory.free")
+    return translator.t("browse.inventory.mixed").format(
+        free=row.free_copies,
+        decks=", ".join(row.assigned_decks),
+    )
+
+
+def format_availability_status(row: InventorySummaryRow, translator: Translator) -> str:
+    if row.free_copies > 0:
+        return translator.t("inventory.status.available").format(count=row.free_copies)
+    return translator.t("inventory.status.unavailable").format(count=row.total_copies)
