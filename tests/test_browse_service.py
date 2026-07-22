@@ -94,6 +94,7 @@ def test_list_inventory_groups_copies_by_card(session: Session) -> None:
     rows = BrowseService(session).list_inventory()
 
     assert len(rows) == 1
+    assert rows[0].oracle_id == "abc"
     assert rows[0].card_name == "Sol Ring"
     assert rows[0].total_copies == 3
     assert rows[0].free_copies == 2

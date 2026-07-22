@@ -131,6 +131,39 @@ def test_lookup_local_prefers_playable_over_art_series(session: Session) -> None
     assert card.oracle_id == "playable"
 
 
+def test_lookup_local_prefers_card_over_same_named_token(session: Session) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="token",
+                name="Darkstar Augur",
+                type_line="Token Creature — Bat Warlock",
+                is_basic_land=False,
+                is_token=True,
+            ),
+            Card(
+                oracle_id="card",
+                name="Darkstar Augur",
+                type_line="Creature — Bat Warlock",
+                is_basic_land=False,
+                is_token=False,
+            ),
+        ]
+    )
+    session.flush()
+
+    service = ScryfallService(session, FakeScryfallClient())
+    card = service.lookup_local("Darkstar Augur")
+    token = service.lookup_local("Darkstar Augur", prefer_token=True)
+
+    assert card is not None
+    assert card.oracle_id == "card"
+    assert card.is_token is False
+    assert token is not None
+    assert token.oracle_id == "token"
+    assert token.is_token is True
+
+
 def test_bulk_sync_skips_art_series(session: Session) -> None:
     payloads = [
         {

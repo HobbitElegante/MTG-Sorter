@@ -329,3 +329,39 @@ def test_free_coverage_toward_deck_counts_matching_free_copies(
     session.flush()
 
     assert DeckService(session).free_coverage_toward_deck(deck.id) == 1
+
+
+def test_set_total_copies_adds_and_removes_free_inventory(session: Session) -> None:
+    session.add(
+        Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    )
+    session.flush()
+    inventory = InventoryService(session)
+    inventory.add_copy("sol", 2)
+
+    inventory.set_total_copies("sol", 5)
+    assert session.scalar(select(func.count()).select_from(CardCopy)) == 5
+    assert inventory.free_counts() == {"sol": 5}
+
+    inventory.set_total_copies("sol", 1)
+    assert session.scalar(select(func.count()).select_from(CardCopy)) == 1
+    assert inventory.free_counts() == {"sol": 1}
+
+
+def test_set_total_copies_cannot_go_below_assigned(session: Session) -> None:
+    card = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    deck = Deck(name="Armed", status=DeckStatus.ARMED)
+    session.add_all([card, deck])
+    session.flush()
+    copies = [CardCopy(card_id="sol"), CardCopy(card_id="sol"), CardCopy(card_id="sol")]
+    session.add_all(copies)
+    session.flush()
+    session.add(CardAssignment(card_copy_id=copies[0].id, deck_id=deck.id))
+    session.flush()
+
+    with pytest.raises(ValueError, match="assigned"):
+        InventoryService(session).set_total_copies("sol", 0)
+
+    InventoryService(session).set_total_copies("sol", 1)
+    assert session.scalar(select(func.count()).select_from(CardCopy)) == 1
+    assert InventoryService(session).free_counts() == {}

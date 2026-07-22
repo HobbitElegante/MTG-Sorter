@@ -125,7 +125,10 @@ class ImportService:
 
         for line in parsed_lines:
             try:
-                card = self._scryfall.fetch_and_cache(line.name)
+                card = self._scryfall.fetch_and_cache(
+                    line.name,
+                    prefer_token=line.role == DeckCardRole.TOKEN,
+                )
             except Exception as exc:
                 warnings.append(
                     ImportWarning(line=line.raw_line, message=str(exc))
@@ -201,9 +204,7 @@ class ImportService:
         )
 
     def _promote_commander(self, deck_id: int, commander_name: str) -> None:
-        card = self._session.scalar(
-            select(Card).where(Card.name.ilike(commander_name)).limit(1)
-        )
+        card = self._scryfall.lookup_local(commander_name)
         if card is None:
             return
 

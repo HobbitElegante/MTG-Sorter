@@ -2,21 +2,22 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.4)
+## Features (v0.3.5)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
+- **Inventory tab:** searchable table; add new cards to the collection; edit copy counts (cannot drop below assigned copies)
 - Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
 - Deck list storage with armed/dismantled status and automatic copy assignment
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
 - Unlimited basics and tokens (never block reassembly; flagged in Browse → Cards)
+- Card lookup prefers the playable card when a token shares the same name (e.g. Darkstar Augur)
 - ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
 - Optimize section titles show counts (free coverage, decks to dismantle, still missing)
 - Already-armed target decks skip optimization with a clear message
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
 - **Browse tab:** overview, cached card catalog, availability search, Scryfall bulk sync
-- **Inventory tab:** searchable collection table
 - Offline card resolution via local cache + optional Scryfall `oracle-cards` bulk download
 - Art Series cards filtered from bulk import and Browse catalog
 
@@ -60,7 +61,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-43 tests passing.
+46 tests passing.
 
 ## First-time setup
 
@@ -86,6 +87,13 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 - **Edit list:** table of cards with list quantity, free inventory (−/+), replace, and add cards into open slots (list size preserved).
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
 - Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”.
+
+## Inventory
+
+1. Open the **Inventory** tab.
+2. Use the search bar to filter your collection.
+3. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
+4. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
 
 ## Optimizer
 

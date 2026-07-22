@@ -33,6 +33,7 @@ class CardSummary:
 
 @dataclass(frozen=True)
 class InventorySummaryRow:
+    oracle_id: str
     card_name: str
     total_copies: int
     free_copies: int
@@ -157,6 +158,7 @@ class BrowseService:
             )
             summaries.append(
                 InventorySummaryRow(
+                    oracle_id=oracle_id,
                     card_name=name,
                     total_copies=int(total),
                     free_copies=int(total) - assigned_count,

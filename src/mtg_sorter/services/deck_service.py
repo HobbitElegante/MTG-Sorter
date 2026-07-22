@@ -52,6 +52,61 @@ class InventoryService:
         self._session.flush()
         return copies
 
+    def remove_free_copies(self, oracle_id: str, quantity: int) -> int:
+        """Delete up to `quantity` unassigned copies. Returns how many were removed."""
+        if quantity <= 0:
+            return 0
+        assigned_copy_ids = select(CardAssignment.card_copy_id)
+        free_copies = list(
+            self._session.scalars(
+                select(CardCopy)
+                .where(
+                    CardCopy.card_id == oracle_id,
+                    CardCopy.id.not_in(assigned_copy_ids),
+                )
+                .order_by(CardCopy.id)
+                .limit(quantity)
+            ).all()
+        )
+        for copy in free_copies:
+            self._session.delete(copy)
+        self._session.flush()
+        return len(free_copies)
+
+    def set_total_copies(self, oracle_id: str, total: int) -> None:
+        """Set physical copy count. Cannot go below copies assigned to armed decks."""
+        if total < 0:
+            raise ValueError("Copy count cannot be negative")
+
+        current_total = int(
+            self._session.scalar(
+                select(func.count())
+                .select_from(CardCopy)
+                .where(CardCopy.card_id == oracle_id)
+            )
+            or 0
+        )
+        assigned = int(
+            self._session.scalar(
+                select(func.count())
+                .select_from(CardCopy)
+                .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
+                .where(CardCopy.card_id == oracle_id)
+            )
+            or 0
+        )
+        if total < assigned:
+            raise ValueError(
+                f"Cannot set total below {assigned} copies assigned to armed decks"
+            )
+
+        if total > current_total:
+            self.add_copy(oracle_id, total - current_total)
+        elif total < current_total:
+            removed = self.remove_free_copies(oracle_id, current_total - total)
+            if removed != current_total - total:
+                raise ValueError("Not enough free copies to remove")
+
     def free_counts(self) -> dict[str, int]:
         assigned_copy_ids = select(CardAssignment.card_copy_id)
         rows = self._session.execute(

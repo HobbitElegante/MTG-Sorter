@@ -176,7 +176,7 @@ class _FakeScryfall:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def fetch_and_cache(self, name: str) -> Card:
+    def fetch_and_cache(self, name: str, *, prefer_token: bool = False) -> Card:
         card = self._session.scalar(select(Card).where(Card.name == name))
         if card is None:
             card = Card(
@@ -188,6 +188,9 @@ class _FakeScryfall:
             self._session.add(card)
             self._session.flush()
         return card
+
+    def lookup_local(self, name: str, *, prefer_token: bool = False) -> Card | None:
+        return self._session.scalar(select(Card).where(Card.name == name))
 
     def close(self) -> None:
         return None

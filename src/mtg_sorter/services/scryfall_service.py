@@ -1,6 +1,6 @@
 import re
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import (
@@ -15,6 +15,26 @@ from mtg_sorter.models import Card
 def normalize_card_name(name: str) -> str:
     lowered = name.casefold().strip()
     return re.sub(r"[^a-z0-9]+", "", lowered)
+
+
+def _is_lookup_candidate(card: Card) -> bool:
+    return not is_art_series_type_line(card.type_line)
+
+
+def _pick_preferred_card(candidates: list[Card], *, prefer_token: bool) -> Card | None:
+    """Prefer the playable card over a same-named token (or the reverse)."""
+    usable = [card for card in candidates if _is_lookup_candidate(card)]
+    if not usable:
+        return None
+    if prefer_token:
+        tokens = [card for card in usable if card.is_token]
+        if tokens:
+            return tokens[0]
+        return usable[0]
+    playable = [card for card in usable if not card.is_token]
+    if playable:
+        return playable[0]
+    return usable[0]
 
 
 def card_from_scryfall(payload: dict) -> Card:
@@ -59,38 +79,52 @@ class ScryfallService:
         if self._owns_client:
             self._client.close()
 
-    def lookup_local(self, name: str) -> Card | None:
+    def lookup_local(self, name: str, *, prefer_token: bool = False) -> Card | None:
         trimmed = name.strip()
         if not trimmed:
             return None
 
-        exact = self._session.scalar(
-            select(Card)
-            .where(func.lower(Card.name) == trimmed.casefold())
-            .where(or_(Card.type_line.is_(None), Card.type_line != "Card // Card"))
-            .limit(1)
+        exact_matches = list(
+            self._session.scalars(
+                select(Card).where(func.lower(Card.name) == trimmed.casefold())
+            ).all()
         )
+        exact = _pick_preferred_card(exact_matches, prefer_token=prefer_token)
         if exact is not None:
             return exact
 
         normalized_query = normalize_card_name(trimmed)
         if normalized_query:
-            for card in self._session.scalars(select(Card)).all():
-                if is_art_series_type_line(card.type_line):
-                    continue
-                if normalize_card_name(card.name) == normalized_query:
-                    return card
+            normalized_matches = [
+                card
+                for card in self._session.scalars(select(Card)).all()
+                if normalize_card_name(card.name) == normalized_query
+            ]
+            normalized = _pick_preferred_card(
+                normalized_matches, prefer_token=prefer_token
+            )
+            if normalized is not None:
+                return normalized
 
-        fuzzy_matches = [
-            card
-            for card in self._session.scalars(
-                select(Card).where(Card.name.ilike(f"%{trimmed}%")).limit(10)
+        fuzzy_matches = list(
+            self._session.scalars(
+                select(Card).where(Card.name.ilike(f"%{trimmed}%")).limit(20)
             ).all()
-            if not is_art_series_type_line(card.type_line)
+        )
+        preferred_fuzzy = [
+            card
+            for card in fuzzy_matches
+            if _is_lookup_candidate(card)
+            and (card.is_token if prefer_token else not card.is_token)
         ]
-        if len(fuzzy_matches) == 1:
-            return fuzzy_matches[0]
-
+        if len(preferred_fuzzy) == 1:
+            return preferred_fuzzy[0]
+        if len(preferred_fuzzy) == 0:
+            fallback = _pick_preferred_card(fuzzy_matches, prefer_token=prefer_token)
+            # Only accept a sole fuzzy fallback to avoid ambiguous names.
+            usable = [card for card in fuzzy_matches if _is_lookup_candidate(card)]
+            if len(usable) == 1:
+                return fallback
         return None
 
     def upsert_from_payload(self, payload: dict) -> Card:
@@ -113,8 +147,8 @@ class ScryfallService:
         self._session.flush()
         return card
 
-    def fetch_and_cache(self, name: str) -> Card:
-        cached = self.lookup_local(name)
+    def fetch_and_cache(self, name: str, *, prefer_token: bool = False) -> Card:
+        cached = self.lookup_local(name, prefer_token=prefer_token)
         if cached is not None:
             return cached
 
@@ -125,7 +159,14 @@ class ScryfallService:
                 f"Card '{name}' is not cached locally and Scryfall is unavailable."
             ) from exc
 
-        return self.upsert_from_payload(payload)
+        card = self.upsert_from_payload(payload)
+        if prefer_token == card.is_token:
+            return card
+
+        # Named API usually returns the playable card; if we wanted the other
+        # side of a shared name, try the local cache again after upserting.
+        preferred = self.lookup_local(name, prefer_token=prefer_token)
+        return preferred if preferred is not None else card
 
     def cached_card_count(self) -> int:
         return int(self._session.scalar(select(func.count()).select_from(Card)) or 0)
