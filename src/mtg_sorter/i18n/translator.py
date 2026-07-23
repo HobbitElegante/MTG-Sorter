@@ -43,6 +43,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.status.dismantled": "Dismantled",
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
+        "decks.export_list": "Export list",
+        "decks.export.title": "Export “{name}” (MTGO)",
+        "decks.export.hint": (
+            "Copy this MTGO-format list and paste it into Moxfield, Arena, or another tool."
+        ),
+        "decks.export.copy": "Copy to clipboard",
+        "decks.export.copied": "Copied to clipboard.",
         "decks.empty": "No decks imported yet.",
         "decks.details": "{name}: {count} list entries",
         "decks.details.armed": "{count} list entries — complete",
@@ -212,6 +219,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.status.dismantled": "Desarmado",
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
+        "decks.export_list": "Exportar listado",
+        "decks.export.title": "Exportar “{name}” (MTGO)",
+        "decks.export.hint": (
+            "Copia este listado en formato MTGO y pégalo en Moxfield, Arena u otra herramienta."
+        ),
+        "decks.export.copy": "Copiar al portapapeles",
+        "decks.export.copied": "Copiado al portapapeles.",
         "decks.empty": "Aún no hay mazos importados.",
         "decks.details": "{name}: {count} entradas en el listado",
         "decks.details.armed": "{count} entradas en el listado — completado",

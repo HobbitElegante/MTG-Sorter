@@ -30,6 +30,7 @@ from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
     DeckEditDialog,
     DeleteDeckDialog,
+    ExportDeckDialog,
     ImportStatusDialog,
 )
 
@@ -121,10 +122,11 @@ class DecksWidget(QWidget):
         self._delete_button.setText(self._translator.t("decks.delete_list"))
         self._armed_button.setText(self._translator.t("decks.set_armed"))
         self._dismantled_button.setText(self._translator.t("decks.set_dismantled"))
+        self._export_button.setText(self._translator.t("decks.export_list"))
         self.refresh()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
 
         self._decks_group = QGroupBox(self._translator.t("decks.list.title"))
         decks_layout = QVBoxLayout(self._decks_group)
@@ -132,7 +134,7 @@ class DecksWidget(QWidget):
         self._deck_list = QListWidget()
         self._deck_list.setItemDelegate(DeckListItemDelegate(self._deck_list))
         self._deck_list.currentItemChanged.connect(self._on_selection_changed)
-        decks_layout.addWidget(self._deck_list)
+        decks_layout.addWidget(self._deck_list, 1)
 
         self._details = QLabel("")
         self._details.setWordWrap(True)
@@ -149,26 +151,30 @@ class DecksWidget(QWidget):
         self._dismantled_button = QPushButton(
             self._translator.t("decks.set_dismantled")
         )
+        self._export_button = QPushButton(self._translator.t("decks.export_list"))
         self._armed_button.clicked.connect(lambda: self._set_status(DeckStatus.ARMED))
         self._dismantled_button.clicked.connect(
             lambda: self._set_status(DeckStatus.DISMANTLED)
         )
+        self._export_button.clicked.connect(self._export_selected_deck)
         actions_layout.addWidget(self._edit_button)
         actions_layout.addWidget(self._delete_button)
         actions_layout.addWidget(self._armed_button)
+        actions_layout.addWidget(self._export_button)
         actions_layout.addWidget(self._dismantled_button)
         actions_layout.addStretch()
         decks_layout.addWidget(self._deck_actions)
         self._deck_actions.setVisible(False)
 
-        layout.addWidget(self._decks_group)
+        # Stretch 1: list fills the tab until the import panel opens.
+        self._main_layout.addWidget(self._decks_group, 1)
 
         trigger_row = QHBoxLayout()
         self._show_import_button = QPushButton(self._translator.t("decks.show_import"))
         self._show_import_button.clicked.connect(self._show_import_section)
         trigger_row.addWidget(self._show_import_button)
         trigger_row.addStretch()
-        layout.addLayout(trigger_row)
+        self._main_layout.addLayout(trigger_row)
 
         self._import_group = QGroupBox(self._translator.t("decks.import"))
         import_layout = QVBoxLayout(self._import_group)
@@ -182,11 +188,11 @@ class DecksWidget(QWidget):
         self._commander_input.setPlaceholderText(self._translator.t("decks.commander"))
         form.addRow(self._commander_input)
 
+        import_layout.addLayout(form)
+
         self._import_text = QTextEdit()
         self._import_text.setPlaceholderText("1 Sol Ring\n1 Arcane Signet")
-        form.addRow(self._import_text)
-
-        import_layout.addLayout(form)
+        import_layout.addWidget(self._import_text, 1)
 
         import_buttons = QHBoxLayout()
         self._load_file_button = QPushButton(self._translator.t("decks.load_file"))
@@ -206,8 +212,8 @@ class DecksWidget(QWidget):
         import_layout.addLayout(import_buttons)
 
         self._import_group.setVisible(False)
-        layout.addWidget(self._import_group)
-        layout.addStretch()
+        # Stretch 0 while hidden; becomes 1 when open so list/import share ~50/50.
+        self._main_layout.addWidget(self._import_group, 0)
 
     @staticmethod
     def _format_deck_label(
@@ -222,9 +228,13 @@ class DecksWidget(QWidget):
 
     def _show_import_section(self) -> None:
         self._import_group.setVisible(True)
+        self._main_layout.setStretchFactor(self._decks_group, 1)
+        self._main_layout.setStretchFactor(self._import_group, 1)
 
     def _hide_import_section(self) -> None:
         self._import_group.setVisible(False)
+        self._main_layout.setStretchFactor(self._import_group, 0)
+        self._main_layout.setStretchFactor(self._decks_group, 1)
 
     def refresh(self) -> None:
         selected_id = self._selected_deck_id()
@@ -295,6 +305,34 @@ class DecksWidget(QWidget):
                         available=available,
                     )
                 )
+
+    def _export_selected_deck(self) -> None:
+        deck_id = self._selected_deck_id()
+        if deck_id is None:
+            return
+
+        try:
+            with get_session() as session:
+                deck = DeckService(session).get_deck(deck_id)
+                if deck is None:
+                    return
+                deck_name = deck.name
+                scryfall = ScryfallService(session)
+                try:
+                    text = ImportService(session, scryfall).deck_to_moxfield_text(
+                        deck_id
+                    )
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        ExportDeckDialog(self._translator, deck_name, text, self).exec()
 
     def _edit_selected_deck(self) -> None:
         deck_id = self._selected_deck_id()

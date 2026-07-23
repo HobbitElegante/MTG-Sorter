@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -35,6 +37,57 @@ from mtg_sorter.services.deck_service import (
     DeckEditRow,
 )
 from mtg_sorter.services.import_service import TrackableDeckCard
+
+
+class ExportDeckDialog(QDialog):
+    """Read-only MTGO / Moxfield text export for copy-paste."""
+
+    def __init__(
+        self,
+        translator: Translator,
+        deck_name: str,
+        text: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self.setWindowTitle(
+            translator.t("decks.export.title").format(name=deck_name)
+        )
+        self.resize(480, 560)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel(translator.t("decks.export.hint"))
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._text = QTextEdit()
+        self._text.setReadOnly(True)
+        self._text.setPlainText(text)
+        self._text.selectAll()
+        layout.addWidget(self._text, 1)
+
+        buttons = QHBoxLayout()
+        self._copy_button = QPushButton(translator.t("decks.export.copy"))
+        self._copy_button.clicked.connect(self._copy_to_clipboard)
+        buttons.addWidget(self._copy_button)
+        buttons.addStretch()
+        close_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_box.rejected.connect(self.reject)
+        buttons.addWidget(close_box)
+        layout.addLayout(buttons)
+
+        self._status = QLabel("")
+        layout.addWidget(self._status)
+
+    def _copy_to_clipboard(self) -> None:
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return
+        clipboard.setText(self._text.toPlainText())
+        self._status.setText(self._translator.t("decks.export.copied"))
+        self._text.selectAll()
+        self._text.setFocus()
 
 
 class QuantityStepper(QWidget):

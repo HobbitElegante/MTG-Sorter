@@ -2,12 +2,14 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.5)
+## Features (v0.3.6)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
 - **Inventory tab:** searchable table; add new cards to the collection; edit copy counts (cannot drop below assigned copies)
 - Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
+- **Export list** to MTGO text (dialog + copy to clipboard)
 - Deck list storage with armed/dismantled status and automatic copy assignment
+- Decks tab: full-height deck list; import form shares ~half the height when open
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
@@ -82,9 +84,10 @@ uv run pytest
 
 Export from Moxfield: `More → Export → Copy for MTGO`.
 
-## Editing and deleting decks
+## Editing, exporting, and deleting decks
 
 - **Edit list:** table of cards with list quantity, free inventory (−/+), replace, and add cards into open slots (list size preserved).
+- **Export list:** opens a dialog with the MTGO-format list; copy to clipboard for Moxfield or other tools.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
 - Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”.
 
@@ -128,7 +131,7 @@ tests/
 
 ## Seed decks (reference)
 
-Local DB typically includes armed seeds (Kellan, Athreos, Ghen, Legolas, Lord Xander) plus dismantled decks (Emmara, Saskia, Anje, Rowan). About ~16 of ~25 Moxfield lists still to import.
+Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free).
 
 Fixture: `tests/fixtures/kellan_deck.txt`
 
