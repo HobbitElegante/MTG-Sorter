@@ -128,7 +128,7 @@ tests/
 
 ## Seed decks (reference)
 
-Local DB typically includes armed seeds (Kellan, Athreos, Ghen, Legolas, Lord Xander) plus dismantled test decks (e.g. Emmara, Saskia).
+Local DB typically includes armed seeds (Kellan, Athreos, Ghen, Legolas, Lord Xander) plus dismantled decks (Emmara, Saskia, Anje, Rowan). About ~16 of ~25 Moxfield lists still to import.
 
 Fixture: `tests/fixtures/kellan_deck.txt`
 
