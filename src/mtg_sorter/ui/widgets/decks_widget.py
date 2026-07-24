@@ -27,6 +27,8 @@ from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services import DeckService, ImportService, ScryfallService
+from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
+from mtg_sorter.ui.inventory_display import format_commander_legality_tooltip
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
     CommandZoneFields,
@@ -39,10 +41,11 @@ from mtg_sorter.ui.widgets.import_dialogs import (
 
 DECK_NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 DECK_STATUS_ROLE = Qt.ItemDataRole.UserRole + 2
+DECK_WARNING_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 class DeckListItemDelegate(QStyledItemDelegate):
-    """Paint deck name on the left and [Armed|Dismantled] flush right."""
+    """Paint deck name on the left; optional ⚠ then [Armed|Dismantled] flush right."""
 
     def paint(
         self,
@@ -75,22 +78,39 @@ class DeckListItemDelegate(QStyledItemDelegate):
 
         name = str(index.data(DECK_NAME_ROLE) or "")
         status = str(index.data(DECK_STATUS_ROLE) or "")
+        warning = str(index.data(DECK_WARNING_ROLE) or "")
         metrics = option.fontMetrics
         padding = 8
-        status_width = metrics.horizontalAdvance(status) + padding
+        gap = 6
+        status_width = metrics.horizontalAdvance(status)
+        warning_width = metrics.horizontalAdvance(warning) if warning else 0
+        trailing = status_width + (gap + warning_width if warning else 0) + padding
         rect = option.rect.adjusted(padding, 0, -padding, 0)
         name_rect = QRect(
             rect.left(),
             rect.top(),
-            max(0, rect.width() - status_width),
+            max(0, rect.width() - trailing),
             rect.height(),
         )
+        cursor_x = rect.right() - status_width + 1
         status_rect = QRect(
-            rect.right() - status_width + padding,
+            cursor_x,
             rect.top(),
-            status_width - padding,
+            status_width,
             rect.height(),
         )
+        if warning:
+            warn_rect = QRect(
+                cursor_x - gap - warning_width,
+                rect.top(),
+                warning_width,
+                rect.height(),
+            )
+            painter.drawText(
+                warn_rect,
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                warning,
+            )
 
         elided = metrics.elidedText(
             name, Qt.TextElideMode.ElideRight, name_rect.width()
@@ -126,6 +146,9 @@ class DecksWidget(QWidget):
         self._submit_import_button.setText(self._translator.t("decks.submit_import"))
         self._cancel_import_button.setText(self._translator.t("decks.cancel_import"))
         self._name_input.setPlaceholderText(self._translator.t("decks.name"))
+        self._import_text.setPlaceholderText(
+            self._translator.t("decks.import.placeholder")
+        )
         self._command_zone.retranslate()
         self._edit_details_button.setText(self._translator.t("decks.edit_details"))
         self._edit_button.setText(self._translator.t("decks.edit_list"))
@@ -249,7 +272,9 @@ class DecksWidget(QWidget):
         import_layout.addWidget(self._command_zone)
 
         self._import_text = QTextEdit()
-        self._import_text.setPlaceholderText("1 Sol Ring\n1 Arcane Signet")
+        self._import_text.setPlaceholderText(
+            self._translator.t("decks.import.placeholder")
+        )
         import_layout.addWidget(self._import_text, 1)
 
         import_buttons = QHBoxLayout()
@@ -334,10 +359,22 @@ class DecksWidget(QWidget):
                 name_label, status_label = self._format_deck_label(
                     index, deck.name, deck.status, self._translator
                 )
+                issues = service.commander_legality_issues(deck.id)
                 item = QListWidgetItem(name_label)
                 item.setData(Qt.ItemDataRole.UserRole, deck.id)
                 item.setData(DECK_NAME_ROLE, name_label)
                 item.setData(DECK_STATUS_ROLE, status_label)
+                if issues:
+                    item.setData(
+                        DECK_WARNING_ROLE,
+                        self._translator.t("decks.legality.warning"),
+                    )
+                    item.setToolTip(
+                        format_commander_legality_tooltip(issues, self._translator)
+                    )
+                else:
+                    item.setData(DECK_WARNING_ROLE, "")
+                    item.setToolTip("")
                 self._deck_list.addItem(item)
                 if deck.id == selected_id:
                     self._deck_list.setCurrentItem(item)
@@ -598,6 +635,59 @@ class DecksWidget(QWidget):
         commander = self._command_zone.commander_name()
         secondary_role = self._command_zone.secondary_role()
         secondary_name = self._command_zone.secondary_name()
+        if not text:
+            return
+
+        # Expand Moxfield URL into the form so the user can review before arming.
+        if detect_format(text) == DecklistFormat.MOXFIELD_URL:
+            try:
+                with get_session() as session:
+                    scryfall = ScryfallService(session)
+                    try:
+                        resolved = ImportService(
+                            session, scryfall
+                        ).resolve_decklist_input(text)
+                    finally:
+                        scryfall.close()
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    self._translator.t("common.error"),
+                    self._translator.t("decks.import.url_failed").format(
+                        error=str(exc)
+                    ),
+                )
+                return
+
+            self._import_text.setPlainText(resolved.text)
+            if resolved.deck_name and not name:
+                self._name_input.setText(resolved.deck_name)
+                name = resolved.deck_name
+            if resolved.commander_name and not commander:
+                self._command_zone.set_commander_name(resolved.commander_name)
+                commander = resolved.commander_name
+            if (
+                resolved.secondary_role is not None
+                and resolved.secondary_name
+                and secondary_role is None
+            ):
+                self._command_zone.set_secondary(
+                    resolved.secondary_role, resolved.secondary_name
+                )
+                secondary_role = resolved.secondary_role
+                secondary_name = resolved.secondary_name
+            QMessageBox.information(
+                self,
+                self._translator.t("decks.import"),
+                self._translator.t("decks.import.url_filled"),
+            )
+            return
+
+        name = self._name_input.text().strip()
+        text = self._import_text.toPlainText().strip()
+        commander = self._command_zone.commander_name()
+        secondary_role = self._command_zone.secondary_role()
+        secondary_name = self._command_zone.secondary_name()
         if not name or not text:
             return
 
@@ -634,7 +724,7 @@ class DecksWidget(QWidget):
                         secondary_oracle_id = secondary_card.oracle_id
 
                     importer = ImportService(session, scryfall)
-                    result = importer.import_moxfield_text(
+                    result = importer.import_decklist_text(
                         deck_name=name,
                         text=text,
                         status=status,
@@ -728,7 +818,7 @@ class DecksWidget(QWidget):
             self,
             self._translator.t("decks.load_file.dialog_title"),
             str(Path.home()),
-            "Text files (*.txt);;All files (*)",
+            "Text files (*.txt *.dek);;MTGO decks (*.dek);;All files (*)",
         )
         if not path:
             return

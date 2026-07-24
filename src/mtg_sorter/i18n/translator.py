@@ -22,9 +22,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_new": "Add new card to collection",
         "inventory.add_list": "Add list to collection",
         "inventory.add_list.title": "Add list to collection",
-        "inventory.add_list.dialog_title": "Open MTGO / Moxfield list",
+        "inventory.add_list.dialog_title": "Open deck list",
         "inventory.add_list.identified": "Identified cards",
-        "inventory.add_list.unresolved": "Unrecognized lines (MTGO)",
+        "inventory.add_list.unresolved": "Unrecognized lines",
         "inventory.add_list.unresolved.hint": (
             "Edit a line and press Recheck, or Remove to discard it."
         ),
@@ -40,7 +40,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_list.remove": "Remove",
         "inventory.add_list.confirm": "Add copies",
         "inventory.add_list.empty": "No cards found in that list.",
-        "inventory.add_list.placeholder": "1 Sol Ring\n1 Arcane Signet",
+        "inventory.add_list.placeholder": (
+            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield deck URL…"
+        ),
+        "inventory.add_list.url_failed": "Could not download that Moxfield deck:\n{error}",
         "inventory.add_list.not_trackable": (
             "Basics and tokens are not tracked in inventory. Choose another card."
         ),
@@ -67,11 +70,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.color": "Colors",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
-        "decks.import": "Import Moxfield list",
+        "decks.import": "Import new list",
         "decks.name": "Deck name",
         "decks.commander": "Commander name (optional)",
+        "decks.import.placeholder": (
+            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield deck URL…"
+        ),
+        "decks.import.url_failed": "Could not download that Moxfield deck:\n{error}",
+        "decks.import.url_filled": "Loaded deck from Moxfield. Review and confirm again.",
         "decks.status.armed": "Armed",
         "decks.status.dismantled": "Dismantled",
+        "decks.legality.warning": "⚠",
+        "decks.legality.banned": "banned",
+        "decks.legality.not_legal": "not legal",
+        "decks.legality.restricted": "restricted",
+        "decks.legality.tooltip_header": "Commander format warnings (advisory — does not block assembly):",
+        "decks.legality.tooltip_line": "• {name} — {status}",
+        "decks.legality.card_tooltip": "{name} is {status} in Commander (advisory).",
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
         "decks.export_list": "Export list",
@@ -151,7 +166,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.load_file": "Load file",
         "decks.submit_import": "Confirm list",
         "decks.cancel_import": "Cancel",
-        "decks.load_file.dialog_title": "Open Moxfield export",
+        "decks.load_file.dialog_title": "Open deck list",
         "decks.edit.title": "Edit deck list",
         "decks.edit.save": "Save list",
         "decks.edit.total": "Cards in list: {current} / {target}",
@@ -232,6 +247,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.inventory.assigned": "Assigned to",
         "browse.inventory.free": "Free",
         "browse.scryfall.sync": "Download oracle-cards bulk pack",
+        "browse.scryfall.legality_refresh": "Refresh Commander legalities (collection)",
+        "browse.scryfall.legality_starting": "Refreshing Commander legalities…",
+        "browse.scryfall.legality_done": (
+            "Updated Commander legalities for {count:,} collection cards."
+        ),
         "browse.scryfall.starting": "Starting Scryfall sync…",
         "browse.scryfall.done": "Imported {count:,} oracle cards.",
         "browse.scryfall.never": "Never",
@@ -244,7 +264,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.scryfall.info": (
             "Individual API lookups are saved in the local Card cache. "
             "Download the Scryfall oracle-cards bulk pack once to resolve "
-            "imports and inventory searches offline."
+            "imports and inventory searches offline. "
+            "Use Refresh Commander legalities to update format status for "
+            "cards you own or have on deck lists (faster than a full bulk sync)."
         ),
     },
     "es": {
@@ -270,9 +292,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_new": "Agregar carta nueva a la colección",
         "inventory.add_list": "Agregar listado a la colección",
         "inventory.add_list.title": "Agregar listado a la colección",
-        "inventory.add_list.dialog_title": "Abrir listado MTGO / Moxfield",
+        "inventory.add_list.dialog_title": "Abrir listado",
         "inventory.add_list.identified": "Cartas identificadas",
-        "inventory.add_list.unresolved": "Líneas no reconocidas (MTGO)",
+        "inventory.add_list.unresolved": "Líneas no reconocidas",
         "inventory.add_list.unresolved.hint": (
             "Edita una línea y pulsa Rechequear, o Quitar para descartarla."
         ),
@@ -288,7 +310,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_list.remove": "Quitar",
         "inventory.add_list.confirm": "Agregar copias",
         "inventory.add_list.empty": "No se encontraron cartas en ese listado.",
-        "inventory.add_list.placeholder": "1 Sol Ring\n1 Arcane Signet",
+        "inventory.add_list.placeholder": (
+            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield…"
+        ),
+        "inventory.add_list.url_failed": "No se pudo descargar ese mazo de Moxfield:\n{error}",
         "inventory.add_list.not_trackable": (
             "Las básicas y tokens no se llevan en el inventario. Elige otra carta."
         ),
@@ -315,11 +340,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.color": "Colores",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
-        "decks.import": "Importar lista Moxfield",
+        "decks.import": "Importar listado nuevo",
         "decks.name": "Nombre del mazo",
         "decks.commander": "Nombre del commander (opcional)",
+        "decks.import.placeholder": (
+            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield…"
+        ),
+        "decks.import.url_failed": "No se pudo descargar ese mazo de Moxfield:\n{error}",
+        "decks.import.url_filled": "Mazo cargado desde Moxfield. Revísalo y confirma de nuevo.",
         "decks.status.armed": "Armado",
         "decks.status.dismantled": "Desarmado",
+        "decks.legality.warning": "⚠",
+        "decks.legality.banned": "baneada",
+        "decks.legality.not_legal": "no legal",
+        "decks.legality.restricted": "restringida",
+        "decks.legality.tooltip_header": "Avisos de formato Commander (informativos — no impiden armar):",
+        "decks.legality.tooltip_line": "• {name} — {status}",
+        "decks.legality.card_tooltip": "{name} está {status} en Commander (aviso).",
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
         "decks.export_list": "Exportar listado",
@@ -401,7 +438,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.load_file": "Cargar archivo",
         "decks.submit_import": "Confirmar listado",
         "decks.cancel_import": "Cancelar",
-        "decks.load_file.dialog_title": "Abrir export de Moxfield",
+        "decks.load_file.dialog_title": "Abrir listado",
         "decks.edit.title": "Editar listado del mazo",
         "decks.edit.save": "Guardar listado",
         "decks.edit.total": "Cartas en listado: {current} / {target}",
@@ -482,6 +519,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.inventory.assigned": "Asignada a",
         "browse.inventory.free": "Libre",
         "browse.scryfall.sync": "Descargar pack bulk oracle-cards",
+        "browse.scryfall.legality_refresh": "Actualizar legalidades Commander (colección)",
+        "browse.scryfall.legality_starting": "Actualizando legalidades Commander…",
+        "browse.scryfall.legality_done": (
+            "Legalidades Commander actualizadas para {count:,} cartas de la colección."
+        ),
         "browse.scryfall.starting": "Iniciando sincronización con Scryfall…",
         "browse.scryfall.done": "Se importaron {count:,} cartas oracle.",
         "browse.scryfall.never": "Nunca",
@@ -494,7 +536,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.scryfall.info": (
             "Las búsquedas individuales por API se guardan en la caché local. "
             "Descarga el pack bulk oracle-cards de Scryfall una vez para "
-            "importar y buscar cartas sin conexión."
+            "importar y buscar cartas sin conexión. "
+            "Usa Actualizar legalidades Commander para refrescar el estado de "
+            "formato de las cartas que tienes o están en listados (más rápido "
+            "que un sync bulk completo)."
         ),
     },
 }

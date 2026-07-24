@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck, DeckCard
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 
@@ -30,6 +31,7 @@ class DeckEditRow:
     is_basic_land: bool
     is_token: bool
     removable_copies: int
+    commander_legality: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,15 @@ class FreeCoverage:
 
     covered: int
     required: int
+
+
+@dataclass(frozen=True)
+class CommanderLegalityIssue:
+    """A list card that Scryfall marks as not fully legal in Commander."""
+
+    oracle_id: str
+    name: str
+    legality: str
 
 
 class InventoryService:
@@ -527,6 +538,7 @@ class DeckService:
                 removable_copies=(
                     assigned_here.get(card.oracle_id, 0) + free.get(card.oracle_id, 0)
                 ),
+                commander_legality=card.commander_legality,
             )
             for deck_card, card in rows
         ]
@@ -713,3 +725,29 @@ class DeckService:
             for card_id, need in requirements.items()
         )
         return FreeCoverage(covered=covered, required=required)
+
+    def commander_legality_issues(
+        self, deck_id: int
+    ) -> list[CommanderLegalityIssue]:
+        """Cards on the list with Scryfall Commander legality issues (advisory)."""
+        rows = self._session.execute(
+            select(Card.oracle_id, Card.name, Card.commander_legality)
+            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+            )
+            .distinct()
+        ).all()
+        issues: list[CommanderLegalityIssue] = []
+        for oracle_id, name, legality in rows:
+            if not is_commander_legality_issue(legality):
+                continue
+            issues.append(
+                CommanderLegalityIssue(
+                    oracle_id=oracle_id,
+                    name=name,
+                    legality=str(legality),
+                )
+            )
+        return sorted(issues, key=lambda item: item.name.casefold())

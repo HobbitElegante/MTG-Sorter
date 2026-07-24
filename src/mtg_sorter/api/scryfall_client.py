@@ -37,6 +37,18 @@ class ScryfallClient:
     def fetch_card_fuzzy(self, name: str) -> dict[str, Any]:
         return self._get("/cards/named", params={"fuzzy": name})
 
+    def fetch_cards_collection(
+        self, identifiers: list[dict[str, str]]
+    ) -> dict[str, Any]:
+        """POST /cards/collection (max 75 identifiers per Scryfall request)."""
+        self._throttle()
+        response = self._client.post("/cards/collection", json={"identifiers": identifiers})
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected Scryfall collection response shape")
+        return payload
+
     def fetch_bulk_data(self) -> list[dict[str, Any]]:
         payload = self._get("/bulk-data")
         data = payload.get("data")

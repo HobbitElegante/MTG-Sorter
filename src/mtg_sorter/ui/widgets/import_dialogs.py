@@ -39,6 +39,8 @@ from mtg_sorter.services.deck_service import (
     DeckEditRow,
 )
 from mtg_sorter.services.import_service import InventoryListCard, TrackableDeckCard
+from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
+from mtg_sorter.ui.inventory_display import format_card_legality_tooltip
 
 SECONDARY_ROLES: tuple[DeckCardRole, ...] = (
     DeckCardRole.PARTNER,
@@ -176,6 +178,12 @@ class CommandZoneFields(QWidget):
     def clear(self) -> None:
         self._commander_input.clear()
         self._hide_secondary()
+
+    def set_commander_name(self, name: str | None) -> None:
+        self._commander_input.setText(name or "")
+
+    def set_secondary(self, role: DeckCardRole, name: str) -> None:
+        self._show_secondary(role, name)
 
     def validation_error(self) -> str | None:
         if self._secondary_role is not None and not self.secondary_name():
@@ -984,6 +992,7 @@ class EditableDeckLine:
     removable_copies: int
     baseline_free: int
     desired_free: int
+    commander_legality: str | None = None
 
 
 @dataclass
@@ -995,6 +1004,7 @@ class CardPickResult:
     is_basic_land: bool
     is_token: bool
     remove_outgoing: int = 0
+    commander_legality: str | None = None
 
 
 class CardPickDialog(QDialog):
@@ -1141,6 +1151,7 @@ class CardPickDialog(QDialog):
             is_basic_land=card.is_basic_land,
             is_token=card.is_token,
             remove_outgoing=remove_outgoing,
+            commander_legality=card.commander_legality,
         )
         self.accept()
 
@@ -1170,6 +1181,7 @@ class DeckEditDialog(QDialog):
                 removable_copies=row.removable_copies,
                 baseline_free=row.free_copies,
                 desired_free=row.free_copies,
+                commander_legality=row.commander_legality,
             )
             for row in rows
         ]
@@ -1249,7 +1261,26 @@ class DeckEditDialog(QDialog):
         self._free_steppers.clear()
         self._table.setRowCount(len(self._lines))
         for row, line in enumerate(self._lines):
-            self._table.setItem(row, 0, QTableWidgetItem(line.name))
+            name_cell = QWidget()
+            name_layout = QHBoxLayout(name_cell)
+            name_layout.setContentsMargins(6, 0, 6, 0)
+            name_layout.setSpacing(4)
+            name_label = QLabel(line.name)
+            name_label.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
+            name_layout.addWidget(name_label, 1)
+            if is_commander_legality_issue(line.commander_legality):
+                warn = QLabel(self._translator.t("decks.legality.warning"))
+                warn.setToolTip(
+                    format_card_legality_tooltip(
+                        line.name, line.commander_legality, self._translator
+                    )
+                )
+                name_layout.addWidget(
+                    warn, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+            self._table.setCellWidget(row, 0, name_cell)
 
             max_qty = line.quantity + self._open_slots()
             stepper = QuantityStepper(max(max_qty, line.quantity, 1))
@@ -1346,6 +1377,7 @@ class DeckEditDialog(QDialog):
                 removable_copies=0,
                 baseline_free=0,
                 desired_free=picked.available,
+                commander_legality=picked.commander_legality,
             )
         )
         self._rebuild_table()
@@ -1380,6 +1412,7 @@ class DeckEditDialog(QDialog):
             removable_copies=0,
             baseline_free=0,
             desired_free=picked.available,
+            commander_legality=picked.commander_legality,
         )
         self._rebuild_table()
 

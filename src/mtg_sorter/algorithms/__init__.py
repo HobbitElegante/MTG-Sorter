@@ -2,6 +2,7 @@ from mtg_sorter.algorithms.card_utils import (
     is_art_series_type_line,
     is_basic_land_name,
     is_basic_land_type_line,
+    is_commander_legality_issue,
     is_scryfall_art_series,
     is_token_type_line,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "is_art_series_type_line",
     "is_basic_land_name",
     "is_basic_land_type_line",
+    "is_commander_legality_issue",
     "is_scryfall_art_series",
     "is_token_type_line",
 ]

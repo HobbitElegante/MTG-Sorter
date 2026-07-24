@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.services import BrowseService, ScryfallBulkService
+from mtg_sorter.services import BrowseService, ScryfallBulkService, ScryfallService
 from mtg_sorter.ui.inventory_display import (
     format_availability_status,
     format_inventory_decks,
@@ -52,6 +52,26 @@ class BulkSyncWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class LegalityRefreshWorker(QThread):
+    progress = Signal(str)
+    finished_ok = Signal(int)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            with get_session() as session:
+                scryfall = ScryfallService(session)
+                try:
+                    count = scryfall.refresh_collection_commander_legalities(
+                        progress=self.progress.emit
+                    )
+                finally:
+                    scryfall.close()
+            self.finished_ok.emit(count)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class BrowseWidget(QWidget):
     changed = Signal()
     locale_changed = Signal(str)
@@ -60,6 +80,7 @@ class BrowseWidget(QWidget):
         super().__init__(parent)
         self._translator = translator
         self._sync_worker: BulkSyncWorker | None = None
+        self._legality_worker: LegalityRefreshWorker | None = None
         self._build_ui()
         self.refresh()
 
@@ -74,6 +95,10 @@ class BrowseWidget(QWidget):
         )
         self._card_search.setPlaceholderText(self._translator.t("browse.cards.search"))
         self._sync_button.setText(self._translator.t("browse.scryfall.sync"))
+        self._legality_button.setText(
+            self._translator.t("browse.scryfall.legality_refresh")
+        )
+        self._scryfall_info.setText(self._translator.t("browse.scryfall.info"))
         self._language_group.setTitle(self._translator.t("config.language"))
         self._language_label.setText(self._translator.t("config.language"))
         self._inventory_summary_group.setTitle(
@@ -274,11 +299,17 @@ class BrowseWidget(QWidget):
         self._sync_button = QPushButton(self._translator.t("browse.scryfall.sync"))
         self._sync_button.clicked.connect(self._start_bulk_sync)
         form.addRow(self._sync_button)
+
+        self._legality_button = QPushButton(
+            self._translator.t("browse.scryfall.legality_refresh")
+        )
+        self._legality_button.clicked.connect(self._start_legality_refresh)
+        form.addRow(self._legality_button)
         layout.addWidget(self._scryfall_group)
 
-        info = QLabel(self._translator.t("browse.scryfall.info"))
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        self._scryfall_info = QLabel(self._translator.t("browse.scryfall.info"))
+        self._scryfall_info.setWordWrap(True)
+        layout.addWidget(self._scryfall_info)
         layout.addStretch()
         return panel
 
@@ -435,11 +466,17 @@ class BrowseWidget(QWidget):
             )
         )
 
+    def _set_scryfall_busy(self, busy: bool) -> None:
+        self._sync_button.setEnabled(not busy)
+        self._legality_button.setEnabled(not busy)
+
     def _start_bulk_sync(self) -> None:
         if self._sync_worker is not None and self._sync_worker.isRunning():
             return
+        if self._legality_worker is not None and self._legality_worker.isRunning():
+            return
 
-        self._sync_button.setEnabled(False)
+        self._set_scryfall_busy(True)
         self._sync_progress_label.setText(self._translator.t("browse.scryfall.starting"))
 
         self._sync_worker = BulkSyncWorker()
@@ -449,7 +486,7 @@ class BrowseWidget(QWidget):
         self._sync_worker.start()
 
     def _on_sync_finished(self, imported_cards: int) -> None:
-        self._sync_button.setEnabled(True)
+        self._set_scryfall_busy(False)
         self._sync_progress_label.setText(
             self._translator.t("browse.scryfall.done").format(count=imported_cards)
         )
@@ -457,7 +494,41 @@ class BrowseWidget(QWidget):
         self.changed.emit()
 
     def _on_sync_failed(self, message: str) -> None:
-        self._sync_button.setEnabled(True)
+        self._set_scryfall_busy(False)
+        self._sync_progress_label.setText("")
+        QMessageBox.critical(
+            self,
+            self._translator.t("common.error"),
+            message,
+        )
+
+    def _start_legality_refresh(self) -> None:
+        if self._legality_worker is not None and self._legality_worker.isRunning():
+            return
+        if self._sync_worker is not None and self._sync_worker.isRunning():
+            return
+
+        self._set_scryfall_busy(True)
+        self._sync_progress_label.setText(
+            self._translator.t("browse.scryfall.legality_starting")
+        )
+
+        self._legality_worker = LegalityRefreshWorker()
+        self._legality_worker.progress.connect(self._sync_progress_label.setText)
+        self._legality_worker.finished_ok.connect(self._on_legality_finished)
+        self._legality_worker.failed.connect(self._on_legality_failed)
+        self._legality_worker.start()
+
+    def _on_legality_finished(self, count: int) -> None:
+        self._set_scryfall_busy(False)
+        self._sync_progress_label.setText(
+            self._translator.t("browse.scryfall.legality_done").format(count=count)
+        )
+        self.refresh()
+        self.changed.emit()
+
+    def _on_legality_failed(self, message: str) -> None:
+        self._set_scryfall_busy(False)
         self._sync_progress_label.setText("")
         QMessageBox.critical(
             self,

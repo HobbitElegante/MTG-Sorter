@@ -141,6 +141,7 @@ class ScryfallBulkService:
                     existing.color_identity = card.color_identity
                     existing.cmc = card.cmc
                     existing.image_uri = card.image_uri
+                    existing.commander_legality = card.commander_legality
                     existing.is_basic_land = card.is_basic_land
                     existing.is_token = card.is_token
 

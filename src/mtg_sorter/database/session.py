@@ -60,9 +60,26 @@ def _ensure_deck_sort_order() -> None:
                 )
 
 
+def _ensure_card_commander_legality() -> None:
+    """Add cards.commander_legality on existing DBs (v0.3.20)."""
+    with engine.begin() as conn:
+        columns = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(cards)")).fetchall()
+        }
+        if not columns:
+            return
+        if "commander_legality" in columns:
+            return
+        conn.execute(
+            text("ALTER TABLE cards ADD COLUMN commander_legality VARCHAR(16)")
+        )
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_deck_sort_order()
+    _ensure_card_commander_legality()
 
 
 @contextmanager

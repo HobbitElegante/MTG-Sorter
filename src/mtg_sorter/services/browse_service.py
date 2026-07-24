@@ -29,6 +29,7 @@ class CardSummary:
     is_basic_land: bool
     is_token: bool
     copy_count: int
+    commander_legality: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ class BrowseService:
                 is_basic_land=card.is_basic_land,
                 is_token=card.is_token,
                 copy_count=copy_counts.get(card.oracle_id, 0),
+                commander_legality=card.commander_legality,
             )
             for card in self._session.scalars(query).all()
         ]

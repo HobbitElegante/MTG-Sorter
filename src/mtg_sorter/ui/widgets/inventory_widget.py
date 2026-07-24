@@ -432,7 +432,7 @@ class InventoryWidget(QWidget):
             self,
             self._translator.t("inventory.add_list.dialog_title"),
             str(Path.home()),
-            "Text files (*.txt);;All files (*)",
+            "Text files (*.txt *.dek);;MTGO decks (*.dek);;All files (*)",
         )
         if not path:
             return
@@ -470,7 +470,11 @@ class InventoryWidget(QWidget):
             QMessageBox.critical(
                 self,
                 self._translator.t("common.error"),
-                str(exc),
+                self._translator.t("inventory.add_list.url_failed").format(
+                    error=str(exc)
+                )
+                if "moxfield" in text.casefold()
+                else str(exc),
             )
             return
 

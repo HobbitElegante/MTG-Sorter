@@ -40,3 +40,24 @@ def is_scryfall_art_series(payload: dict) -> bool:
     if payload.get("layout") == "art_series":
         return True
     return is_art_series_type_line(payload.get("type_line"))
+
+
+COMMANDER_LEGALITY_ISSUE_VALUES = frozenset({"banned", "not_legal", "restricted"})
+
+
+def commander_legality_from_payload(payload: dict) -> str | None:
+    """Extract Scryfall legalities.commander (legal / not_legal / banned / restricted)."""
+    legalities = payload.get("legalities")
+    if not isinstance(legalities, dict):
+        return None
+    value = legalities.get("commander")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip().casefold()
+
+
+def is_commander_legality_issue(legality: str | None) -> bool:
+    """True when the card should show a non-blocking Commander format warning."""
+    if legality is None:
+        return False
+    return legality.casefold() in COMMANDER_LEGALITY_ISSUE_VALUES

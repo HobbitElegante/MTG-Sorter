@@ -1,15 +1,19 @@
 import re
+from collections.abc import Callable
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import (
+    commander_legality_from_payload,
     is_art_series_type_line,
     is_basic_land_type_line,
     is_token_type_line,
 )
 from mtg_sorter.api.scryfall_client import ScryfallClient
-from mtg_sorter.models import Card
+from mtg_sorter.config import SCRYFALL_COLLECTION_BATCH_SIZE
+from mtg_sorter.models import Card, CardCopy
+from mtg_sorter.models.deck import DeckCard
 
 
 def normalize_card_name(name: str) -> str:
@@ -60,6 +64,7 @@ def card_from_scryfall(payload: dict) -> Card:
         color_identity="".join(payload.get("color_identity") or []),
         cmc=float(payload.get("cmc") or 0),
         image_uri=image_uri,
+        commander_legality=commander_legality_from_payload(payload),
         is_basic_land=is_basic_land_type_line(type_line),
         is_token=is_token_type_line(type_line),
     )
@@ -142,6 +147,7 @@ class ScryfallService:
             card.color_identity = refreshed.color_identity
             card.cmc = refreshed.cmc
             card.image_uri = refreshed.image_uri
+            card.commander_legality = refreshed.commander_legality
             card.is_basic_land = refreshed.is_basic_land
             card.is_token = refreshed.is_token
         self._session.flush()
@@ -170,3 +176,64 @@ class ScryfallService:
 
     def cached_card_count(self) -> int:
         return int(self._session.scalar(select(func.count()).select_from(Card)) or 0)
+
+    def collection_oracle_ids(self) -> list[str]:
+        """Oracle ids for physical inventory copies and cards on deck lists."""
+        copy_ids = set(self._session.scalars(select(CardCopy.card_id).distinct()).all())
+        deck_ids = set(self._session.scalars(select(DeckCard.card_id).distinct()).all())
+        return sorted(copy_ids | deck_ids)
+
+    def refresh_collection_commander_legalities(
+        self,
+        progress: Callable[[str], None] | None = None,
+    ) -> int:
+        """Fetch Scryfall legalities.commander for collection cards.
+
+        Returns how many cards were looked up (inventory copies ∪ deck lists).
+        """
+        oracle_ids = self.collection_oracle_ids()
+        if not oracle_ids:
+            if progress is not None:
+                progress("No collection cards to refresh.")
+            return 0
+
+        def report(message: str) -> None:
+            if progress is not None:
+                progress(message)
+
+        total = len(oracle_ids)
+        batch_size = SCRYFALL_COLLECTION_BATCH_SIZE
+        for start in range(0, total, batch_size):
+            chunk = oracle_ids[start : start + batch_size]
+            report(
+                f"Refreshing Commander legalities… "
+                f"{min(start + len(chunk), total):,}/{total:,}"
+            )
+            identifiers = [{"oracle_id": oracle_id} for oracle_id in chunk]
+            try:
+                payload = self._client.fetch_cards_collection(identifiers)
+            except Exception as exc:
+                raise ScryfallOfflineError(
+                    "Could not refresh Commander legalities from Scryfall."
+                ) from exc
+
+            data = payload.get("data")
+            if not isinstance(data, list):
+                continue
+            for entry in data:
+                if not isinstance(entry, dict):
+                    continue
+                oracle_id = entry.get("oracle_id")
+                if not isinstance(oracle_id, str):
+                    continue
+                card = self._session.get(Card, oracle_id)
+                legality = commander_legality_from_payload(entry)
+                if card is None:
+                    self.upsert_from_payload(entry)
+                    continue
+                card.commander_legality = legality
+
+            self._session.flush()
+
+        report(f"Commander legalities refreshed for {total:,} collection cards.")
+        return total

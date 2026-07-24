@@ -1,0 +1,10 @@
+Commander
+1 Atraxa, Praetors' Voice (2XM) 190
+
+Deck
+1 Sol Ring (M21) 237
+1 Arcane Signet (ELD) 331
+1 Cultivate (M21) 177
+
+Sideboard
+1 Negate (M20) 69
