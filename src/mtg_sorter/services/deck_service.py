@@ -131,11 +131,241 @@ class DeckService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def list_decks(self) -> list[Deck]:
-        return list(self._session.scalars(select(Deck).order_by(Deck.name)).all())
+    def list_decks(self, status: DeckStatus | None = None) -> list[Deck]:
+        query = select(Deck).order_by(Deck.sort_order, Deck.name, Deck.id)
+        if status is not None:
+            query = query.where(Deck.status == status)
+        return list(self._session.scalars(query).all())
 
     def get_deck(self, deck_id: int) -> Deck | None:
         return self._session.get(Deck, deck_id)
+
+    def next_sort_order(self) -> int:
+        current = self._session.scalar(select(func.max(Deck.sort_order)))
+        return 0 if current is None else int(current) + 1
+
+    def rename_deck(self, deck_id: int, name: str) -> Deck:
+        cleaned = name.strip()
+        if not cleaned:
+            raise ValueError("Deck name cannot be empty")
+        deck = self.get_deck(deck_id)
+        if deck is None:
+            raise ValueError(f"Deck {deck_id} not found")
+        deck.name = cleaned
+        self._session.flush()
+        return deck
+
+    def commander_name(self, deck_id: int) -> str | None:
+        return self.role_card_name(deck_id, DeckCardRole.COMMANDER)
+
+    def role_card_name(self, deck_id: int, role: DeckCardRole) -> str | None:
+        row = self._session.execute(
+            select(Card.name)
+            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role == role,
+            )
+            .order_by(Card.name)
+            .limit(1)
+        ).first()
+        return row[0] if row else None
+
+    def secondary_command_zone(
+        self, deck_id: int
+    ) -> tuple[DeckCardRole, str] | None:
+        """First Partner / Companion / Background entry, if any."""
+        rows = self._session.execute(
+            select(DeckCard.role, Card.name)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role.in_(
+                    (
+                        DeckCardRole.PARTNER,
+                        DeckCardRole.COMPANION,
+                        DeckCardRole.BACKGROUND,
+                    )
+                ),
+            )
+        ).all()
+        if not rows:
+            return None
+        priority = {
+            DeckCardRole.PARTNER: 0,
+            DeckCardRole.COMPANION: 1,
+            DeckCardRole.BACKGROUND: 2,
+        }
+        role, name = min(rows, key=lambda item: (priority[item[0]], item[1].casefold()))
+        return role, name
+
+    def set_commander(self, deck_id: int, oracle_id: str | None) -> None:
+        self.set_role_card(deck_id, DeckCardRole.COMMANDER, oracle_id)
+
+    def set_role_card(
+        self,
+        deck_id: int,
+        role: DeckCardRole,
+        oracle_id: str | None,
+    ) -> None:
+        """Assign a special-zone role (commander / partner / companion / background).
+
+        Pass ``None`` to clear that role (demoting previous holders to MAIN).
+        If ``oracle_id`` is not yet on the list, it is added with quantity 1.
+        """
+        if role not in {
+            DeckCardRole.COMMANDER,
+            DeckCardRole.PARTNER,
+            DeckCardRole.COMPANION,
+            DeckCardRole.BACKGROUND,
+        }:
+            raise ValueError(f"Unsupported command-zone role: {role}")
+
+        deck = self.get_deck(deck_id)
+        if deck is None:
+            raise ValueError(f"Deck {deck_id} not found")
+
+        if oracle_id is not None and self._session.get(Card, oracle_id) is None:
+            raise ValueError(f"Card {oracle_id} not found")
+
+        holders = list(
+            self._session.scalars(
+                select(DeckCard).where(
+                    DeckCard.deck_id == deck_id,
+                    DeckCard.role == role,
+                )
+            ).all()
+        )
+        for entry in holders:
+            if oracle_id is not None and entry.card_id == oracle_id:
+                continue
+            existing_main = self._session.scalar(
+                select(DeckCard).where(
+                    DeckCard.deck_id == deck_id,
+                    DeckCard.card_id == entry.card_id,
+                    DeckCard.role == DeckCardRole.MAIN,
+                )
+            )
+            if existing_main is not None:
+                existing_main.quantity += entry.quantity
+                self._session.delete(entry)
+            else:
+                entry.role = DeckCardRole.MAIN
+
+        self._session.flush()
+
+        if oracle_id is None:
+            return
+
+        already = self._session.scalar(
+            select(DeckCard).where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.card_id == oracle_id,
+                DeckCard.role == role,
+            )
+        )
+        if already is not None:
+            return
+
+        # Drop the card from any other special role before assigning.
+        for other_role in (
+            DeckCardRole.COMMANDER,
+            DeckCardRole.PARTNER,
+            DeckCardRole.COMPANION,
+            DeckCardRole.BACKGROUND,
+        ):
+            if other_role == role:
+                continue
+            other = self._session.scalar(
+                select(DeckCard).where(
+                    DeckCard.deck_id == deck_id,
+                    DeckCard.card_id == oracle_id,
+                    DeckCard.role == other_role,
+                )
+            )
+            if other is not None:
+                self._session.delete(other)
+        self._session.flush()
+
+        main_entry = self._session.scalar(
+            select(DeckCard).where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.card_id == oracle_id,
+                DeckCard.role == DeckCardRole.MAIN,
+            )
+        )
+        if main_entry is not None:
+            if main_entry.quantity > 1:
+                main_entry.quantity -= 1
+            else:
+                self._session.delete(main_entry)
+            self._session.flush()
+
+        self._session.add(
+            DeckCard(
+                deck_id=deck_id,
+                card_id=oracle_id,
+                quantity=1,
+                role=role,
+            )
+        )
+        self._session.flush()
+
+    def set_secondary_command_zone(
+        self,
+        deck_id: int,
+        role: DeckCardRole | None,
+        oracle_id: str | None,
+    ) -> None:
+        """Set exactly one of Partner / Companion / Background, clearing the others."""
+        secondary = {
+            DeckCardRole.PARTNER,
+            DeckCardRole.COMPANION,
+            DeckCardRole.BACKGROUND,
+        }
+        if role is not None and role not in secondary:
+            raise ValueError(f"Secondary role must be partner/companion/background: {role}")
+        if role is not None and oracle_id is None:
+            raise ValueError("Secondary role requires a card")
+
+        for candidate in secondary:
+            if role is not None and candidate == role:
+                continue
+            self.set_role_card(deck_id, candidate, None)
+
+        if role is not None and oracle_id is not None:
+            self.set_role_card(deck_id, role, oracle_id)
+
+    def move_deck(
+        self,
+        deck_id: int,
+        *,
+        direction: int,
+        status: DeckStatus | None = None,
+    ) -> bool:
+        """Swap sort_order with the adjacent deck in the (optionally filtered) list.
+
+        ``direction`` is -1 (up) or +1 (down). Returns False if no move occurred.
+        """
+        if direction not in (-1, 1):
+            raise ValueError("direction must be -1 or +1")
+
+        decks = self.list_decks(status=status)
+        index = next((i for i, deck in enumerate(decks) if deck.id == deck_id), None)
+        if index is None:
+            return False
+        neighbor_index = index + direction
+        if neighbor_index < 0 or neighbor_index >= len(decks):
+            return False
+
+        current = decks[index]
+        neighbor = decks[neighbor_index]
+        current.sort_order, neighbor.sort_order = (
+            neighbor.sort_order,
+            current.sort_order,
+        )
+        self._session.flush()
+        return True
 
     def deck_delete_impact(self, deck_id: int) -> list[DeckDeleteCardImpact]:
         """Inventory impact per trackable card when deleting a deck list."""

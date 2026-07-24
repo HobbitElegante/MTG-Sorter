@@ -268,6 +268,16 @@ class BrowseWidget(QWidget):
         self._refresh_inventory()
         self._refresh_scryfall_status()
 
+    def refresh_collection_stats(self) -> None:
+        """Update overview + availability after deck/inventory changes.
+
+        Skips rebuilding the full Scryfall cards table (tens of thousands of rows).
+        """
+        self._refresh_overview()
+        self._refresh_inventory()
+        if self._card_search.text().strip():
+            self._refresh_cards()
+
     def _refresh_overview(self) -> None:
         self._greeting_label.setText(self._translator.t("browse.overview.greeting"))
         self._tagline_label.setText(self._translator.t("browse.overview.tagline"))
@@ -287,6 +297,11 @@ class BrowseWidget(QWidget):
 
     def _refresh_cards(self) -> None:
         search = self._card_search.text().strip()
+        if not search:
+            # Avoid loading the full ~36k oracle-cards cache into the table.
+            self._cards_table.setRowCount(0)
+            return
+
         with get_session() as session:
             cards = BrowseService(session).list_cards(search)
 

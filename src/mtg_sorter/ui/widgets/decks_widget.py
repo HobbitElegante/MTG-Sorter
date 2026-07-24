@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -24,10 +25,11 @@ from PySide6.QtWidgets import (
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.models.enums import DeckStatus
+from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services import DeckService, ImportService, ScryfallService
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
+    DeckDetailsDialog,
     DeckEditDialog,
     DeleteDeckDialog,
     ExportDeckDialog,
@@ -76,7 +78,12 @@ class DeckListItemDelegate(QStyledItemDelegate):
         padding = 8
         status_width = metrics.horizontalAdvance(status) + padding
         rect = option.rect.adjusted(padding, 0, -padding, 0)
-        name_rect = QRect(rect.left(), rect.top(), max(0, rect.width() - status_width), rect.height())
+        name_rect = QRect(
+            rect.left(),
+            rect.top(),
+            max(0, rect.width() - status_width),
+            rect.height(),
+        )
         status_rect = QRect(
             rect.right() - status_width + padding,
             rect.top(),
@@ -106,6 +113,7 @@ class DecksWidget(QWidget):
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._status_filter: DeckStatus | None = None
         self._build_ui()
         self.refresh()
 
@@ -118,18 +126,53 @@ class DecksWidget(QWidget):
         self._cancel_import_button.setText(self._translator.t("decks.cancel_import"))
         self._name_input.setPlaceholderText(self._translator.t("decks.name"))
         self._commander_input.setPlaceholderText(self._translator.t("decks.commander"))
+        self._edit_details_button.setText(self._translator.t("decks.edit_details"))
         self._edit_button.setText(self._translator.t("decks.edit_list"))
         self._delete_button.setText(self._translator.t("decks.delete_list"))
         self._armed_button.setText(self._translator.t("decks.set_armed"))
         self._dismantled_button.setText(self._translator.t("decks.set_dismantled"))
         self._export_button.setText(self._translator.t("decks.export_list"))
+        self._move_up_button.setText(self._translator.t("decks.move_up"))
+        self._move_down_button.setText(self._translator.t("decks.move_down"))
+        self._filter_label.setText(self._translator.t("decks.filter.label"))
+        self._retranslate_filter()
         self.refresh()
+
+    def _retranslate_filter(self) -> None:
+        current = self._filter_combo.currentData()
+        self._filter_combo.blockSignals(True)
+        self._filter_combo.clear()
+        self._filter_combo.addItem(self._translator.t("decks.filter.all"), None)
+        self._filter_combo.addItem(
+            self._translator.t("decks.filter.armed"), DeckStatus.ARMED
+        )
+        self._filter_combo.addItem(
+            self._translator.t("decks.filter.dismantled"), DeckStatus.DISMANTLED
+        )
+        index = self._filter_combo.findData(current)
+        self._filter_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._filter_combo.blockSignals(False)
 
     def _build_ui(self) -> None:
         self._main_layout = QVBoxLayout(self)
 
         self._decks_group = QGroupBox(self._translator.t("decks.list.title"))
         decks_layout = QVBoxLayout(self._decks_group)
+
+        filter_row = QHBoxLayout()
+        self._filter_label = QLabel(self._translator.t("decks.filter.label"))
+        self._filter_combo = QComboBox()
+        self._retranslate_filter()
+        self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
+        self._move_up_button = QPushButton(self._translator.t("decks.move_up"))
+        self._move_down_button = QPushButton(self._translator.t("decks.move_down"))
+        self._move_up_button.clicked.connect(lambda: self._move_selected(-1))
+        self._move_down_button.clicked.connect(lambda: self._move_selected(1))
+        filter_row.addWidget(self._filter_label)
+        filter_row.addWidget(self._filter_combo, 1)
+        filter_row.addWidget(self._move_up_button)
+        filter_row.addWidget(self._move_down_button)
+        decks_layout.addLayout(filter_row)
 
         self._deck_list = QListWidget()
         self._deck_list.setItemDelegate(DeckListItemDelegate(self._deck_list))
@@ -143,6 +186,10 @@ class DecksWidget(QWidget):
         self._deck_actions = QWidget()
         actions_layout = QHBoxLayout(self._deck_actions)
         actions_layout.setContentsMargins(0, 0, 0, 0)
+        self._edit_details_button = QPushButton(
+            self._translator.t("decks.edit_details")
+        )
+        self._edit_details_button.clicked.connect(self._edit_selected_details)
         self._edit_button = QPushButton(self._translator.t("decks.edit_list"))
         self._edit_button.clicked.connect(self._edit_selected_deck)
         self._delete_button = QPushButton(self._translator.t("decks.delete_list"))
@@ -158,11 +205,12 @@ class DecksWidget(QWidget):
         )
         self._export_button.clicked.connect(self._export_selected_deck)
         actions_layout.addWidget(self._edit_button)
-        actions_layout.addWidget(self._delete_button)
-        actions_layout.addWidget(self._armed_button)
+        actions_layout.addWidget(self._edit_details_button)
         actions_layout.addWidget(self._export_button)
-        actions_layout.addWidget(self._dismantled_button)
+        actions_layout.addWidget(self._delete_button)
         actions_layout.addStretch()
+        actions_layout.addWidget(self._armed_button)
+        actions_layout.addWidget(self._dismantled_button)
         decks_layout.addWidget(self._deck_actions)
         self._deck_actions.setVisible(False)
 
@@ -212,7 +260,7 @@ class DecksWidget(QWidget):
         import_layout.addLayout(import_buttons)
 
         self._import_group.setVisible(False)
-        # Stretch 0 while hidden; becomes 1 when open so list/import share ~50/50.
+        # Stretch 0 while hidden; becomes 1 (full tab) when import is open.
         self._main_layout.addWidget(self._import_group, 0)
 
     @staticmethod
@@ -227,24 +275,40 @@ class DecksWidget(QWidget):
         return f"{index}. {name}", f"[{status_text}]"
 
     def _show_import_section(self) -> None:
+        self._decks_group.setVisible(False)
+        self._show_import_button.setVisible(False)
         self._import_group.setVisible(True)
-        self._main_layout.setStretchFactor(self._decks_group, 1)
+        self._main_layout.setStretchFactor(self._decks_group, 0)
         self._main_layout.setStretchFactor(self._import_group, 1)
+        self._name_input.setFocus()
 
     def _hide_import_section(self) -> None:
         self._import_group.setVisible(False)
+        self._decks_group.setVisible(True)
+        self._show_import_button.setVisible(True)
         self._main_layout.setStretchFactor(self._import_group, 0)
         self._main_layout.setStretchFactor(self._decks_group, 1)
+
+    def _on_filter_changed(self) -> None:
+        data = self._filter_combo.currentData()
+        self._status_filter = data if isinstance(data, DeckStatus) else None
+        self.refresh()
 
     def refresh(self) -> None:
         selected_id = self._selected_deck_id()
         self._deck_list.clear()
         with get_session() as session:
-            decks = DeckService(session).list_decks()
+            decks = DeckService(session).list_decks(status=self._status_filter)
             if not decks:
-                self._deck_list.addItem(self._translator.t("decks.empty"))
+                empty_key = (
+                    "decks.empty_filtered"
+                    if self._status_filter is not None
+                    else "decks.empty"
+                )
+                self._deck_list.addItem(self._translator.t(empty_key))
                 self._deck_actions.setVisible(False)
                 self._details.setText("")
+                self._update_move_buttons()
                 return
             for index, deck in enumerate(decks, start=1):
                 name_label, status_label = self._format_deck_label(
@@ -262,6 +326,7 @@ class DecksWidget(QWidget):
             first = self._deck_list.item(0)
             if first is not None and first.data(Qt.ItemDataRole.UserRole) is not None:
                 self._deck_list.setCurrentRow(0)
+        self._update_move_buttons()
 
     def _selected_deck_id(self) -> int | None:
         item = self._deck_list.currentItem()
@@ -269,6 +334,13 @@ class DecksWidget(QWidget):
             return None
         deck_id = item.data(Qt.ItemDataRole.UserRole)
         return deck_id if isinstance(deck_id, int) else None
+
+    def _update_move_buttons(self) -> None:
+        row = self._deck_list.currentRow()
+        count = self._deck_list.count()
+        has_deck = self._selected_deck_id() is not None
+        self._move_up_button.setEnabled(has_deck and row > 0)
+        self._move_down_button.setEnabled(has_deck and row >= 0 and row < count - 1)
 
     def _update_status_buttons(self, status: DeckStatus) -> None:
         if status == DeckStatus.ARMED:
@@ -280,6 +352,7 @@ class DecksWidget(QWidget):
 
     def _on_selection_changed(self) -> None:
         deck_id = self._selected_deck_id()
+        self._update_move_buttons()
         if deck_id is None:
             self._details.setText("")
             self._deck_actions.setVisible(False)
@@ -293,18 +366,123 @@ class DecksWidget(QWidget):
                 return
             self._update_status_buttons(deck.status)
             card_count = sum(card.quantity for card in deck.cards)
+            commander = service.commander_name(deck_id)
+            secondary = service.secondary_command_zone(deck_id)
+            lines: list[str] = []
             if deck.status == DeckStatus.ARMED:
-                self._details.setText(
+                lines.append(
                     self._translator.t("decks.details.armed").format(count=card_count)
                 )
             else:
                 available = service.free_coverage_toward_deck(deck_id)
-                self._details.setText(
+                lines.append(
                     self._translator.t("decks.details.dismantled").format(
                         count=card_count,
                         available=available,
                     )
                 )
+            if commander:
+                lines.append(
+                    self._translator.t("decks.details.commander").format(name=commander)
+                )
+            else:
+                lines.append(self._translator.t("decks.details.commander_none"))
+            if secondary is not None:
+                role, name = secondary
+                role_i18n = {
+                    DeckCardRole.PARTNER: "decks.role.partner",
+                    DeckCardRole.COMPANION: "decks.role.companion",
+                    DeckCardRole.BACKGROUND: "decks.role.background",
+                }
+                lines.append(
+                    self._translator.t("decks.details.secondary").format(
+                        role=self._translator.t(role_i18n[role]),
+                        name=name,
+                    )
+                )
+            self._details.setText("\n".join(lines))
+
+    def _move_selected(self, direction: int) -> None:
+        deck_id = self._selected_deck_id()
+        if deck_id is None:
+            return
+        with get_session() as session:
+            moved = DeckService(session).move_deck(
+                deck_id,
+                direction=direction,
+                status=self._status_filter,
+            )
+        if moved:
+            # Reorder only — do not emit changed (that refreshes Inventory/Browse).
+            self.refresh()
+
+    def _edit_selected_details(self) -> None:
+        deck_id = self._selected_deck_id()
+        if deck_id is None:
+            return
+
+        with get_session() as session:
+            service = DeckService(session)
+            deck = service.get_deck(deck_id)
+            if deck is None:
+                return
+            deck_name = deck.name
+            commander = service.commander_name(deck_id)
+            secondary = service.secondary_command_zone(deck_id)
+
+        dialog = DeckDetailsDialog(
+            self._translator, deck_name, commander, secondary, self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_name = dialog.deck_name()
+        new_commander = dialog.commander_name()
+        secondary_role = dialog.secondary_role()
+        secondary_name = dialog.secondary_name()
+        try:
+            with get_session() as session:
+                service = DeckService(session)
+                service.rename_deck(deck_id, new_name)
+                scryfall = ScryfallService(session)
+                try:
+                    if new_commander is None:
+                        service.set_commander(deck_id, None)
+                    else:
+                        card = scryfall.lookup_local(new_commander)
+                        if card is None:
+                            raise ValueError(
+                                self._translator.t(
+                                    "decks.details_edit.commander_not_found"
+                                ).format(name=new_commander)
+                            )
+                        service.set_commander(deck_id, card.oracle_id)
+
+                    if secondary_role is None or secondary_name is None:
+                        service.set_secondary_command_zone(deck_id, None, None)
+                    else:
+                        card = scryfall.lookup_local(secondary_name)
+                        if card is None:
+                            raise ValueError(
+                                self._translator.t(
+                                    "decks.details_edit.commander_not_found"
+                                ).format(name=secondary_name)
+                            )
+                        service.set_secondary_command_zone(
+                            deck_id, secondary_role, card.oracle_id
+                        )
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        self.refresh()
+        self.changed.emit()
 
     def _export_selected_deck(self) -> None:
         deck_id = self._selected_deck_id()

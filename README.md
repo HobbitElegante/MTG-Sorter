@@ -2,14 +2,16 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.6)
+## Features (v0.3.8)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
 - **Inventory tab:** searchable table; add new cards to the collection; edit copy counts (cannot drop below assigned copies)
 - Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
+- **Import new list** takes the full Decks tab (deck list hidden while importing)
 - **Export list** to MTGO text (dialog + copy to clipboard)
 - Deck list storage with armed/dismantled status and automatic copy assignment
-- Decks tab: full-height deck list; import form shares ~half the height when open
+- **Edit name / commander**, optional Partner / Companion / Background via `+`, filter All / Armed / Dismantled, reorder with Move up / Move down
+- Deck actions: Edit list · Edit name / commander · Export · Delete (left); Mark armed / dismantled (right)
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
@@ -19,7 +21,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Optimize section titles show counts (free coverage, decks to dismantle, still missing)
 - Already-armed target decks skip optimization with a clear message
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
-- **Browse tab:** overview, cached card catalog, availability search, Scryfall bulk sync
+- **Browse tab:** overview, card search (type to search — does not dump the full ~36k cache), availability, Scryfall bulk sync
+- Lightweight UI refresh after collection changes (avoids rebuilding the full card catalog)
 - Offline card resolution via local cache + optional Scryfall `oracle-cards` bulk download
 - Art Series cards filtered from bulk import and Browse catalog
 
@@ -63,18 +66,18 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-46 tests passing.
+51 tests passing.
 
 ## First-time setup
 
 1. Run the app.
 2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
-3. Import decks from the **Decks** tab.
+3. Import decks from the **Decks** tab (**Import new list**).
 4. Optional: **Browse → Overview** → switch language to Spanish (persisted).
 
 ## Importing a deck
 
-1. Open the **Decks** tab → **Import Moxfield list**.
+1. Open the **Decks** tab → **Import new list** (form fills the whole tab).
 2. Enter deck name and optional commander name.
 3. Paste the list or click **Load file** to open a `.txt` export.
 4. Click **Confirm list**.
@@ -87,9 +90,11 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 ## Editing, exporting, and deleting decks
 
 - **Edit list:** table of cards with list quantity, free inventory (−/+), replace, and add cards into open slots (list size preserved).
+- **Edit name / commander:** rename the deck; set or clear the commander; use **+** to add Partner, Companion, or Background (second card field). Cards must be in the local Scryfall cache.
 - **Export list:** opens a dialog with the MTGO-format list; copy to clipboard for Moxfield or other tools.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
-- Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”.
+- **Filter / reorder:** show All, Armed only, or Dismantled only; Move up / Move down persists custom order (reorder does not refresh Inventory/Browse).
+- Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”; commander and secondary role are shown when set.
 
 ## Inventory
 
@@ -113,6 +118,7 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 2. Click **Download oracle-cards bulk pack**.
 3. After sync, imports and lookups work offline for cached cards.
 4. Individual API lookups are also saved automatically when online.
+5. **Browse → Cards:** type a name to search; the UI does not load the entire cached catalog at once.
 
 ## Project layout
 
@@ -120,7 +126,7 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 src/mtg_sorter/
   algorithms/   # ILP deck dismantle optimizer, card helpers
   api/          # Scryfall HTTP client
-  database/     # SQLite session bootstrap
+  database/     # SQLite session bootstrap (+ sort_order migrate)
   i18n/         # EN/ES translations
   models/       # SQLAlchemy models
   services/     # Business logic
@@ -131,7 +137,7 @@ tests/
 
 ## Seed decks (reference)
 
-Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free).
+Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free). Counts may be higher if more lists were imported since then.
 
 Fixture: `tests/fixtures/kellan_deck.txt`
 

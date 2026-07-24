@@ -53,7 +53,11 @@ class ImportService:
     ) -> ImportResult:
         parsed_lines = parse_moxfield_export(text)
 
-        deck = Deck(name=deck_name, status=status)
+        deck = Deck(
+            name=deck_name,
+            status=status,
+            sort_order=DeckService(self._session).next_sort_order(),
+        )
         self._session.add(deck)
         self._session.flush()
 

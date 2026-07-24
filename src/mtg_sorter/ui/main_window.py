@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
 
     def _on_collection_changed(self) -> None:
         self._inventory.refresh()
-        self._browse.refresh()
+        self._browse.refresh_collection_stats()
         self._optimizer.refresh_decks()
 
     def set_locale(self, locale: str) -> None:

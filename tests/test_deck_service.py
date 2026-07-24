@@ -365,3 +365,151 @@ def test_set_total_copies_cannot_go_below_assigned(session: Session) -> None:
     InventoryService(session).set_total_copies("sol", 1)
     assert session.scalar(select(func.count()).select_from(CardCopy)) == 1
     assert InventoryService(session).free_counts() == {}
+
+
+def test_rename_deck(session: Session) -> None:
+    deck = Deck(name="Old", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add(deck)
+    session.flush()
+
+    DeckService(session).rename_deck(deck.id, "  New Name  ")
+    assert deck.name == "New Name"
+
+    with pytest.raises(ValueError, match="empty"):
+        DeckService(session).rename_deck(deck.id, "   ")
+
+
+def test_set_commander_promotes_and_demotes(session: Session) -> None:
+    athreos = Card(
+        oracle_id="ath", name="Athreos", is_basic_land=False, is_token=False
+    )
+    sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    deck = Deck(name="Test", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add_all([athreos, sol, deck])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=deck.id,
+                card_id="ath",
+                quantity=1,
+                role=DeckCardRole.COMMANDER,
+            ),
+            DeckCard(
+                deck_id=deck.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+            ),
+        ]
+    )
+    session.flush()
+
+    service = DeckService(session)
+    assert service.commander_name(deck.id) == "Athreos"
+
+    service.set_commander(deck.id, "sol")
+    assert service.commander_name(deck.id) == "Sol Ring"
+    roles = {
+        (card.card_id, card.role)
+        for card in session.scalars(
+            select(DeckCard).where(DeckCard.deck_id == deck.id)
+        ).all()
+    }
+    assert ("sol", DeckCardRole.COMMANDER) in roles
+    assert ("ath", DeckCardRole.MAIN) in roles
+
+    service.set_commander(deck.id, None)
+    assert service.commander_name(deck.id) is None
+
+
+def test_set_commander_adds_missing_card(session: Session) -> None:
+    commander = Card(
+        oracle_id="cmd", name="Kellan", is_basic_land=False, is_token=False
+    )
+    deck = Deck(name="Test", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add_all([commander, deck])
+    session.flush()
+
+    DeckService(session).set_commander(deck.id, "cmd")
+    assert DeckService(session).commander_name(deck.id) == "Kellan"
+    entry = session.scalar(
+        select(DeckCard).where(
+            DeckCard.deck_id == deck.id,
+            DeckCard.role == DeckCardRole.COMMANDER,
+        )
+    )
+    assert entry is not None
+    assert entry.quantity == 1
+
+
+def test_set_secondary_command_zone_partner(session: Session) -> None:
+    commander = Card(
+        oracle_id="cmd", name="Kellan", is_basic_land=False, is_token=False
+    )
+    partner = Card(
+        oracle_id="prt", name="Rograkh", is_basic_land=False, is_token=False
+    )
+    background = Card(
+        oracle_id="bg", name="Folk Hero", is_basic_land=False, is_token=False
+    )
+    deck = Deck(name="Partners", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add_all([commander, partner, background, deck])
+    session.flush()
+    session.add(
+        DeckCard(
+            deck_id=deck.id,
+            card_id="cmd",
+            quantity=1,
+            role=DeckCardRole.COMMANDER,
+        )
+    )
+    session.flush()
+
+    service = DeckService(session)
+    service.set_secondary_command_zone(deck.id, DeckCardRole.PARTNER, "prt")
+    assert service.secondary_command_zone(deck.id) == (
+        DeckCardRole.PARTNER,
+        "Rograkh",
+    )
+
+    service.set_secondary_command_zone(deck.id, DeckCardRole.BACKGROUND, "bg")
+    assert service.secondary_command_zone(deck.id) == (
+        DeckCardRole.BACKGROUND,
+        "Folk Hero",
+    )
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(DeckCard)
+            .where(
+                DeckCard.deck_id == deck.id,
+                DeckCard.role == DeckCardRole.PARTNER,
+            )
+        )
+        == 0
+    )
+
+    service.set_secondary_command_zone(deck.id, None, None)
+    assert service.secondary_command_zone(deck.id) is None
+
+
+def test_list_decks_filter_and_move(session: Session) -> None:
+    a = Deck(name="Alpha", status=DeckStatus.ARMED, sort_order=0)
+    b = Deck(name="Bravo", status=DeckStatus.DISMANTLED, sort_order=1)
+    c = Deck(name="Charlie", status=DeckStatus.ARMED, sort_order=2)
+    session.add_all([a, b, c])
+    session.flush()
+
+    service = DeckService(session)
+    assert [d.name for d in service.list_decks()] == ["Alpha", "Bravo", "Charlie"]
+    assert [d.name for d in service.list_decks(status=DeckStatus.ARMED)] == [
+        "Alpha",
+        "Charlie",
+    ]
+
+    assert service.move_deck(c.id, direction=-1, status=DeckStatus.ARMED) is True
+    assert [d.name for d in service.list_decks(status=DeckStatus.ARMED)] == [
+        "Charlie",
+        "Alpha",
+    ]
+    assert [d.name for d in service.list_decks()] == ["Charlie", "Bravo", "Alpha"]
+
+    assert service.move_deck(c.id, direction=-1, status=DeckStatus.ARMED) is False

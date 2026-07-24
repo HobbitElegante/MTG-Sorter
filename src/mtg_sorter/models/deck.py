@@ -15,6 +15,7 @@ class Deck(Base):
         default=DeckStatus.DISMANTLED,
         nullable=False,
     )
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     cards: Mapped[list["DeckCard"]] = relationship(
         back_populates="deck",
