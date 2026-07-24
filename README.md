@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.13)
+## Features (v0.3.14)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
 - **Inventory tab:** searchable table with columns Name · Total · Free · Assigned · In decks; click headers to sort (text A–Z, numbers high→low first); Name column stretched; add/edit copy counts (cannot drop below assigned copies)
@@ -22,6 +22,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - **Optimize target:** searchable dropdown — type deck or commander name (`Name — Commander`)
 - Optimize section titles show counts (free coverage, decks to dismantle, still missing)
 - Already-armed target decks skip optimization with a clear message
+- **Optimize plan UX:** large centered status (armed / no path / N decks); expanded **Decks to dismantle** tree with per-deck cards; Confirm / Cancel to apply dismantle+arm
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
 - **Browse tab:** overview, card search (type to search — does not dump the full ~36k cache), availability, Scryfall bulk sync
 - Lightweight UI refresh after collection changes (avoids rebuilding the full card catalog)
@@ -68,7 +69,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-56 tests passing.
+59 tests passing.
 
 ## First-time setup
 
@@ -113,9 +114,11 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 1. Import decks and mark currently assembled ones as **Armed**.
 2. For dismantled decks, register available copies during import or while editing.
 3. Open **Optimize**, pick a **dismantled** target deck (type to filter by deck or commander name), and run the plan.
-4. Section titles show counts: free inventory coverage, decks to dismantle, and still-missing cards.
-5. If the target is already **Armed**, optimization is skipped (“already armed”).
-6. If multiple optimal dismantle sets exist, choose one from the dropdown.
+4. A large centered status shows the outcome (already armed, no viable path, inventory-only, or how many decks to dismantle).
+5. **Cards covered by free inventory** lists free copies used (compact). **Decks to dismantle** is the main panel: tree of donor decks with the cards each contributes toward the target.
+6. **Still missing** appears only when the plan is infeasible.
+7. **Confirm plan** dismantles the chosen armed decks and arms the target; **Cancel** clears the plan without changing the database.
+8. If multiple optimal dismantle sets exist, choose one from the dropdown before confirming.
 
 ## Offline Scryfall cache
 
@@ -141,12 +144,6 @@ tests/
   # includes test_inventory_display.py, test_import_service preview cases
 ```
 
-## Seed decks (reference)
-
-Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free). Counts may be higher if more lists or inventory add-list imports were done since then.
-
-Fixture: `tests/fixtures/kellan_deck.txt`
-
 ## Continuity
 
-See [`handoff.md`](handoff.md) for full project state (v0.3.13), product decisions, architecture notes, and next steps.
+See [`handoff.md`](handoff.md) for full project state (v0.3.14), product decisions, architecture notes, and next steps.

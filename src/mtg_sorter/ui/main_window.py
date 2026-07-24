@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
 
         self._inventory.changed.connect(self._optimizer.refresh_decks)
         self._decks.changed.connect(self._on_collection_changed)
+        self._optimizer.changed.connect(self._on_optimizer_applied)
         self._browse.changed.connect(self._refresh_from_browse)
         self._browse.locale_changed.connect(self.set_locale)
 
@@ -51,6 +52,12 @@ class MainWindow(QMainWindow):
         self._optimizer.refresh_decks()
 
     def _on_collection_changed(self) -> None:
+        self._inventory.refresh()
+        self._browse.refresh_collection_stats()
+        self._optimizer.refresh_decks()
+
+    def _on_optimizer_applied(self) -> None:
+        self._decks.refresh()
         self._inventory.refresh()
         self._browse.refresh_collection_stats()
         self._optimizer.refresh_decks()
