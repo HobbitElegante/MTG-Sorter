@@ -64,6 +64,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.free": "Free",
         "inventory.table.assigned": "Assigned",
         "inventory.table.decks": "In decks",
+        "inventory.table.color": "Colors",
+        "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
         "decks.import": "Import Moxfield list",
         "decks.name": "Deck name",
@@ -83,7 +85,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.empty_filtered": "No decks match this filter.",
         "decks.details": "{name}: {count} list entries",
         "decks.details.armed": "{count} list entries — complete",
-        "decks.details.dismantled": "{count} list entries — {available} cards available",
+        "decks.details.dismantled": (
+            "{count} list entries — {available}/{needed} trackable cards available"
+        ),
         "decks.details.commander": "Commander: {name}",
         "decks.details.commander_none": "Commander: not set",
         "decks.details.secondary": "{role}: {name}",
@@ -308,6 +312,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.free": "Libres",
         "inventory.table.assigned": "Asignadas",
         "inventory.table.decks": "En mazos",
+        "inventory.table.color": "Colores",
+        "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
         "decks.import": "Importar lista Moxfield",
         "decks.name": "Nombre del mazo",
@@ -327,7 +333,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.empty_filtered": "Ningún mazo coincide con este filtro.",
         "decks.details": "{name}: {count} entradas en el listado",
         "decks.details.armed": "{count} entradas en el listado — completado",
-        "decks.details.dismantled": "{count} entradas en el listado — {available} cartas disponibles",
+        "decks.details.dismantled": (
+            "{count} entradas en el listado — {available}/{needed} cartas trackeables disponibles"
+        ),
         "decks.details.commander": "Commander: {name}",
         "decks.details.commander_none": "Commander: sin definir",
         "decks.details.secondary": "{role}: {name}",

@@ -39,6 +39,14 @@ class DeckEditLine:
     role: DeckCardRole
 
 
+@dataclass(frozen=True)
+class FreeCoverage:
+    """Free-inventory coverage of a dismantled deck's trackable list slots."""
+
+    covered: int
+    required: int
+
+
 class InventoryService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -669,6 +677,20 @@ class DeckService:
         ).all()
         return {card_id: int(qty) for card_id, qty in rows}
 
+    def deck_basic_lands(self, deck_id: int) -> dict[str, int]:
+        """Basic land quantities on the list (unlimited pool; not optimized)."""
+        rows = self._session.execute(
+            select(DeckCard.card_id, func.sum(DeckCard.quantity))
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+                Card.is_basic_land.is_(True),
+            )
+            .group_by(DeckCard.card_id)
+        ).all()
+        return {card_id: int(qty) for card_id, qty in rows}
+
     def armed_deck_supplies(self, exclude_deck_id: int | None = None) -> dict[int, dict[str, int]]:
         query = select(Deck).where(Deck.status == DeckStatus.ARMED)
         if exclude_deck_id is not None:
@@ -679,13 +701,15 @@ class DeckService:
             supplies[deck.id] = self.deck_requirements(deck.id)
         return supplies
 
-    def free_coverage_toward_deck(self, deck_id: int) -> int:
+    def free_coverage_toward_deck(self, deck_id: int) -> FreeCoverage:
         """How many trackable list copies are already covered by free inventory."""
         requirements = self.deck_requirements(deck_id)
-        if not requirements:
-            return 0
+        required = sum(requirements.values())
+        if required == 0:
+            return FreeCoverage(covered=0, required=0)
         free = InventoryService(self._session).free_counts()
-        return sum(
-            min(required, free.get(card_id, 0))
-            for card_id, required in requirements.items()
+        covered = sum(
+            min(need, free.get(card_id, 0))
+            for card_id, need in requirements.items()
         )
+        return FreeCoverage(covered=covered, required=required)

@@ -111,6 +111,12 @@ class OptimizationService:
             if remaining > 0:
                 needs[card_id] = remaining
 
+        # Basics are unlimited: always "take from the pool" and show in the
+        # free-inventory section so reassembly knows how many to pull.
+        for card_id, qty in self._decks.deck_basic_lands(target_deck_id).items():
+            if qty > 0:
+                free_used[card_id] = qty
+
         armed = self._decks.armed_deck_supplies(exclude_deck_id=target_deck_id)
         supplies: dict[str, DeckSupply] = {}
         deck_names: dict[str, str] = {}

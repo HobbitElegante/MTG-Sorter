@@ -30,16 +30,17 @@ from mtg_sorter.services import (
     ScryfallService,
 )
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
-from mtg_sorter.ui.inventory_display import format_inventory_decks
+from mtg_sorter.ui.inventory_display import format_color_identity, format_inventory_decks
 from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
 
 COL_NAME = 0
-COL_TOTAL = 1
-COL_FREE = 2
-COL_ASSIGNED = 3
-COL_DECKS = 4
+COL_COLOR = 1
+COL_TOTAL = 2
+COL_FREE = 3
+COL_ASSIGNED = 4
+COL_DECKS = 5
 
 
 class AddInventoryCardDialog(QDialog):
@@ -211,6 +212,7 @@ class InventoryWidget(QWidget):
     def _header_labels(self) -> list[str]:
         return [
             self._translator.t("browse.cards.name"),
+            self._translator.t("inventory.table.color"),
             self._translator.t("inventory.table.total"),
             self._translator.t("inventory.table.free"),
             self._translator.t("inventory.table.assigned"),
@@ -247,11 +249,12 @@ class InventoryWidget(QWidget):
         actions.addStretch()
         collection.addLayout(actions)
 
-        self._table = QTableWidget(0, 5)
+        self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(self._header_labels())
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(
@@ -323,7 +326,7 @@ class InventoryWidget(QWidget):
         else:
             self._sort_column = column
             # Numbers: high → low first; text: A → Z first
-            self._sort_ascending = column in (COL_NAME, COL_DECKS)
+            self._sort_ascending = column in (COL_NAME, COL_COLOR, COL_DECKS)
         header = self._table.horizontalHeader()
         order = (
             Qt.SortOrder.AscendingOrder
@@ -337,6 +340,8 @@ class InventoryWidget(QWidget):
         assigned = row.total_copies - row.free_copies
         if self._sort_column == COL_NAME:
             return row.card_name.casefold()
+        if self._sort_column == COL_COLOR:
+            return (row.color_identity or "").casefold()
         if self._sort_column == COL_TOTAL:
             return row.total_copies
         if self._sort_column == COL_FREE:
@@ -360,9 +365,13 @@ class InventoryWidget(QWidget):
         for index, row in enumerate(rows):
             assigned = row.total_copies - row.free_copies
             decks_text = format_inventory_decks(row, self._translator)
+            color_text = format_color_identity(row.color_identity, self._translator)
 
             name_item = QTableWidgetItem(row.card_name)
             name_item.setData(ORACLE_ID_ROLE, row.oracle_id)
+
+            color_item = QTableWidgetItem(color_text)
+            color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             total_item = QTableWidgetItem(str(row.total_copies))
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -378,6 +387,7 @@ class InventoryWidget(QWidget):
                 decks_item.setToolTip("\n".join(row.assigned_decks))
 
             self._table.setItem(index, COL_NAME, name_item)
+            self._table.setItem(index, COL_COLOR, color_item)
             self._table.setItem(index, COL_TOTAL, total_item)
             self._table.setItem(index, COL_FREE, free_item)
             self._table.setItem(index, COL_ASSIGNED, assigned_item)

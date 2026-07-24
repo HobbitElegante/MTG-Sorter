@@ -5,7 +5,7 @@ import pytest
 
 from mtg_sorter.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService, InventoryService
+from mtg_sorter.services.deck_service import DeckService, FreeCoverage, InventoryService
 
 
 @pytest.fixture
@@ -328,7 +328,9 @@ def test_free_coverage_toward_deck_counts_matching_free_copies(
     )
     session.flush()
 
-    assert DeckService(session).free_coverage_toward_deck(deck.id) == 1
+    assert DeckService(session).free_coverage_toward_deck(deck.id) == FreeCoverage(
+        covered=1, required=2
+    )
 
 
 def test_set_total_copies_adds_and_removes_free_inventory(session: Session) -> None:

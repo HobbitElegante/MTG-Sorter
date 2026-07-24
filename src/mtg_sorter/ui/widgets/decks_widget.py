@@ -29,6 +29,7 @@ from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services import DeckService, ImportService, ScryfallService
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
+    CommandZoneFields,
     DeckDetailsDialog,
     DeckEditDialog,
     DeleteDeckDialog,
@@ -125,7 +126,7 @@ class DecksWidget(QWidget):
         self._submit_import_button.setText(self._translator.t("decks.submit_import"))
         self._cancel_import_button.setText(self._translator.t("decks.cancel_import"))
         self._name_input.setPlaceholderText(self._translator.t("decks.name"))
-        self._commander_input.setPlaceholderText(self._translator.t("decks.commander"))
+        self._command_zone.retranslate()
         self._edit_details_button.setText(self._translator.t("decks.edit_details"))
         self._edit_button.setText(self._translator.t("decks.edit_list"))
         self._delete_button.setText(self._translator.t("decks.delete_list"))
@@ -239,12 +240,13 @@ class DecksWidget(QWidget):
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText(self._translator.t("decks.name"))
         form.addRow(self._name_input)
-
-        self._commander_input = QLineEdit()
-        self._commander_input.setPlaceholderText(self._translator.t("decks.commander"))
-        form.addRow(self._commander_input)
-
         import_layout.addLayout(form)
+
+        self._command_zone = CommandZoneFields(
+            self._translator,
+            labeled=False,
+        )
+        import_layout.addWidget(self._command_zone)
 
         self._import_text = QTextEdit()
         self._import_text.setPlaceholderText("1 Sol Ring\n1 Arcane Signet")
@@ -392,11 +394,12 @@ class DecksWidget(QWidget):
                     self._translator.t("decks.details.armed").format(count=card_count)
                 )
             else:
-                available = service.free_coverage_toward_deck(deck_id)
+                coverage = service.free_coverage_toward_deck(deck_id)
                 lines.append(
                     self._translator.t("decks.details.dismantled").format(
                         count=card_count,
-                        available=available,
+                        available=coverage.covered,
+                        needed=coverage.required,
                     )
                 )
             if commander:
@@ -592,8 +595,19 @@ class DecksWidget(QWidget):
     def _import_text_deck(self) -> None:
         name = self._name_input.text().strip()
         text = self._import_text.toPlainText().strip()
-        commander = self._commander_input.text().strip() or None
+        commander = self._command_zone.commander_name()
+        secondary_role = self._command_zone.secondary_role()
+        secondary_name = self._command_zone.secondary_name()
         if not name or not text:
+            return
+
+        secondary_error = self._command_zone.validation_error()
+        if secondary_error is not None:
+            QMessageBox.warning(
+                self,
+                self._translator.t("common.error"),
+                secondary_error,
+            )
             return
 
         status_dialog = ImportStatusDialog(self._translator, self)
@@ -605,6 +619,20 @@ class DecksWidget(QWidget):
             with get_session() as session:
                 scryfall = ScryfallService(session)
                 try:
+                    secondary_oracle_id: str | None = None
+                    if (
+                        secondary_role is not None
+                        and secondary_name is not None
+                    ):
+                        secondary_card = scryfall.lookup_local(secondary_name)
+                        if secondary_card is None:
+                            raise ValueError(
+                                self._translator.t(
+                                    "decks.details_edit.commander_not_found"
+                                ).format(name=secondary_name)
+                            )
+                        secondary_oracle_id = secondary_card.oracle_id
+
                     importer = ImportService(session, scryfall)
                     result = importer.import_moxfield_text(
                         deck_name=name,
@@ -612,8 +640,16 @@ class DecksWidget(QWidget):
                         status=status,
                         commander_name=commander,
                     )
+                    deck_service = DeckService(session)
+                    if (
+                        secondary_role is not None
+                        and secondary_oracle_id is not None
+                    ):
+                        deck_service.set_secondary_command_zone(
+                            result.deck.id, secondary_role, secondary_oracle_id
+                        )
                     if status == DeckStatus.ARMED:
-                        DeckService(session).set_status(result.deck, DeckStatus.ARMED)
+                        deck_service.set_status(result.deck, DeckStatus.ARMED)
                     deck_id = result.deck.id
                     warnings = list(result.warnings)
                 finally:
@@ -681,7 +717,7 @@ class DecksWidget(QWidget):
             )
 
         self._name_input.clear()
-        self._commander_input.clear()
+        self._command_zone.clear()
         self._import_text.clear()
         self._hide_import_section()
         self.refresh()

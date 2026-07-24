@@ -79,6 +79,7 @@ def test_list_inventory_groups_copies_by_card(session: Session) -> None:
     card = Card(
         oracle_id="abc",
         name="Sol Ring",
+        color_identity="",
         is_basic_land=False,
         is_token=False,
     )
@@ -99,6 +100,27 @@ def test_list_inventory_groups_copies_by_card(session: Session) -> None:
     assert rows[0].total_copies == 3
     assert rows[0].free_copies == 2
     assert rows[0].assigned_decks == ("Test Deck",)
+    assert rows[0].color_identity == ""
+
+
+def test_list_inventory_includes_color_identity(session: Session) -> None:
+    session.add(
+        Card(
+            oracle_id="xyz",
+            name="Lightning Bolt",
+            color_identity="R",
+            is_basic_land=False,
+            is_token=False,
+        )
+    )
+    session.flush()
+    session.add(CardCopy(card_id="xyz"))
+    session.flush()
+
+    rows = BrowseService(session).list_inventory()
+
+    assert len(rows) == 1
+    assert rows[0].color_identity == "R"
 
 
 def test_list_cards_filters_by_name(session: Session) -> None:

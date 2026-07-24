@@ -1,6 +1,6 @@
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services.browse_service import InventorySummaryRow
-from mtg_sorter.ui.inventory_display import format_inventory_decks
+from mtg_sorter.ui.inventory_display import format_color_identity, format_inventory_decks
 
 
 def _row(
@@ -8,6 +8,7 @@ def _row(
     free: int = 0,
     total: int = 1,
     decks: tuple[str, ...] = (),
+    color_identity: str | None = None,
 ) -> InventorySummaryRow:
     return InventorySummaryRow(
         oracle_id="oid",
@@ -15,6 +16,7 @@ def _row(
         total_copies=total,
         free_copies=free,
         assigned_decks=decks,
+        color_identity=color_identity,
     )
 
 
@@ -37,3 +39,14 @@ def test_format_inventory_decks_lists_names_only() -> None:
 def test_format_inventory_decks_spanish_placeholder() -> None:
     translator = Translator("es")
     assert format_inventory_decks(_row(free=1, total=1), translator) == "—"
+
+
+def test_format_color_identity_wubrg() -> None:
+    translator = Translator("en")
+    assert format_color_identity("WUB", translator) == "WUB"
+
+
+def test_format_color_identity_empty() -> None:
+    translator = Translator("en")
+    assert format_color_identity(None, translator) == "—"
+    assert format_color_identity("", translator) == "—"

@@ -38,6 +38,7 @@ class InventorySummaryRow:
     total_copies: int
     free_copies: int
     assigned_decks: tuple[str, ...]
+    color_identity: str | None = None
 
 
 class BrowseService:
@@ -125,15 +126,16 @@ class BrowseService:
             select(
                 Card.oracle_id,
                 Card.name,
+                Card.color_identity,
                 func.count(CardCopy.id),
             )
             .join(Card, Card.oracle_id == CardCopy.card_id)
-            .group_by(Card.oracle_id, Card.name)
+            .group_by(Card.oracle_id, Card.name, Card.color_identity)
             .order_by(Card.name)
         ).all()
 
         summaries: list[InventorySummaryRow] = []
-        for oracle_id, name, total in copy_rows:
+        for oracle_id, name, color_identity, total in copy_rows:
             assigned_count = int(
                 self._session.scalar(
                     select(func.count())
@@ -163,6 +165,7 @@ class BrowseService:
                     total_copies=int(total),
                     free_copies=int(total) - assigned_count,
                     assigned_decks=deck_names,
+                    color_identity=color_identity,
                 )
             )
         return summaries

@@ -53,55 +53,44 @@ _ROLE_I18N_KEY: dict[DeckCardRole, str] = {
 }
 
 
-class DeckDetailsDialog(QDialog):
-    """Rename a deck and set commander plus optional partner/companion/background."""
+class CommandZoneFields(QWidget):
+    """Commander line edit with optional Partner / Companion / Background."""
 
     def __init__(
         self,
         translator: Translator,
-        deck_name: str,
-        commander_name: str | None,
+        *,
+        commander_name: str | None = None,
         secondary: tuple[DeckCardRole, str] | None = None,
+        labeled: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._labeled = labeled
         self._secondary_role: DeckCardRole | None = None
-        self.setWindowTitle(translator.t("decks.details_edit.title"))
-        self.resize(460, 220)
 
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        self._name_input = QLineEdit(deck_name)
-        self._name_input.setPlaceholderText(translator.t("decks.name"))
-        form.addRow(translator.t("decks.name"), self._name_input)
+        root = QFormLayout(self) if labeled else QVBoxLayout(self)
+        if isinstance(root, QFormLayout):
+            root.setContentsMargins(0, 0, 0, 0)
+        else:
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(6)
 
         commander_row = QWidget()
         commander_layout = QHBoxLayout(commander_row)
         commander_layout.setContentsMargins(0, 0, 0, 0)
         self._commander_input = QLineEdit(commander_name or "")
-        self._commander_input.setPlaceholderText(
-            translator.t("decks.commander")
-        )
+        self._commander_input.setPlaceholderText(translator.t("decks.commander"))
         self._add_secondary_button = QToolButton()
         self._add_secondary_button.setText("+")
-        self._add_secondary_button.setToolTip(
-            translator.t("decks.details_edit.add_secondary")
-        )
         self._add_secondary_button.setPopupMode(
             QToolButton.ToolButtonPopupMode.InstantPopup
         )
-        add_menu = QMenu(self._add_secondary_button)
-        for role in SECONDARY_ROLES:
-            action = QAction(translator.t(_ROLE_I18N_KEY[role]), add_menu)
-            action.triggered.connect(
-                lambda _checked=False, r=role: self._show_secondary(r)
-            )
-            add_menu.addAction(action)
-        self._add_secondary_button.setMenu(add_menu)
+        self._add_menu = QMenu(self._add_secondary_button)
+        self._add_secondary_button.setMenu(self._add_menu)
         commander_layout.addWidget(self._commander_input, 1)
         commander_layout.addWidget(self._add_secondary_button)
-        form.addRow(translator.t("decks.details_edit.commander"), commander_row)
 
         self._secondary_label = QLabel("")
         secondary_row = QWidget()
@@ -110,37 +99,66 @@ class DeckDetailsDialog(QDialog):
         self._secondary_input = QLineEdit()
         self._remove_secondary_button = QToolButton()
         self._remove_secondary_button.setText("−")
-        self._remove_secondary_button.setToolTip(
-            translator.t("decks.details_edit.remove_secondary")
-        )
         self._remove_secondary_button.clicked.connect(self._hide_secondary)
         secondary_layout.addWidget(self._secondary_input, 1)
         secondary_layout.addWidget(self._remove_secondary_button)
         self._secondary_field = secondary_row
-        form.addRow(self._secondary_label, self._secondary_field)
-        layout.addLayout(form)
+
+        if labeled:
+            assert isinstance(root, QFormLayout)
+            root.addRow(translator.t("decks.details_edit.commander"), commander_row)
+            root.addRow(self._secondary_label, self._secondary_field)
+        else:
+            assert isinstance(root, QVBoxLayout)
+            root.addWidget(commander_row)
+            secondary_wrap = QWidget()
+            wrap_layout = QHBoxLayout(secondary_wrap)
+            wrap_layout.setContentsMargins(0, 0, 0, 0)
+            wrap_layout.addWidget(self._secondary_label)
+            wrap_layout.addWidget(self._secondary_field, 1)
+            self._secondary_wrap = secondary_wrap
+            root.addWidget(secondary_wrap)
 
         self._secondary_label.setVisible(False)
         self._secondary_field.setVisible(False)
+        if not labeled:
+            self._secondary_wrap.setVisible(False)
 
-        hint = QLabel(translator.t("decks.details_edit.hint"))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._rebuild_add_menu()
+        self.retranslate()
 
         if secondary is not None:
             role, name = secondary
             self._show_secondary(role, name)
 
-    def deck_name(self) -> str:
-        return self._name_input.text().strip()
+    def retranslate(self) -> None:
+        self._commander_input.setPlaceholderText(
+            self._translator.t("decks.commander")
+        )
+        self._add_secondary_button.setToolTip(
+            self._translator.t("decks.details_edit.add_secondary")
+        )
+        self._remove_secondary_button.setToolTip(
+            self._translator.t("decks.details_edit.remove_secondary")
+        )
+        self._rebuild_add_menu()
+        if self._secondary_role is not None:
+            role_label = self._translator.t(_ROLE_I18N_KEY[self._secondary_role])
+            self._secondary_label.setText(role_label)
+            self._secondary_input.setPlaceholderText(
+                self._translator.t("decks.details_edit.secondary_placeholder").format(
+                    role=role_label
+                )
+            )
+
+    def _rebuild_add_menu(self) -> None:
+        self._add_menu.clear()
+        for role in SECONDARY_ROLES:
+            action = QAction(self._translator.t(_ROLE_I18N_KEY[role]), self._add_menu)
+            action.triggered.connect(
+                lambda _checked=False, r=role: self._show_secondary(r)
+            )
+            self._add_menu.addAction(action)
 
     def commander_name(self) -> str | None:
         text = self._commander_input.text().strip()
@@ -155,14 +173,26 @@ class DeckDetailsDialog(QDialog):
         text = self._secondary_input.text().strip()
         return text or None
 
+    def clear(self) -> None:
+        self._commander_input.clear()
+        self._hide_secondary()
+
+    def validation_error(self) -> str | None:
+        if self._secondary_role is not None and not self.secondary_name():
+            return self._translator.t("decks.details_edit.secondary_required").format(
+                role=self._translator.t(_ROLE_I18N_KEY[self._secondary_role])
+            )
+        return None
+
     def _show_secondary(
         self, role: DeckCardRole, name: str | None = None
     ) -> None:
         self._secondary_role = role
-        self._secondary_label.setText(self._translator.t(_ROLE_I18N_KEY[role]))
+        role_label = self._translator.t(_ROLE_I18N_KEY[role])
+        self._secondary_label.setText(role_label)
         self._secondary_input.setPlaceholderText(
             self._translator.t("decks.details_edit.secondary_placeholder").format(
-                role=self._translator.t(_ROLE_I18N_KEY[role])
+                role=role_label
             )
         )
         if name is not None:
@@ -171,6 +201,8 @@ class DeckDetailsDialog(QDialog):
             self._secondary_input.clear()
         self._secondary_label.setVisible(True)
         self._secondary_field.setVisible(True)
+        if not self._labeled:
+            self._secondary_wrap.setVisible(True)
         self._secondary_input.setFocus()
 
     def _hide_secondary(self) -> None:
@@ -178,6 +210,64 @@ class DeckDetailsDialog(QDialog):
         self._secondary_input.clear()
         self._secondary_label.setVisible(False)
         self._secondary_field.setVisible(False)
+        if not self._labeled:
+            self._secondary_wrap.setVisible(False)
+
+
+class DeckDetailsDialog(QDialog):
+    """Rename a deck and set commander plus optional partner/companion/background."""
+
+    def __init__(
+        self,
+        translator: Translator,
+        deck_name: str,
+        commander_name: str | None,
+        secondary: tuple[DeckCardRole, str] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self.setWindowTitle(translator.t("decks.details_edit.title"))
+        self.resize(460, 220)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self._name_input = QLineEdit(deck_name)
+        self._name_input.setPlaceholderText(translator.t("decks.name"))
+        form.addRow(translator.t("decks.name"), self._name_input)
+        layout.addLayout(form)
+
+        self._command_zone = CommandZoneFields(
+            translator,
+            commander_name=commander_name,
+            secondary=secondary,
+            labeled=True,
+        )
+        layout.addWidget(self._command_zone)
+
+        hint = QLabel(translator.t("decks.details_edit.hint"))
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def deck_name(self) -> str:
+        return self._name_input.text().strip()
+
+    def commander_name(self) -> str | None:
+        return self._command_zone.commander_name()
+
+    def secondary_role(self) -> DeckCardRole | None:
+        return self._command_zone.secondary_role()
+
+    def secondary_name(self) -> str | None:
+        return self._command_zone.secondary_name()
 
     def _accept(self) -> None:
         if not self.deck_name():
@@ -187,13 +277,12 @@ class DeckDetailsDialog(QDialog):
                 self._translator.t("decks.details_edit.name_required"),
             )
             return
-        if self._secondary_role is not None and not self.secondary_name():
+        error = self._command_zone.validation_error()
+        if error is not None:
             QMessageBox.warning(
                 self,
                 self._translator.t("common.error"),
-                self._translator.t("decks.details_edit.secondary_required").format(
-                    role=self._translator.t(_ROLE_I18N_KEY[self._secondary_role])
-                ),
+                error,
             )
             return
         self.accept()

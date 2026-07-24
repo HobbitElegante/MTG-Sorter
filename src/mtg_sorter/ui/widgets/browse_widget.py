@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -23,8 +24,14 @@ from mtg_sorter.i18n import Translator
 from mtg_sorter.services import BrowseService, ScryfallBulkService
 from mtg_sorter.ui.inventory_display import (
     format_availability_status,
-    format_inventory_assigned,
+    format_inventory_decks,
 )
+
+INV_COL_NAME = 0
+INV_COL_TOTAL = 1
+INV_COL_FREE = 2
+INV_COL_ASSIGNED = 3
+INV_COL_DECKS = 4
 
 
 class BulkSyncWorker(QThread):
@@ -89,8 +96,10 @@ class BrowseWidget(QWidget):
         self._inventory_results_table.setHorizontalHeaderLabels(
             [
                 self._translator.t("browse.cards.name"),
-                self._translator.t("browse.inventory.copies"),
-                self._translator.t("browse.inventory.assigned"),
+                self._translator.t("inventory.table.total"),
+                self._translator.t("inventory.table.free"),
+                self._translator.t("inventory.table.assigned"),
+                self._translator.t("inventory.table.decks"),
             ]
         )
         self._scryfall_group.setTitle(self._translator.t("browse.section.scryfall"))
@@ -225,15 +234,26 @@ class BrowseWidget(QWidget):
         self._inventory_hint.setWordWrap(True)
         layout.addWidget(self._inventory_hint)
 
-        self._inventory_results_table = QTableWidget(0, 3)
+        self._inventory_results_table = QTableWidget(0, 5)
         self._inventory_results_table.setHorizontalHeaderLabels(
             [
                 self._translator.t("browse.cards.name"),
-                self._translator.t("browse.inventory.copies"),
-                self._translator.t("browse.inventory.assigned"),
+                self._translator.t("inventory.table.total"),
+                self._translator.t("inventory.table.free"),
+                self._translator.t("inventory.table.assigned"),
+                self._translator.t("inventory.table.decks"),
             ]
         )
-        self._inventory_results_table.horizontalHeader().setStretchLastSection(True)
+        header = self._inventory_results_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(INV_COL_NAME, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(INV_COL_TOTAL, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(INV_COL_FREE, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            INV_COL_ASSIGNED, QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setSectionResizeMode(INV_COL_DECKS, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(INV_COL_DECKS, 220)
         layout.addWidget(self._inventory_results_table)
         return panel
 
@@ -349,17 +369,28 @@ class BrowseWidget(QWidget):
 
         self._inventory_results_table.setRowCount(len(rows))
         for index, row in enumerate(rows):
-            copies_item = QTableWidgetItem(str(row.total_copies))
-            copies_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            assigned = row.total_copies - row.free_copies
+            decks_text = format_inventory_decks(row, self._translator)
+
+            total_item = QTableWidgetItem(str(row.total_copies))
+            total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            free_item = QTableWidgetItem(str(row.free_copies))
+            free_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            assigned_item = QTableWidgetItem(str(assigned))
+            assigned_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            decks_item = QTableWidgetItem(decks_text)
+            if row.assigned_decks:
+                decks_item.setToolTip("\n".join(row.assigned_decks))
+
             self._inventory_results_table.setItem(
-                index, 0, QTableWidgetItem(row.card_name)
+                index, INV_COL_NAME, QTableWidgetItem(row.card_name)
             )
-            self._inventory_results_table.setItem(index, 1, copies_item)
+            self._inventory_results_table.setItem(index, INV_COL_TOTAL, total_item)
+            self._inventory_results_table.setItem(index, INV_COL_FREE, free_item)
             self._inventory_results_table.setItem(
-                index,
-                2,
-                QTableWidgetItem(format_inventory_assigned(row, self._translator)),
+                index, INV_COL_ASSIGNED, assigned_item
             )
+            self._inventory_results_table.setItem(index, INV_COL_DECKS, decks_item)
 
         if not search:
             self._inventory_status.setText("")

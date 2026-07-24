@@ -101,6 +101,60 @@ def test_plan_assembly_skips_already_armed_target(session: Session) -> None:
     assert plan.solution_labels == {}
 
 
+def test_plan_assembly_includes_basic_lands_in_free_inventory(
+    session: Session,
+) -> None:
+    sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    forest = Card(
+        oracle_id="forest",
+        name="Forest",
+        is_basic_land=True,
+        is_token=False,
+    )
+    token = Card(
+        oracle_id="token",
+        name="Saproling",
+        is_basic_land=False,
+        is_token=True,
+    )
+    target = Deck(name="Target", status=DeckStatus.DISMANTLED)
+    session.add_all([sol, forest, token, target])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=target.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=target.id,
+                card_id="forest",
+                quantity=12,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=target.id,
+                card_id="token",
+                quantity=3,
+                role=DeckCardRole.TOKEN,
+            ),
+            CardCopy(card_id="sol"),
+        ]
+    )
+    session.flush()
+
+    plan = OptimizationService(session).plan_assembly(target.id)
+
+    assert plan.free_inventory_used == {"sol": 1, "forest": 12}
+    assert "token" not in plan.free_inventory_used
+    assert plan.residual_needs == {}
+    assert plan.still_missing == {}
+    assert plan.card_names["forest"] == "Forest"
+    assert plan.result.minimum_decks_to_dismantle == 0
+
+
 def test_plan_assembly_names_still_missing_cards(session: Session) -> None:
     sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
     target = Deck(name="Target", status=DeckStatus.DISMANTLED)
