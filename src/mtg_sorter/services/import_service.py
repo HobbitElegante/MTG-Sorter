@@ -7,7 +7,12 @@ from mtg_sorter.algorithms.card_utils import is_basic_land_name
 from mtg_sorter.models import Card, Deck, DeckCard
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services.deck_service import DeckService, InventoryService
-from mtg_sorter.services.moxfield_parser import ParsedDeckLine, parse_moxfield_export
+from mtg_sorter.services.moxfield_parser import (
+    CATEGORY_HEADER_RE,
+    ParsedDeckLine,
+    parse_moxfield_export,
+    parse_moxfield_line,
+)
 from mtg_sorter.services.scryfall_service import ScryfallService
 
 ROLE_EXPORT_PREFIX: dict[DeckCardRole, str] = {
@@ -38,10 +43,76 @@ class ImportResult:
     warnings: list[ImportWarning] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class InventoryListCard:
+    oracle_id: str
+    name: str
+    list_quantity: int
+
+
+@dataclass(frozen=True)
+class InventoryListPreview:
+    identified: list[InventoryListCard]
+    unresolved_lines: list[str]
+
+
 class ImportService:
     def __init__(self, session: Session, scryfall: ScryfallService) -> None:
         self._session = session
         self._scryfall = scryfall
+
+    def preview_inventory_list(self, text: str) -> InventoryListPreview:
+        """Resolve MTGO/Moxfield text into inventoriable cards + unresolved lines.
+
+        Basics and tokens are skipped (not trackable). Unparseable non-header
+        lines and resolve failures go to unresolved_lines as MTGO-style text.
+        """
+        merged: dict[str, InventoryListCard] = {}
+        unresolved: list[str] = []
+
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            if CATEGORY_HEADER_RE.match(stripped):
+                continue
+
+            parsed = parse_moxfield_line(raw)
+            if parsed is None:
+                unresolved.append(stripped)
+                continue
+
+            try:
+                card = self._scryfall.fetch_and_cache(
+                    parsed.name,
+                    prefer_token=parsed.role == DeckCardRole.TOKEN,
+                )
+            except Exception:
+                unresolved.append(parsed.raw_line.strip() or stripped)
+                continue
+
+            if is_basic_land_name(parsed.name) or card.is_basic_land or card.is_token:
+                continue
+
+            existing = merged.get(card.oracle_id)
+            if existing is None:
+                merged[card.oracle_id] = InventoryListCard(
+                    oracle_id=card.oracle_id,
+                    name=card.name,
+                    list_quantity=parsed.quantity,
+                )
+            else:
+                merged[card.oracle_id] = InventoryListCard(
+                    oracle_id=card.oracle_id,
+                    name=card.name,
+                    list_quantity=existing.list_quantity + parsed.quantity,
+                )
+
+        identified = sorted(merged.values(), key=lambda c: c.name.casefold())
+        return InventoryListPreview(
+            identified=identified,
+            unresolved_lines=unresolved,
+        )
 
     def import_moxfield_text(
         self,

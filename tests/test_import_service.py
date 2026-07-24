@@ -172,6 +172,77 @@ def test_armed_import_creates_second_copy_when_first_is_assigned(
     assert session.scalar(select(func.count()).select_from(CardAssignment)) == 2
 
 
+def test_preview_inventory_list_identifies_merges_and_skips_basics(
+    session: Session,
+) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="sol",
+                name="Sol Ring",
+                is_basic_land=False,
+                is_token=False,
+            ),
+            Card(
+                oracle_id="forest",
+                name="Forest",
+                is_basic_land=True,
+                is_token=False,
+            ),
+            Card(
+                oracle_id="token-angel",
+                name="Angel",
+                is_basic_land=False,
+                is_token=True,
+            ),
+        ]
+    )
+    session.flush()
+    scryfall = _StrictFakeScryfall(session)
+    text = "\n".join(
+        [
+            "2 Sol Ring",
+            "1 Sol Ring",
+            "10 Forest",
+            "Token: 1 Angel",
+            "1 Completely Fake Card Name XYZ",
+            "not a valid card line!!!",
+            "// Creatures",
+        ]
+    )
+
+    preview = ImportService(session, scryfall).preview_inventory_list(text)
+
+    assert len(preview.identified) == 1
+    assert preview.identified[0].name == "Sol Ring"
+    assert preview.identified[0].list_quantity == 3
+    assert "1 Completely Fake Card Name XYZ" in preview.unresolved_lines
+    assert "not a valid card line!!!" in preview.unresolved_lines
+    assert all("Forest" not in line for line in preview.unresolved_lines)
+    assert all("Angel" not in line for line in preview.unresolved_lines)
+
+
+def test_preview_inventory_list_empty_unresolved_when_all_resolve(
+    session: Session,
+) -> None:
+    session.add(
+        Card(
+            oracle_id="sol",
+            name="Sol Ring",
+            is_basic_land=False,
+            is_token=False,
+        )
+    )
+    session.flush()
+
+    preview = ImportService(session, _StrictFakeScryfall(session)).preview_inventory_list(
+        "1 Sol Ring"
+    )
+
+    assert len(preview.identified) == 1
+    assert preview.unresolved_lines == []
+
+
 class _FakeScryfall:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -194,3 +265,11 @@ class _FakeScryfall:
 
     def close(self) -> None:
         return None
+
+
+class _StrictFakeScryfall(_FakeScryfall):
+    def fetch_and_cache(self, name: str, *, prefer_token: bool = False) -> Card:
+        card = self._session.scalar(select(Card).where(Card.name == name))
+        if card is None:
+            raise LookupError(f"Card '{name}' not found")
+        return card

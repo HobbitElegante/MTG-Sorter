@@ -31,14 +31,14 @@ from PySide6.QtWidgets import (
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services import BrowseService
+from mtg_sorter.services import BrowseService, ImportService, ScryfallService
 from mtg_sorter.services.browse_service import CardSummary
 from mtg_sorter.services.deck_service import (
     DeckDeleteCardImpact,
     DeckEditLine,
     DeckEditRow,
 )
-from mtg_sorter.services.import_service import TrackableDeckCard
+from mtg_sorter.services.import_service import InventoryListCard, TrackableDeckCard
 
 SECONDARY_ROLES: tuple[DeckCardRole, ...] = (
     DeckCardRole.PARTNER,
@@ -438,6 +438,324 @@ class AvailableCopiesDialog(QDialog):
         }
 
 
+@dataclass
+class EditableInventoryListLine:
+    oracle_id: str
+    name: str
+    list_quantity: int
+    add_quantity: int
+
+
+class AddInventoryListDialog(QDialog):
+    """Review a MTGO list: edit quantities for free inventory, show unresolved lines."""
+
+    def __init__(
+        self,
+        translator: Translator,
+        identified: list[InventoryListCard],
+        unresolved_lines: list[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._lines = [
+            EditableInventoryListLine(
+                oracle_id=card.oracle_id,
+                name=card.name,
+                list_quantity=card.list_quantity,
+                add_quantity=min(1, card.list_quantity),
+            )
+            for card in identified
+        ]
+        self._unresolved_lines = list(unresolved_lines)
+        self._qty_steppers: list[QuantityStepper] = []
+        self.setWindowTitle(self._translator.t("inventory.add_list.title"))
+        self.resize(1000, 600)
+        self._build_ui()
+        self._rebuild_table()
+        self._rebuild_unresolved()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        panes = QHBoxLayout()
+
+        left = QVBoxLayout()
+        left.addWidget(QLabel(self._translator.t("inventory.add_list.identified")))
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.cards.name"),
+                self._translator.t("decks.import.available.in_list"),
+                self._translator.t("inventory.add_list.add"),
+                self._translator.t("decks.edit.replace"),
+                self._translator.t("inventory.add_list.remove"),
+            ]
+        )
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        left.addWidget(self._table)
+        panes.addLayout(left, stretch=3)
+
+        right = QVBoxLayout()
+        right.addWidget(QLabel(self._translator.t("inventory.add_list.unresolved")))
+        hint = QLabel(self._translator.t("inventory.add_list.unresolved.hint"))
+        hint.setWordWrap(True)
+        right.addWidget(hint)
+        self._unresolved_table = QTableWidget(0, 3)
+        self._unresolved_table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("inventory.add_list.unresolved.line"),
+                self._translator.t("inventory.add_list.recheck"),
+                self._translator.t("inventory.add_list.remove"),
+            ]
+        )
+        unresolved_header = self._unresolved_table.horizontalHeader()
+        unresolved_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        unresolved_header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        unresolved_header.setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._unresolved_table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.EditKeyPressed
+            | QTableWidget.EditTrigger.SelectedClicked
+        )
+        right.addWidget(self._unresolved_table)
+        panes.addLayout(right, stretch=2)
+
+        root.addLayout(panes)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok is not None:
+            ok.setText(self._translator.t("inventory.add_list.confirm"))
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def _rebuild_table(self) -> None:
+        self._qty_steppers = []
+        self._table.setRowCount(len(self._lines))
+        for row, line in enumerate(self._lines):
+            self._table.setItem(row, 0, QTableWidgetItem(line.name))
+
+            in_list = QTableWidgetItem(str(line.list_quantity))
+            in_list.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._table.setItem(row, 1, in_list)
+
+            stepper = QuantityStepper(line.list_quantity, compact=True)
+            stepper.setMinimum(0)
+            stepper.blockSignals(True)
+            stepper.setValue(min(line.add_quantity, line.list_quantity))
+            stepper.blockSignals(False)
+            stepper.valueChanged.connect(
+                lambda value, index=row: self._on_qty_changed(index, value)
+            )
+            self._qty_steppers.append(stepper)
+            self._table.setCellWidget(row, 2, stepper)
+
+            replace = QPushButton(self._translator.t("decks.edit.replace"))
+            replace.clicked.connect(
+                lambda _checked=False, index=row: self._replace_card(index)
+            )
+            self._table.setCellWidget(row, 3, replace)
+
+            remove = QPushButton(self._translator.t("inventory.add_list.remove"))
+            remove.clicked.connect(
+                lambda _checked=False, index=row: self._remove_card(index)
+            )
+            self._table.setCellWidget(row, 4, remove)
+
+    def _rebuild_unresolved(self) -> None:
+        self._unresolved_table.setRowCount(len(self._unresolved_lines))
+        for row, line in enumerate(self._unresolved_lines):
+            item = QTableWidgetItem(line)
+            item.setFlags(
+                Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsEditable
+            )
+            self._unresolved_table.setItem(row, 0, item)
+
+            recheck = QPushButton(self._translator.t("inventory.add_list.recheck"))
+            recheck.clicked.connect(
+                lambda _checked=False, index=row: self._recheck_unresolved(index)
+            )
+            self._unresolved_table.setCellWidget(row, 1, recheck)
+
+            remove = QPushButton(self._translator.t("inventory.add_list.remove"))
+            remove.clicked.connect(
+                lambda _checked=False, index=row: self._remove_unresolved(index)
+            )
+            self._unresolved_table.setCellWidget(row, 2, remove)
+
+    def _sync_unresolved_from_table(self) -> None:
+        for row in range(self._unresolved_table.rowCount()):
+            item = self._unresolved_table.item(row, 0)
+            if item is None or row >= len(self._unresolved_lines):
+                continue
+            self._unresolved_lines[row] = item.text().strip()
+
+    def _on_qty_changed(self, index: int, value: int) -> None:
+        if index < 0 or index >= len(self._lines):
+            return
+        if value <= 0:
+            del self._lines[index]
+            self._rebuild_table()
+            return
+        self._lines[index].add_quantity = value
+
+    def _remove_card(self, index: int) -> None:
+        if index < 0 or index >= len(self._lines):
+            return
+        del self._lines[index]
+        self._rebuild_table()
+
+    def _remove_unresolved(self, index: int) -> None:
+        self._sync_unresolved_from_table()
+        if index < 0 or index >= len(self._unresolved_lines):
+            return
+        del self._unresolved_lines[index]
+        self._rebuild_unresolved()
+
+    def _merge_identified(self, card: InventoryListCard) -> None:
+        for line in self._lines:
+            if line.oracle_id == card.oracle_id:
+                line.list_quantity += card.list_quantity
+                line.add_quantity = min(
+                    max(line.add_quantity, 1),
+                    line.list_quantity,
+                )
+                return
+        self._lines.append(
+            EditableInventoryListLine(
+                oracle_id=card.oracle_id,
+                name=card.name,
+                list_quantity=card.list_quantity,
+                add_quantity=min(1, card.list_quantity),
+            )
+        )
+        self._lines.sort(key=lambda entry: entry.name.casefold())
+
+    def _recheck_unresolved(self, index: int) -> None:
+        self._sync_unresolved_from_table()
+        if index < 0 or index >= len(self._unresolved_lines):
+            return
+        text = self._unresolved_lines[index].strip()
+        if not text:
+            del self._unresolved_lines[index]
+            self._rebuild_unresolved()
+            return
+
+        try:
+            with get_session() as session:
+                scryfall = ScryfallService(session)
+                try:
+                    preview = ImportService(
+                        session, scryfall
+                    ).preview_inventory_list(text)
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        if preview.identified:
+            for card in preview.identified:
+                self._merge_identified(card)
+            del self._unresolved_lines[index]
+            # Keep any leftover unresolved fragments from the same recheck.
+            for leftover in preview.unresolved_lines:
+                self._unresolved_lines.insert(index, leftover)
+                index += 1
+            self._rebuild_table()
+            self._rebuild_unresolved()
+            return
+
+        if preview.unresolved_lines:
+            self._unresolved_lines[index] = preview.unresolved_lines[0]
+            for extra in preview.unresolved_lines[1:]:
+                self._unresolved_lines.insert(index + 1, extra)
+            self._rebuild_unresolved()
+            QMessageBox.information(
+                self,
+                self._translator.t("inventory.add_list.title"),
+                self._translator.t("inventory.add_list.recheck.failed"),
+            )
+            return
+
+        # Resolved as basic/token (or blank) — drop from unresolved.
+        del self._unresolved_lines[index]
+        self._rebuild_unresolved()
+        QMessageBox.information(
+            self,
+            self._translator.t("inventory.add_list.title"),
+            self._translator.t("inventory.add_list.recheck.skipped"),
+        )
+
+    def _replace_card(self, index: int) -> None:
+        if index < 0 or index >= len(self._lines):
+            return
+        line = self._lines[index]
+        dialog = CardPickDialog(
+            self._translator,
+            title=self._translator.t("decks.edit.replace"),
+            max_quantity=max(1, line.list_quantity),
+            show_available=False,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        result = dialog.result()
+        if result is None:
+            return
+        if result.is_basic_land or result.is_token:
+            QMessageBox.warning(
+                self,
+                self._translator.t("common.error"),
+                self._translator.t("inventory.add_list.not_trackable"),
+            )
+            return
+        # Merge into existing row if the replacement is already in the table.
+        for other_index, other in enumerate(self._lines):
+            if other_index == index:
+                continue
+            if other.oracle_id == result.oracle_id:
+                other.list_quantity += line.list_quantity
+                other.add_quantity = min(
+                    max(other.add_quantity, line.add_quantity),
+                    other.list_quantity,
+                )
+                del self._lines[index]
+                self._rebuild_table()
+                return
+        line.oracle_id = result.oracle_id
+        line.name = result.name
+        line.list_quantity = max(line.list_quantity, result.quantity)
+        line.add_quantity = min(line.add_quantity, line.list_quantity)
+        self._rebuild_table()
+
+    def quantities(self) -> dict[str, int]:
+        return {
+            line.oracle_id: line.add_quantity
+            for line in self._lines
+            if line.add_quantity > 0
+        }
+
+
 class DeleteDeckDialog(QDialog):
     def __init__(
         self,
@@ -598,12 +916,14 @@ class CardPickDialog(QDialog):
         title: str,
         max_quantity: int,
         outgoing: EditableDeckLine | None = None,
+        show_available: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._translator = translator
         self._max_quantity = max(1, max_quantity)
         self._outgoing = outgoing
+        self._show_available = show_available
         self._results: list[CardSummary] = []
         self.setWindowTitle(title)
         self.resize(560, 480)
@@ -638,6 +958,10 @@ class CardPickDialog(QDialog):
         form.addRow(self._available_label, self._available)
         self._qty.valueChanged.connect(self._sync_available_max)
         layout.addLayout(form)
+        if not self._show_available:
+            self._available.setVisible(False)
+            self._available_label.setVisible(False)
+            self._available.setValue(0)
 
         self._remove_outgoing_check: QCheckBox | None = None
         self._remove_outgoing_stepper: QuantityStepper | None = None
@@ -717,7 +1041,9 @@ class CardPickDialog(QDialog):
             and self._remove_outgoing_stepper is not None
         ):
             remove_outgoing = self._remove_outgoing_stepper.value()
-        available = 0 if card.is_basic_land or card.is_token else self._available.value()
+        available = 0
+        if self._show_available and not (card.is_basic_land or card.is_token):
+            available = self._available.value()
         self._result = CardPickResult(
             oracle_id=card.oracle_id,
             name=card.name,

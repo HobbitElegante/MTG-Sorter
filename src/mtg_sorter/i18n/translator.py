@@ -20,6 +20,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.search.collection": "Search your collection…",
         "inventory.search.hint": "Type a card name to check whether you have free copies.",
         "inventory.add_new": "Add new card to collection",
+        "inventory.add_list": "Add list to collection",
+        "inventory.add_list.title": "Add list to collection",
+        "inventory.add_list.dialog_title": "Open MTGO / Moxfield list",
+        "inventory.add_list.identified": "Identified cards",
+        "inventory.add_list.unresolved": "Unrecognized lines (MTGO)",
+        "inventory.add_list.unresolved.hint": (
+            "Edit a line and press Recheck, or Remove to discard it."
+        ),
+        "inventory.add_list.unresolved.line": "Line",
+        "inventory.add_list.recheck": "Recheck",
+        "inventory.add_list.recheck.failed": (
+            "Still unrecognized. Fix the name (e.g. “1 Correct Card Name”) and try again."
+        ),
+        "inventory.add_list.recheck.skipped": (
+            "That line resolved to a basic land or token, which is not tracked in inventory."
+        ),
+        "inventory.add_list.add": "Add",
+        "inventory.add_list.remove": "Remove",
+        "inventory.add_list.confirm": "Add copies",
+        "inventory.add_list.empty": "No cards found in that list.",
+        "inventory.add_list.placeholder": "1 Sol Ring\n1 Arcane Signet",
+        "inventory.add_list.not_trackable": (
+            "Basics and tokens are not tracked in inventory. Choose another card."
+        ),
         "inventory.edit_copies": "Edit copy count",
         "inventory.add_dialog.title": "Add card to collection",
         "inventory.add_dialog.search": "Search card name",
@@ -36,6 +60,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.status.unavailable": "Not available — all {count} assigned",
         "inventory.not_owned": "That card is not in your collection.",
         "inventory.matches": "{count} matching cards in your collection.",
+        "inventory.table.total": "Total",
+        "inventory.table.free": "Free",
+        "inventory.table.assigned": "Assigned",
+        "inventory.table.decks": "In decks",
+        "inventory.table.no_decks": "—",
         "decks.import": "Import Moxfield list",
         "decks.name": "Deck name",
         "decks.commander": "Commander name (optional)",
@@ -75,6 +104,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.filter.all": "All decks",
         "decks.filter.armed": "Armed only",
         "decks.filter.dismantled": "Dismantled only",
+        "decks.search": "Search by deck or commander…",
         "decks.move_up": "Move up",
         "decks.move_down": "Move down",
         "decks.edit_details": "Edit name / commander",
@@ -136,6 +166,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.edit.no_selection": "Select a card from the search results.",
         "decks.edit.over_target": "List total cannot exceed the original size.",
         "optimize.target": "Deck to assemble",
+        "optimize.target.search": "Type deck or commander name…",
         "optimize.run": "Find optimal dismantle plan",
         "optimize.no_solutions": "No feasible dismantle plan found.",
         "optimize.already_armed": "This deck is already armed — nothing to optimize.",
@@ -225,6 +256,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.search.collection": "Buscar en tu colección…",
         "inventory.search.hint": "Escribe el nombre de una carta para ver si tienes copias libres.",
         "inventory.add_new": "Agregar carta nueva a la colección",
+        "inventory.add_list": "Agregar listado a la colección",
+        "inventory.add_list.title": "Agregar listado a la colección",
+        "inventory.add_list.dialog_title": "Abrir listado MTGO / Moxfield",
+        "inventory.add_list.identified": "Cartas identificadas",
+        "inventory.add_list.unresolved": "Líneas no reconocidas (MTGO)",
+        "inventory.add_list.unresolved.hint": (
+            "Edita una línea y pulsa Rechequear, o Quitar para descartarla."
+        ),
+        "inventory.add_list.unresolved.line": "Línea",
+        "inventory.add_list.recheck": "Rechequear",
+        "inventory.add_list.recheck.failed": (
+            "Sigue sin reconocerse. Corrige el nombre (p. ej. “1 Nombre Correcto”) e inténtalo de nuevo."
+        ),
+        "inventory.add_list.recheck.skipped": (
+            "Esa línea resolvió a una básica o token, que no se llevan en el inventario."
+        ),
+        "inventory.add_list.add": "Agregar",
+        "inventory.add_list.remove": "Quitar",
+        "inventory.add_list.confirm": "Agregar copias",
+        "inventory.add_list.empty": "No se encontraron cartas en ese listado.",
+        "inventory.add_list.placeholder": "1 Sol Ring\n1 Arcane Signet",
+        "inventory.add_list.not_trackable": (
+            "Las básicas y tokens no se llevan en el inventario. Elige otra carta."
+        ),
         "inventory.edit_copies": "Editar el número de copias",
         "inventory.add_dialog.title": "Agregar carta a la colección",
         "inventory.add_dialog.search": "Buscar carta por nombre",
@@ -241,6 +296,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.status.unavailable": "No disponible — las {count} copia(s) están asignadas",
         "inventory.not_owned": "Esa carta no está en tu colección.",
         "inventory.matches": "{count} cartas coinciden en tu colección.",
+        "inventory.table.total": "Total",
+        "inventory.table.free": "Libres",
+        "inventory.table.assigned": "Asignadas",
+        "inventory.table.decks": "En mazos",
+        "inventory.table.no_decks": "—",
         "decks.import": "Importar lista Moxfield",
         "decks.name": "Nombre del mazo",
         "decks.commander": "Nombre del commander (opcional)",
@@ -280,6 +340,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.filter.all": "Todos los mazos",
         "decks.filter.armed": "Solo armados",
         "decks.filter.dismantled": "Solo desarmados",
+        "decks.search": "Buscar por mazo o commander…",
         "decks.move_up": "Subir",
         "decks.move_down": "Bajar",
         "decks.edit_details": "Editar nombre / commander",
@@ -343,6 +404,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.edit.no_selection": "Selecciona una carta de los resultados.",
         "decks.edit.over_target": "El total del listado no puede superar el tamaño original.",
         "optimize.target": "Mazo a armar",
+        "optimize.target.search": "Escribe nombre de mazo o commander…",
         "optimize.run": "Calcular plan óptimo",
         "optimize.no_solutions": "No hay plan viable de desmontaje.",
         "optimize.already_armed": "Este mazo ya está armado — no hay nada que optimizar.",

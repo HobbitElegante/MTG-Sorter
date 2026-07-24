@@ -2,7 +2,15 @@ from mtg_sorter.i18n import Translator
 from mtg_sorter.services.browse_service import InventorySummaryRow
 
 
+def format_inventory_decks(row: InventorySummaryRow, translator: Translator) -> str:
+    """Deck names that hold assigned copies, or an empty-state placeholder."""
+    if not row.assigned_decks:
+        return translator.t("inventory.table.no_decks")
+    return ", ".join(row.assigned_decks)
+
+
 def format_inventory_assigned(row: InventorySummaryRow, translator: Translator) -> str:
+    """Legacy mixed cell used by Browse → Availability."""
     if row.free_copies == row.total_copies:
         return translator.t("browse.inventory.free")
     if row.free_copies == 0:

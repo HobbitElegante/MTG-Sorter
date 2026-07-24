@@ -1,5 +1,7 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QFormLayout,
     QGroupBox,
     QLabel,
@@ -27,6 +29,11 @@ class OptimizerWidget(QWidget):
     def retranslate(self) -> None:
         self._target_label.setText(self._translator.t("optimize.target"))
         self._run_button.setText(self._translator.t("optimize.run"))
+        line_edit = self._deck_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText(
+                self._translator.t("optimize.target.search")
+            )
         self._apply_section_titles_from_plan()
         self.refresh_decks()
 
@@ -35,6 +42,20 @@ class OptimizerWidget(QWidget):
 
         form = QFormLayout()
         self._deck_combo = QComboBox()
+        self._deck_combo.setEditable(True)
+        self._deck_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._deck_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._deck_combo.setMinimumContentsLength(32)
+        line_edit = self._deck_combo.lineEdit()
+        line_edit.setPlaceholderText(self._translator.t("optimize.target.search"))
+        line_edit.setClearButtonEnabled(True)
+        completer = QCompleter(self._deck_combo.model(), self._deck_combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._deck_combo.setCompleter(completer)
         self._target_label = QLabel(self._translator.t("optimize.target"))
         form.addRow(self._target_label, self._deck_combo)
         layout.addLayout(form)
@@ -115,19 +136,63 @@ class OptimizerWidget(QWidget):
             decks = plan.result.minimum_decks_to_dismantle
         self._set_section_titles(inventory_cards, decks, missing_cards)
 
+    @staticmethod
+    def _deck_label(name: str, commander: str | None) -> str:
+        if commander:
+            return f"{name} — {commander}"
+        return name
+
     def refresh_decks(self) -> None:
         current = self._deck_combo.currentData()
+        self._deck_combo.blockSignals(True)
         self._deck_combo.clear()
         with get_session() as session:
-            for deck in DeckService(session).list_decks():
-                self._deck_combo.addItem(deck.name, deck.id)
+            service = DeckService(session)
+            for deck in service.list_decks():
+                commander = service.commander_name(deck.id)
+                label = self._deck_label(deck.name, commander)
+                self._deck_combo.addItem(label, deck.id)
+        completer = self._deck_combo.completer()
+        if completer is not None:
+            completer.setModel(self._deck_combo.model())
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
         if current is not None:
             index = self._deck_combo.findData(current)
             if index >= 0:
                 self._deck_combo.setCurrentIndex(index)
+        self._deck_combo.blockSignals(False)
+
+    def _selected_deck_id(self) -> int | None:
+        typed = self._deck_combo.currentText().strip()
+        if not typed:
+            return None
+        index = self._deck_combo.currentIndex()
+        if index >= 0 and self._deck_combo.itemText(index) == typed:
+            data = self._deck_combo.itemData(index)
+            if isinstance(data, int):
+                return data
+        needle = typed.casefold()
+        exact: list[int] = []
+        partial: list[int] = []
+        for i in range(self._deck_combo.count()):
+            label = self._deck_combo.itemText(i)
+            data = self._deck_combo.itemData(i)
+            if not isinstance(data, int):
+                continue
+            folded = label.casefold()
+            if folded == needle:
+                exact.append(data)
+            elif needle in folded:
+                partial.append(data)
+        if len(exact) == 1:
+            return exact[0]
+        if len(partial) == 1:
+            return partial[0]
+        return None
 
     def _run_optimization(self) -> None:
-        deck_id = self._deck_combo.currentData()
+        deck_id = self._selected_deck_id()
         if deck_id is None:
             return
 

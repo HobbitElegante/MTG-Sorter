@@ -1,9 +1,14 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -11,18 +16,30 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.services import BrowseService, InventoryService
+from mtg_sorter.services import (
+    BrowseService,
+    ImportService,
+    InventoryService,
+    ScryfallService,
+)
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
-from mtg_sorter.ui.inventory_display import format_inventory_assigned
-from mtg_sorter.ui.widgets.import_dialogs import QuantityStepper
+from mtg_sorter.ui.inventory_display import format_inventory_decks
+from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
+
+COL_NAME = 0
+COL_TOTAL = 1
+COL_FREE = 2
+COL_ASSIGNED = 3
+COL_DECKS = 4
 
 
 class AddInventoryCardDialog(QDialog):
@@ -169,6 +186,8 @@ class InventoryWidget(QWidget):
         self._translator = translator
         self._rows: list[InventorySummaryRow] = []
         self._visible_rows: list[InventorySummaryRow] = []
+        self._sort_column = COL_NAME
+        self._sort_ascending = True
         self._build_ui()
         self.refresh()
 
@@ -177,56 +196,156 @@ class InventoryWidget(QWidget):
             self._translator.t("inventory.search.collection")
         )
         self._add_button.setText(self._translator.t("inventory.add_new"))
+        self._add_list_button.setText(self._translator.t("inventory.add_list"))
         self._edit_button.setText(self._translator.t("inventory.edit_copies"))
-        self._table.setHorizontalHeaderLabels(
-            [
-                self._translator.t("browse.cards.name"),
-                self._translator.t("browse.inventory.copies"),
-                self._translator.t("browse.inventory.assigned"),
-            ]
+        self._add_list_group.setTitle(self._translator.t("inventory.add_list.title"))
+        self._import_text.setPlaceholderText(
+            self._translator.t("inventory.add_list.placeholder")
         )
+        self._load_file_button.setText(self._translator.t("decks.load_file"))
+        self._submit_list_button.setText(self._translator.t("decks.submit_import"))
+        self._cancel_list_button.setText(self._translator.t("decks.cancel_import"))
+        self._table.setHorizontalHeaderLabels(self._header_labels())
         self._populate_table()
 
+    def _header_labels(self) -> list[str]:
+        return [
+            self._translator.t("browse.cards.name"),
+            self._translator.t("inventory.table.total"),
+            self._translator.t("inventory.table.free"),
+            self._translator.t("inventory.table.assigned"),
+            self._translator.t("inventory.table.decks"),
+        ]
+
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        self._main_layout = QVBoxLayout(self)
+
+        self._collection_panel = QWidget()
+        collection = QVBoxLayout(self._collection_panel)
+        collection.setContentsMargins(0, 0, 0, 0)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(
             self._translator.t("inventory.search.collection")
         )
         self._search.textChanged.connect(self._populate_table)
-        layout.addWidget(self._search)
+        collection.addWidget(self._search)
 
         actions = QHBoxLayout()
         self._add_button = QPushButton(self._translator.t("inventory.add_new"))
         self._add_button.clicked.connect(self._add_card)
         actions.addWidget(self._add_button)
 
+        self._add_list_button = QPushButton(self._translator.t("inventory.add_list"))
+        self._add_list_button.clicked.connect(self._show_add_list_section)
+        actions.addWidget(self._add_list_button)
+
         self._edit_button = QPushButton(self._translator.t("inventory.edit_copies"))
         self._edit_button.clicked.connect(self._edit_copies)
         self._edit_button.setVisible(False)
         actions.addWidget(self._edit_button)
         actions.addStretch()
-        layout.addLayout(actions)
+        collection.addLayout(actions)
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(
-            [
-                self._translator.t("browse.cards.name"),
-                self._translator.t("browse.inventory.copies"),
-                self._translator.t("browse.inventory.assigned"),
-            ]
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(self._header_labels())
+        header = self._table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            COL_ASSIGNED, QHeaderView.ResizeMode.ResizeToContents
         )
-        self._table.horizontalHeader().setStretchLastSection(True)
+        header.setSectionResizeMode(COL_DECKS, QHeaderView.ResizeMode.Interactive)
+        header.setMinimumSectionSize(60)
+        header.resizeSection(COL_DECKS, 220)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(COL_NAME, Qt.SortOrder.AscendingOrder)
+        header.sectionClicked.connect(self._on_header_clicked)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.itemSelectionChanged.connect(self._sync_edit_button)
-        layout.addWidget(self._table)
+        collection.addWidget(self._table)
+
+        self._main_layout.addWidget(self._collection_panel, 1)
+
+        self._add_list_group = QGroupBox(self._translator.t("inventory.add_list.title"))
+        import_layout = QVBoxLayout(self._add_list_group)
+
+        self._import_text = QTextEdit()
+        self._import_text.setPlaceholderText(
+            self._translator.t("inventory.add_list.placeholder")
+        )
+        import_layout.addWidget(self._import_text, 1)
+
+        import_buttons = QHBoxLayout()
+        self._load_file_button = QPushButton(self._translator.t("decks.load_file"))
+        self._load_file_button.clicked.connect(self._load_list_file)
+        self._submit_list_button = QPushButton(
+            self._translator.t("decks.submit_import")
+        )
+        self._submit_list_button.clicked.connect(self._confirm_add_list)
+        self._cancel_list_button = QPushButton(
+            self._translator.t("decks.cancel_import")
+        )
+        self._cancel_list_button.clicked.connect(self._hide_add_list_section)
+        import_buttons.addWidget(self._load_file_button)
+        import_buttons.addWidget(self._submit_list_button)
+        import_buttons.addWidget(self._cancel_list_button)
+        import_buttons.addStretch()
+        import_layout.addLayout(import_buttons)
+
+        self._add_list_group.setVisible(False)
+        self._main_layout.addWidget(self._add_list_group, 0)
+
+    def _show_add_list_section(self) -> None:
+        self._collection_panel.setVisible(False)
+        self._add_list_group.setVisible(True)
+        self._main_layout.setStretchFactor(self._collection_panel, 0)
+        self._main_layout.setStretchFactor(self._add_list_group, 1)
+        self._import_text.setFocus()
+
+    def _hide_add_list_section(self) -> None:
+        self._add_list_group.setVisible(False)
+        self._collection_panel.setVisible(True)
+        self._main_layout.setStretchFactor(self._add_list_group, 0)
+        self._main_layout.setStretchFactor(self._collection_panel, 1)
 
     def refresh(self) -> None:
         with get_session() as session:
             self._rows = BrowseService(session).list_inventory()
         self._populate_table()
+
+    def _on_header_clicked(self, column: int) -> None:
+        if column == self._sort_column:
+            self._sort_ascending = not self._sort_ascending
+        else:
+            self._sort_column = column
+            # Numbers: high → low first; text: A → Z first
+            self._sort_ascending = column in (COL_NAME, COL_DECKS)
+        header = self._table.horizontalHeader()
+        order = (
+            Qt.SortOrder.AscendingOrder
+            if self._sort_ascending
+            else Qt.SortOrder.DescendingOrder
+        )
+        header.setSortIndicator(column, order)
+        self._populate_table()
+
+    def _sort_key(self, row: InventorySummaryRow):
+        assigned = row.total_copies - row.free_copies
+        if self._sort_column == COL_NAME:
+            return row.card_name.casefold()
+        if self._sort_column == COL_TOTAL:
+            return row.total_copies
+        if self._sort_column == COL_FREE:
+            return row.free_copies
+        if self._sort_column == COL_ASSIGNED:
+            return assigned
+        if self._sort_column == COL_DECKS:
+            return ", ".join(row.assigned_decks).casefold()
+        return row.card_name.casefold()
 
     def _populate_table(self) -> None:
         rows = self._rows
@@ -234,21 +353,35 @@ class InventoryWidget(QWidget):
         if search:
             needle = search.casefold()
             rows = [row for row in rows if needle in row.card_name.casefold()]
+        rows = sorted(rows, key=self._sort_key, reverse=not self._sort_ascending)
         self._visible_rows = rows
 
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):
+            assigned = row.total_copies - row.free_copies
+            decks_text = format_inventory_decks(row, self._translator)
+
             name_item = QTableWidgetItem(row.card_name)
             name_item.setData(ORACLE_ID_ROLE, row.oracle_id)
-            copies_item = QTableWidgetItem(str(row.total_copies))
-            copies_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(index, 0, name_item)
-            self._table.setItem(index, 1, copies_item)
-            self._table.setItem(
-                index,
-                2,
-                QTableWidgetItem(format_inventory_assigned(row, self._translator)),
-            )
+
+            total_item = QTableWidgetItem(str(row.total_copies))
+            total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            free_item = QTableWidgetItem(str(row.free_copies))
+            free_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            assigned_item = QTableWidgetItem(str(assigned))
+            assigned_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            decks_item = QTableWidgetItem(decks_text)
+            if row.assigned_decks:
+                decks_item.setToolTip("\n".join(row.assigned_decks))
+
+            self._table.setItem(index, COL_NAME, name_item)
+            self._table.setItem(index, COL_TOTAL, total_item)
+            self._table.setItem(index, COL_FREE, free_item)
+            self._table.setItem(index, COL_ASSIGNED, assigned_item)
+            self._table.setItem(index, COL_DECKS, decks_item)
         self._sync_edit_button()
 
     def _selected_row(self) -> InventorySummaryRow | None:
@@ -281,6 +414,90 @@ class InventoryWidget(QWidget):
                 str(exc),
             )
             return
+        self.refresh()
+        self.changed.emit()
+
+    def _load_list_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self._translator.t("inventory.add_list.dialog_title"),
+            str(Path.home()),
+            "Text files (*.txt);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            content = Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+        self._import_text.setPlainText(content)
+
+    def _confirm_add_list(self) -> None:
+        text = self._import_text.toPlainText().strip()
+        if not text:
+            QMessageBox.information(
+                self,
+                self._translator.t("inventory.add_list.title"),
+                self._translator.t("inventory.add_list.empty"),
+            )
+            return
+
+        try:
+            with get_session() as session:
+                scryfall = ScryfallService(session)
+                try:
+                    preview = ImportService(
+                        session, scryfall
+                    ).preview_inventory_list(text)
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        if not preview.identified and not preview.unresolved_lines:
+            QMessageBox.information(
+                self,
+                self._translator.t("inventory.add_list.title"),
+                self._translator.t("inventory.add_list.empty"),
+            )
+            return
+
+        dialog = AddInventoryListDialog(
+            self._translator,
+            preview.identified,
+            preview.unresolved_lines,
+            self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        quantities = dialog.quantities()
+        if not quantities:
+            return
+        try:
+            with get_session() as session:
+                inventory = InventoryService(session)
+                for oracle_id, quantity in quantities.items():
+                    inventory.add_copy(oracle_id, quantity)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        self._import_text.clear()
+        self._hide_add_list_section()
         self.refresh()
         self.changed.emit()
 

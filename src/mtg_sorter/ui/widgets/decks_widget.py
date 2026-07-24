@@ -134,6 +134,7 @@ class DecksWidget(QWidget):
         self._export_button.setText(self._translator.t("decks.export_list"))
         self._move_up_button.setText(self._translator.t("decks.move_up"))
         self._move_down_button.setText(self._translator.t("decks.move_down"))
+        self._search.setPlaceholderText(self._translator.t("decks.search"))
         self._filter_label.setText(self._translator.t("decks.filter.label"))
         self._retranslate_filter()
         self.refresh()
@@ -160,16 +161,23 @@ class DecksWidget(QWidget):
         decks_layout = QVBoxLayout(self._decks_group)
 
         filter_row = QHBoxLayout()
+        self._search = QLineEdit()
+        self._search.setPlaceholderText(self._translator.t("decks.search"))
+        self._search.textChanged.connect(self.refresh)
         self._filter_label = QLabel(self._translator.t("decks.filter.label"))
         self._filter_combo = QComboBox()
+        self._filter_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         self._retranslate_filter()
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
         self._move_up_button = QPushButton(self._translator.t("decks.move_up"))
         self._move_down_button = QPushButton(self._translator.t("decks.move_down"))
         self._move_up_button.clicked.connect(lambda: self._move_selected(-1))
         self._move_down_button.clicked.connect(lambda: self._move_selected(1))
+        filter_row.addWidget(self._search, 1)
         filter_row.addWidget(self._filter_label)
-        filter_row.addWidget(self._filter_combo, 1)
+        filter_row.addWidget(self._filter_combo)
         filter_row.addWidget(self._move_up_button)
         filter_row.addWidget(self._move_down_button)
         decks_layout.addLayout(filter_row)
@@ -297,12 +305,22 @@ class DecksWidget(QWidget):
     def refresh(self) -> None:
         selected_id = self._selected_deck_id()
         self._deck_list.clear()
+        needle = self._search.text().strip().casefold()
         with get_session() as session:
-            decks = DeckService(session).list_decks(status=self._status_filter)
+            service = DeckService(session)
+            decks = service.list_decks(status=self._status_filter)
+            if needle:
+                decks = [
+                    deck
+                    for deck in decks
+                    if needle in deck.name.casefold()
+                    or needle
+                    in (service.commander_name(deck.id) or "").casefold()
+                ]
             if not decks:
                 empty_key = (
                     "decks.empty_filtered"
-                    if self._status_filter is not None
+                    if self._status_filter is not None or needle
                     else "decks.empty"
                 )
                 self._deck_list.addItem(self._translator.t(empty_key))

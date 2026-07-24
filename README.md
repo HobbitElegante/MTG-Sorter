@@ -2,15 +2,16 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.8)
+## Features (v0.3.13)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
-- **Inventory tab:** searchable table; add new cards to the collection; edit copy counts (cannot drop below assigned copies)
+- **Inventory tab:** searchable table with columns Name · Total · Free · Assigned · In decks; click headers to sort (text A–Z, numbers high→low first); Name column stretched; add/edit copy counts (cannot drop below assigned copies)
+- **Add list to collection:** full-tab paste/load MTGO text (no deck name fields) → review identified cards (qty from 1, remove/replace) with unresolved lines on the right (edit + recheck, or remove); confirm adds free copies
 - Moxfield text import (`Copy for MTGO` format) with armed/dismantled flow and −/+ quantity steppers
 - **Import new list** takes the full Decks tab (deck list hidden while importing)
 - **Export list** to MTGO text (dialog + copy to clipboard)
 - Deck list storage with armed/dismantled status and automatic copy assignment
-- **Edit name / commander**, optional Partner / Companion / Background via `+`, filter All / Armed / Dismantled, reorder with Move up / Move down
+- **Edit name / commander**, optional Partner / Companion / Background via `+`, filter All / Armed / Dismantled (compact), **search decks by name or commander**, reorder with Move up / Move down
 - Deck actions: Edit list · Edit name / commander · Export · Delete (left); Mark armed / dismantled (right)
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
@@ -18,6 +19,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Unlimited basics and tokens (never block reassembly; flagged in Browse → Cards)
 - Card lookup prefers the playable card when a token shares the same name (e.g. Darkstar Augur)
 - ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
+- **Optimize target:** searchable dropdown — type deck or commander name (`Name — Commander`)
 - Optimize section titles show counts (free coverage, decks to dismantle, still missing)
 - Already-armed target decks skip optimization with a clear message
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
@@ -66,7 +68,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-51 tests passing.
+56 tests passing.
 
 ## First-time setup
 
@@ -93,21 +95,24 @@ Export from Moxfield: `More → Export → Copy for MTGO`.
 - **Edit name / commander:** rename the deck; set or clear the commander; use **+** to add Partner, Companion, or Background (second card field). Cards must be in the local Scryfall cache.
 - **Export list:** opens a dialog with the MTGO-format list; copy to clipboard for Moxfield or other tools.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
-- **Filter / reorder:** show All, Armed only, or Dismantled only; Move up / Move down persists custom order (reorder does not refresh Inventory/Browse).
+- **Filter / reorder:** search by deck or commander name; show All, Armed only, or Dismantled only (compact dropdown); Move up / Move down persists custom order (reorder does not refresh Inventory/Browse).
 - Selected deck summary: dismantled shows free coverage toward reassembly; armed shows “complete”; commander and secondary role are shown when set.
 
 ## Inventory
 
 1. Open the **Inventory** tab.
-2. Use the search bar to filter your collection.
-3. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
-4. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
+2. Table columns: **Name** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). Name is the wide column.
+3. Click a column header to sort (text A–Z / Z–A; numbers high→low first, then reverse). Hover **In decks** for the full list when a card is in several decks.
+4. Use the search bar to filter your collection.
+5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
+6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
+7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
 
 ## Optimizer
 
 1. Import decks and mark currently assembled ones as **Armed**.
 2. For dismantled decks, register available copies during import or while editing.
-3. Open **Optimize**, pick a **dismantled** target deck, and run the plan.
+3. Open **Optimize**, pick a **dismantled** target deck (type to filter by deck or commander name), and run the plan.
 4. Section titles show counts: free inventory coverage, decks to dismantle, and still-missing cards.
 5. If the target is already **Armed**, optimization is skipped (“already armed”).
 6. If multiple optimal dismantle sets exist, choose one from the dropdown.
@@ -130,17 +135,18 @@ src/mtg_sorter/
   i18n/         # EN/ES translations
   models/       # SQLAlchemy models
   services/     # Business logic
-  ui/           # PySide6 desktop UI
+  ui/           # PySide6 desktop UI (+ inventory_display helpers)
 tests/
   fixtures/     # Sample deck exports (e.g. kellan_deck.txt)
+  # includes test_inventory_display.py, test_import_service preview cases
 ```
 
 ## Seed decks (reference)
 
-Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free). Counts may be higher if more lists were imported since then.
+Local DB (as of 2026-07-22): **13 decks** — 5 armed (Kellan, Athreos, Ghen, Legolas, Lord Xander) and 8 dismantled (Anje, Emmara, Progenitus, Rowan, Saskia, Satoru, Shu Yun, Taigam). About ~12 of ~25 Moxfield lists still to import. Physical inventory: ~754 copies (368 assigned / 386 free). Counts may be higher if more lists or inventory add-list imports were done since then.
 
 Fixture: `tests/fixtures/kellan_deck.txt`
 
 ## Continuity
 
-See [`handoff.md`](handoff.md) for full project state, decisions, and next steps.
+See [`handoff.md`](handoff.md) for full project state (v0.3.13), product decisions, architecture notes, and next steps.
