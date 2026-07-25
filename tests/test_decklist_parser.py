@@ -127,11 +127,62 @@ def test_deck_export_from_moxfield_payload() -> None:
             "Sol Ring": {"quantity": 1, "card": {"name": "Sol Ring"}},
             "Arcane Signet": {"quantity": 1, "card": {"name": "Arcane Signet"}},
         },
+        "tokens": [
+            {
+                "name": "Angel",
+                "isToken": True,
+                "type_line": "Token Creature — Angel",
+            },
+        ],
     }
     export = deck_export_from_payload(payload)
     assert export.name == "Test Deck"
     assert export.commander_name == "Atraxa, Praetors' Voice"
     assert "Commander: 1 Atraxa, Praetors' Voice" in export.list_text
     assert "1 Sol Ring" in export.list_text
+    # Tokens are ignored — not stored on deck lists.
+    assert "Token:" not in export.list_text
+    assert "Angel" not in export.list_text
     parsed = parse_decklist(export.list_text)
     assert any(line.role == DeckCardRole.COMMANDER for line in parsed)
+
+
+def test_deck_export_from_moxfield_v3_boards_payload() -> None:
+    payload = {
+        "publicId": "pub2",
+        "name": "V3 Deck",
+        "boards": {
+            "commanders": {
+                "count": 1,
+                "cards": {
+                    "Kellan": {
+                        "quantity": 1,
+                        "card": {"name": "Kellan, the Fae-Blooded"},
+                    }
+                },
+            },
+            "mainboard": {
+                "count": 1,
+                "cards": {
+                    "sol": {"quantity": 1, "card": {"name": "Sol Ring"}},
+                },
+            },
+            "tokens": {
+                "count": 1,
+                "cards": {
+                    "treasure": {
+                        "quantity": 2,
+                        "card": {"name": "Treasure"},
+                    }
+                },
+            },
+            "companions": {"count": 0, "cards": {}},
+            "backgrounds": {"count": 0, "cards": {}},
+        },
+    }
+    export = deck_export_from_payload(payload)
+    assert export.commander_name == "Kellan, the Fae-Blooded"
+    assert "Commander: 1 Kellan, the Fae-Blooded" in export.list_text
+    assert "1 Sol Ring" in export.list_text
+    assert "Token:" not in export.list_text
+    assert "Treasure" not in export.list_text

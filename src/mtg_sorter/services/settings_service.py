@@ -8,24 +8,19 @@ from mtg_sorter.config import (
     SETTING_UI_LOCALE,
 )
 from mtg_sorter.i18n.translator import TRANSLATIONS
-from mtg_sorter.models import AppSetting
+from mtg_sorter.repositories import SettingsRepository
 
 
 class SettingsService:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._settings = SettingsRepository(session)
 
     def get(self, key: str) -> str | None:
-        setting = self._session.get(AppSetting, key)
-        return setting.value if setting is not None else None
+        return self._settings.get(key)
 
     def set(self, key: str, value: str) -> None:
-        setting = self._session.get(AppSetting, key)
-        if setting is None:
-            self._session.add(AppSetting(key=key, value=value))
-        else:
-            setting.value = value
-        self._session.flush()
+        self._settings.set(key, value)
 
     def get_ui_locale(self) -> str:
         locale = self.get(SETTING_UI_LOCALE)

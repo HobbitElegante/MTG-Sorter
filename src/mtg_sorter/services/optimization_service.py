@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.deck_optimizer import DeckSupply, OptimizationResult, find_all_optimal_solutions
-from mtg_sorter.models import Card
 from mtg_sorter.models.enums import ActivityEventType, DeckStatus
+from mtg_sorter.repositories import CardRepository
 from mtg_sorter.services.activity_service import ActivityService
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 
@@ -109,6 +108,7 @@ class OptimizationService:
         self._session = session
         self._decks = DeckService(session)
         self._inventory = InventoryService(session)
+        self._cards = CardRepository(session)
 
     def plan_assembly(self, target_deck_id: int) -> AssemblyPlan:
         target = self._decks.get_deck(target_deck_id)
@@ -240,9 +240,4 @@ class OptimizationService:
         )
 
     def _card_names(self, card_ids: set[str]) -> dict[str, str]:
-        if not card_ids:
-            return {}
-        rows = self._session.scalars(
-            select(Card).where(Card.oracle_id.in_(card_ids))
-        ).all()
-        return {card.oracle_id: card.name for card in rows}
+        return self._cards.names_by_ids(card_ids)

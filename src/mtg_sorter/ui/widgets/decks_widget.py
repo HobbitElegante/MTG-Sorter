@@ -32,6 +32,7 @@ from mtg_sorter.services import (
     ScryfallService,
     SettingsService,
 )
+from mtg_sorter.services.deck_export import load_deck_export_cards
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
 from mtg_sorter.ui.inventory_display import format_commander_legality_tooltip
 from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, build_preview_splitter
@@ -636,13 +637,7 @@ class DecksWidget(QWidget):
                 if deck is None:
                     return
                 deck_name = deck.name
-                scryfall = ScryfallService(session)
-                try:
-                    text = ImportService(session, scryfall).deck_to_moxfield_text(
-                        deck_id
-                    )
-                finally:
-                    scryfall.close()
+                cards = load_deck_export_cards(session, deck_id)
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -651,7 +646,7 @@ class DecksWidget(QWidget):
             )
             return
 
-        ExportDeckDialog(self._translator, deck_name, text, self).exec()
+        ExportDeckDialog(self._translator, deck_name, cards, self).exec()
 
     def _edit_selected_deck(self) -> None:
         deck_id = self._selected_deck_id()

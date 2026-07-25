@@ -3,6 +3,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -34,6 +35,10 @@ from mtg_sorter.services import (
     ScryfallBulkService,
     ScryfallService,
     SettingsService,
+)
+from mtg_sorter.services.activity_service import (
+    ActivityEventRow,
+    HISTORY_PAGE_SIZE,
 )
 from mtg_sorter.services.card_image_service import ImageCacheStatus, ImageDownloadScope
 from mtg_sorter.services.scryfall_bulk_service import BulkSyncStatus
@@ -222,6 +227,12 @@ class BrowseWidget(QWidget):
             ]
         )
         self._history_empty.setText(self._translator.t("browse.history.empty"))
+        self._history_load_more.setText(
+            self._translator.t("browse.history.load_more")
+        )
+        self._history_export.setText(self._translator.t("browse.history.export"))
+        self._history_undo.setText(self._translator.t("browse.history.undo"))
+        self._update_history_undo_enabled()
         self._scryfall_group.setTitle(self._translator.t("browse.section.scryfall"))
         self._show_images_check.setText(
             self._translator.t("browse.overview.show_images")
@@ -448,6 +459,18 @@ class BrowseWidget(QWidget):
         layout.addLayout(filter_row)
         self._sync_history_filter_combo()
 
+        actions = QHBoxLayout()
+        self._history_undo = QPushButton(self._translator.t("browse.history.undo"))
+        self._history_undo.clicked.connect(self._undo_last_history)
+        actions.addWidget(self._history_undo)
+        self._history_export = QPushButton(
+            self._translator.t("browse.history.export")
+        )
+        self._history_export.clicked.connect(self._export_history)
+        actions.addWidget(self._history_export)
+        actions.addStretch()
+        layout.addLayout(actions)
+
         self._history_empty = QLabel(self._translator.t("browse.history.empty"))
         self._history_empty.setWordWrap(True)
         layout.addWidget(self._history_empty)
@@ -470,6 +493,14 @@ class BrowseWidget(QWidget):
         history_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         history_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._history_table, stretch=1)
+
+        self._history_load_more = QPushButton(
+            self._translator.t("browse.history.load_more")
+        )
+        self._history_load_more.clicked.connect(self._load_more_history)
+        layout.addWidget(self._history_load_more)
+        self._history_oldest_id: int | None = None
+        self._history_has_more = False
         return panel
 
     def _sync_history_filter_combo(self) -> None:
@@ -503,10 +534,107 @@ class BrowseWidget(QWidget):
                 ).format(donors=", ".join(str(name) for name in donors))
             else:
                 values["donors_suffix"] = ""
+        if summary_key == "history.event.undone":
+            undone_type = payload.get("undone_event_type", "")
+            values.setdefault("detail", undone_type)
+            name = payload.get("deck_name") or payload.get("name")
+            if name:
+                values["detail"] = str(name)
         try:
             return self._translator.t(summary_key).format(**values)
         except (KeyError, ValueError):
             return self._translator.t(summary_key)
+
+    def _history_category(self) -> ActivityCategory | None:
+        category_value = self._history_filter.currentData()
+        if category_value == ActivityCategory.INVENTORY.value:
+            return ActivityCategory.INVENTORY
+        if category_value == ActivityCategory.DECKS.value:
+            return ActivityCategory.DECKS
+        return None
+
+    def _append_history_rows(self, rows: list[ActivityEventRow]) -> None:
+        start = self._history_table.rowCount()
+        self._history_table.setRowCount(start + len(rows))
+        for offset, row in enumerate(rows):
+            row_index = start + offset
+            created = row.created_at
+            if created.tzinfo is not None:
+                local_dt = created.astimezone()
+            else:
+                local_dt = created
+            when = local_dt.strftime("%Y-%m-%d %H:%M")
+            event_text = self._format_history_event(row.summary_key, row.payload)
+            when_item = QTableWidgetItem(when)
+            when_item.setFlags(when_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            event_item = QTableWidgetItem(event_text)
+            event_item.setFlags(event_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._history_table.setItem(row_index, 0, when_item)
+            self._history_table.setItem(row_index, 1, event_item)
+        if rows:
+            self._history_oldest_id = rows[-1].id
+
+    def _update_history_undo_enabled(self) -> None:
+        with get_session() as session:
+            enabled = ActivityService(session).can_undo_last()
+        self._history_undo.setEnabled(enabled)
+
+    def _load_more_history(self) -> None:
+        if not self._history_has_more or self._history_oldest_id is None:
+            return
+        category = self._history_category()
+        with get_session() as session:
+            rows = ActivityService(session).list_events(
+                category=category,
+                limit=HISTORY_PAGE_SIZE,
+                before_id=self._history_oldest_id,
+            )
+        self._history_has_more = len(rows) >= HISTORY_PAGE_SIZE
+        self._history_load_more.setVisible(self._history_has_more)
+        self._append_history_rows(rows)
+
+    def _export_history(self) -> None:
+        path, _selected = QFileDialog.getSaveFileName(
+            self,
+            self._translator.t("browse.history.export"),
+            "mtg-sorter-history.csv",
+            "CSV (*.csv)",
+        )
+        if not path:
+            return
+        category = self._history_category()
+        try:
+            with get_session() as session:
+                csv_text = ActivityService(session).events_csv(category=category)
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(csv_text)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+
+    def _undo_last_history(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            self._translator.t("browse.history.undo"),
+            self._translator.t("browse.history.undo.confirm"),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            with get_session() as session:
+                ActivityService(session).undo_last()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+        self._refresh_history()
+        self.changed.emit()
 
     def _build_scryfall_panel(self) -> QWidget:
         panel = QWidget()
@@ -581,33 +709,21 @@ class BrowseWidget(QWidget):
             self._refresh_cards()
 
     def _refresh_history(self) -> None:
-        category_value = self._history_filter.currentData()
-        category: ActivityCategory | None = None
-        if category_value == ActivityCategory.INVENTORY.value:
-            category = ActivityCategory.INVENTORY
-        elif category_value == ActivityCategory.DECKS.value:
-            category = ActivityCategory.DECKS
-
+        category = self._history_category()
         with get_session() as session:
-            rows = ActivityService(session).list_events(category=category)
+            rows = ActivityService(session).list_events(
+                category=category,
+                limit=HISTORY_PAGE_SIZE,
+            )
 
-        self._history_table.setRowCount(len(rows))
-        self._history_empty.setVisible(not rows)
-        self._history_table.setVisible(bool(rows))
-        for row_index, row in enumerate(rows):
-            created = row.created_at
-            if created.tzinfo is not None:
-                local_dt = created.astimezone()
-            else:
-                local_dt = created
-            when = local_dt.strftime("%Y-%m-%d %H:%M")
-            event_text = self._format_history_event(row.summary_key, row.payload)
-            when_item = QTableWidgetItem(when)
-            when_item.setFlags(when_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            event_item = QTableWidgetItem(event_text)
-            event_item.setFlags(event_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._history_table.setItem(row_index, 0, when_item)
-            self._history_table.setItem(row_index, 1, event_item)
+        self._history_table.setRowCount(0)
+        self._history_oldest_id = None
+        self._history_has_more = len(rows) >= HISTORY_PAGE_SIZE
+        self._history_load_more.setVisible(self._history_has_more)
+        self._append_history_rows(rows)
+        self._history_empty.setVisible(self._history_table.rowCount() == 0)
+        self._history_table.setVisible(self._history_table.rowCount() > 0)
+        self._update_history_undo_enabled()
 
     def _refresh_overview(self) -> None:
         self._greeting_label.setText(self._translator.t("browse.overview.greeting"))

@@ -24,6 +24,7 @@ class ActivityEventType(StrEnum):
     DECK_DELETED = "DECK_DELETED"
     DECK_LIST_EDITED = "DECK_LIST_EDITED"
     PLAN_APPLIED = "PLAN_APPLIED"
+    ACTIVITY_UNDONE = "ACTIVITY_UNDONE"
 
 
 class ActivityCategory(StrEnum):

@@ -5,6 +5,7 @@ from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -33,6 +34,11 @@ from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services import BrowseService, ImportService, ScryfallService
 from mtg_sorter.services.browse_service import CardSummary
+from mtg_sorter.services.deck_export import (
+    DeckExportCard,
+    ExportFormat,
+    format_deck_export,
+)
 from mtg_sorter.services.deck_service import (
     DeckDeleteCardImpact,
     DeckEditLine,
@@ -307,31 +313,53 @@ class DeckDetailsDialog(QDialog):
 
 
 class ExportDeckDialog(QDialog):
-    """Read-only MTGO / Moxfield text export for copy-paste."""
+    """Read-only multi-format text export for copy-paste."""
+
+    _FORMAT_KEYS: tuple[tuple[ExportFormat, str], ...] = (
+        (ExportFormat.MTGO, "decks.export.format.mtgo"),
+        (ExportFormat.MOXFIELD, "decks.export.format.moxfield"),
+        (ExportFormat.ARENA, "decks.export.format.arena"),
+        (ExportFormat.ARCHIDEKT, "decks.export.format.archidekt"),
+        (ExportFormat.MTGGOLDFISH, "decks.export.format.mtggoldfish"),
+    )
 
     def __init__(
         self,
         translator: Translator,
         deck_name: str,
-        text: str,
+        cards: list[DeckExportCard],
         parent: QWidget | None = None,
+        *,
+        initial_format: ExportFormat = ExportFormat.MTGO,
     ) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._cards = cards
         self.setWindowTitle(
             translator.t("decks.export.title").format(name=deck_name)
         )
         self.resize(480, 560)
 
         layout = QVBoxLayout(self)
-        hint = QLabel(translator.t("decks.export.hint"))
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        self._hint = QLabel(translator.t("decks.export.hint"))
+        self._hint.setWordWrap(True)
+        layout.addWidget(self._hint)
+
+        format_row = QHBoxLayout()
+        self._format_label = QLabel(translator.t("decks.export.format"))
+        self._format_combo = QComboBox()
+        for fmt, key in self._FORMAT_KEYS:
+            self._format_combo.addItem(translator.t(key), fmt)
+        index = self._format_combo.findData(initial_format)
+        if index >= 0:
+            self._format_combo.setCurrentIndex(index)
+        self._format_combo.currentIndexChanged.connect(self._refresh_text)
+        format_row.addWidget(self._format_label)
+        format_row.addWidget(self._format_combo, 1)
+        layout.addLayout(format_row)
 
         self._text = QTextEdit()
         self._text.setReadOnly(True)
-        self._text.setPlainText(text)
-        self._text.selectAll()
         layout.addWidget(self._text, 1)
 
         buttons = QHBoxLayout()
@@ -346,6 +374,19 @@ class ExportDeckDialog(QDialog):
 
         self._status = QLabel("")
         layout.addWidget(self._status)
+        self._refresh_text()
+
+    def _selected_format(self) -> ExportFormat:
+        data = self._format_combo.currentData()
+        if isinstance(data, ExportFormat):
+            return data
+        return ExportFormat.MTGO
+
+    def _refresh_text(self) -> None:
+        text = format_deck_export(self._cards, self._selected_format())
+        self._text.setPlainText(text)
+        self._text.selectAll()
+        self._status.setText("")
 
     def _copy_to_clipboard(self) -> None:
         clipboard = QGuiApplication.clipboard()

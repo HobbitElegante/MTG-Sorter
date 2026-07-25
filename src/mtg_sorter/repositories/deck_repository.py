@@ -1,0 +1,255 @@
+from collections.abc import Iterable
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
+
+from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck, DeckCard
+from mtg_sorter.models.enums import DeckCardRole, DeckStatus
+
+
+class DeckRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list_decks(self, status: DeckStatus | None = None) -> list[Deck]:
+        query = select(Deck).order_by(Deck.sort_order, Deck.name, Deck.id)
+        if status is not None:
+            query = query.where(Deck.status == status)
+        return list(self._session.scalars(query).all())
+
+    def get(self, deck_id: int) -> Deck | None:
+        return self._session.get(Deck, deck_id)
+
+    def max_sort_order(self) -> int | None:
+        current = self._session.scalar(select(func.max(Deck.sort_order)))
+        return None if current is None else int(current)
+
+    def add(self, deck: Deck) -> Deck:
+        self._session.add(deck)
+        self._session.flush()
+        return deck
+
+    def delete(self, deck: Deck) -> None:
+        self._session.delete(deck)
+        self._session.flush()
+
+    def count_all(self) -> int:
+        return int(self._session.scalar(select(func.count()).select_from(Deck)) or 0)
+
+    def count_armed(self) -> int:
+        return int(
+            self._session.scalar(
+                select(func.count())
+                .select_from(Deck)
+                .where(Deck.status == DeckStatus.ARMED)
+            )
+            or 0
+        )
+
+    def count_deck_cards(self) -> int:
+        return int(
+            self._session.scalar(select(func.count()).select_from(DeckCard)) or 0
+        )
+
+    def list_armed(self, *, exclude_deck_id: int | None = None) -> list[Deck]:
+        query = select(Deck).where(Deck.status == DeckStatus.ARMED)
+        if exclude_deck_id is not None:
+            query = query.where(Deck.id != exclude_deck_id)
+        return list(self._session.scalars(query).all())
+
+    def role_card_name(self, deck_id: int, role: DeckCardRole) -> str | None:
+        row = self._session.execute(
+            select(Card.name)
+            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role == role,
+            )
+            .order_by(Card.name)
+            .limit(1)
+        ).first()
+        return row[0] if row else None
+
+    def command_zone_rows(
+        self, deck_id: int
+    ) -> list[tuple[DeckCardRole, str, str]]:
+        priority = {
+            DeckCardRole.COMMANDER,
+            DeckCardRole.PARTNER,
+            DeckCardRole.COMPANION,
+            DeckCardRole.BACKGROUND,
+        }
+        rows = self._session.execute(
+            select(DeckCard.role, Card.oracle_id, Card.name)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role.in_(tuple(priority)),
+            )
+        ).all()
+        return [(role, oracle_id, name) for role, oracle_id, name in rows]
+
+    def secondary_command_zone_rows(
+        self, deck_id: int
+    ) -> list[tuple[DeckCardRole, str]]:
+        rows = self._session.execute(
+            select(DeckCard.role, Card.name)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role.in_(
+                    (
+                        DeckCardRole.PARTNER,
+                        DeckCardRole.COMPANION,
+                        DeckCardRole.BACKGROUND,
+                    )
+                ),
+            )
+        ).all()
+        return [(role, name) for role, name in rows]
+
+    def list_deck_cards_by_role(
+        self, deck_id: int, role: DeckCardRole
+    ) -> list[DeckCard]:
+        return list(
+            self._session.scalars(
+                select(DeckCard).where(
+                    DeckCard.deck_id == deck_id,
+                    DeckCard.role == role,
+                )
+            ).all()
+        )
+
+    def get_deck_card(
+        self, deck_id: int, card_id: str, role: DeckCardRole
+    ) -> DeckCard | None:
+        return self._session.scalar(
+            select(DeckCard).where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.card_id == card_id,
+                DeckCard.role == role,
+            )
+        )
+
+    def add_deck_card(self, deck_card: DeckCard) -> DeckCard:
+        self._session.add(deck_card)
+        return deck_card
+
+    def delete_deck_card(self, deck_card: DeckCard) -> None:
+        self._session.delete(deck_card)
+
+    def delete_deck_cards(self, deck_id: int) -> None:
+        self._session.execute(delete(DeckCard).where(DeckCard.deck_id == deck_id))
+        self._session.flush()
+
+    def delete_assignments_for_deck(self, deck_id: int) -> None:
+        self._session.execute(
+            delete(CardAssignment).where(CardAssignment.deck_id == deck_id)
+        )
+        self._session.flush()
+
+    def list_deck_cards_with_card(
+        self,
+        deck_id: int,
+        *,
+        exclude_token: bool = False,
+        order_by_name: bool = True,
+    ) -> list[tuple[DeckCard, Card]]:
+        query = (
+            select(DeckCard, Card)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(DeckCard.deck_id == deck_id)
+        )
+        if exclude_token:
+            query = query.where(DeckCard.role != DeckCardRole.TOKEN)
+        if order_by_name:
+            query = query.order_by(Card.name, DeckCard.role)
+        return list(self._session.execute(query).all())
+
+    def list_export_cards(self, deck_id: int) -> list[tuple[DeckCard, Card]]:
+        return list(
+            self._session.execute(
+                select(DeckCard, Card)
+                .join(Card, Card.oracle_id == DeckCard.card_id)
+                .where(DeckCard.deck_id == deck_id)
+                .order_by(DeckCard.role, Card.name)
+            ).all()
+        )
+
+    def requirements(self, deck_id: int) -> dict[str, int]:
+        rows = self._session.execute(
+            select(DeckCard.card_id, func.sum(DeckCard.quantity))
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+                Card.is_basic_land.is_(False),
+                Card.is_token.is_(False),
+            )
+            .group_by(DeckCard.card_id)
+        ).all()
+        return {card_id: int(qty) for card_id, qty in rows}
+
+    def basic_land_requirements(self, deck_id: int) -> dict[str, int]:
+        rows = self._session.execute(
+            select(DeckCard.card_id, func.sum(DeckCard.quantity))
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+                Card.is_basic_land.is_(True),
+            )
+            .group_by(DeckCard.card_id)
+        ).all()
+        return {card_id: int(qty) for card_id, qty in rows}
+
+    def commander_legality_rows(
+        self, deck_id: int
+    ) -> list[tuple[str, str, str | None]]:
+        rows = self._session.execute(
+            select(Card.oracle_id, Card.name, Card.commander_legality)
+            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+            )
+            .distinct()
+        ).all()
+        return [(oracle_id, name, legality) for oracle_id, name, legality in rows]
+
+    def deck_names_for_card(self, oracle_id: str) -> tuple[str, ...]:
+        return tuple(
+            self._session.scalars(
+                select(Deck.name)
+                .join(CardAssignment, CardAssignment.deck_id == Deck.id)
+                .join(CardCopy, CardCopy.id == CardAssignment.card_copy_id)
+                .where(CardCopy.card_id == oracle_id)
+                .distinct()
+                .order_by(Deck.name)
+            ).all()
+        )
+
+    def inventory_copy_rows(
+        self,
+    ) -> list[tuple[str, str, str | None, int]]:
+        rows = self._session.execute(
+            select(
+                Card.oracle_id,
+                Card.name,
+                Card.color_identity,
+                func.count(CardCopy.id),
+            )
+            .join(Card, Card.oracle_id == CardCopy.card_id)
+            .group_by(Card.oracle_id, Card.name, Card.color_identity)
+            .order_by(Card.name)
+        ).all()
+        return [
+            (oracle_id, name, color_identity, int(total))
+            for oracle_id, name, color_identity, total in rows
+        ]
+
+    def distinct_card_ids(self) -> set[str]:
+        return set(self._session.scalars(select(DeckCard.card_id).distinct()).all())
+
+    def flush(self) -> None:
+        self._session.flush()

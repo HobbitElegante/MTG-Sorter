@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.config import IMAGES_DIR
 from mtg_sorter.models import Card
+from mtg_sorter.repositories import CardRepository
 from mtg_sorter.services.scryfall_service import ScryfallService, card_from_scryfall
 
 
@@ -53,6 +53,7 @@ class CardImageService:
         images_dir: Path | None = None,
     ) -> None:
         self._session = session
+        self._cards = CardRepository(session)
         self._client = client
         self._owns_client = client is None
         self._images_dir = images_dir if images_dir is not None else IMAGES_DIR
@@ -69,11 +70,7 @@ class CardImageService:
 
     def status(self) -> ImageCacheStatus:
         collection_ids = set(ScryfallService(self._session).collection_oracle_ids())
-        cards = list(
-            self._session.scalars(
-                select(Card).where(Card.image_uri.is_not(None))
-            ).all()
-        )
+        cards = self._cards.list_with_image_uri()
         cached_with_uri = len(cards)
         cached_on_disk = 0
         collection_with_uri = 0
@@ -95,7 +92,7 @@ class CardImageService:
         )
 
     def has_back_image(self, oracle_id: str) -> bool:
-        card = self._session.get(Card, oracle_id)
+        card = self._cards.get(oracle_id)
         return bool(card is not None and card.image_uri_back)
 
     def ensure_image(self, oracle_id: str, *, back: bool = False) -> Path | None:
@@ -108,7 +105,7 @@ class CardImageService:
         if destination.is_file():
             return destination
 
-        card = self._session.get(Card, oracle_id)
+        card = self._cards.get(oracle_id)
         if card is None:
             return None
 
@@ -141,7 +138,7 @@ class CardImageService:
         refreshed = card_from_scryfall(data[0])
         card.image_uri = refreshed.image_uri or card.image_uri
         card.image_uri_back = refreshed.image_uri_back or card.image_uri_back
-        self._session.flush()
+        self._cards.flush()
         return card.image_uri_back if back else card.image_uri
 
     def download_images(
@@ -203,13 +200,9 @@ class CardImageService:
             oracle_ids = ScryfallService(self._session).collection_oracle_ids()
             if not oracle_ids:
                 return []
-            cards = self._session.scalars(
-                select(Card).where(Card.oracle_id.in_(oracle_ids))
-            ).all()
+            cards = self._cards.list_by_oracle_ids(oracle_ids)
             by_id = {card.oracle_id: card.image_uri for card in cards}
             return [(oid, by_id.get(oid)) for oid in oracle_ids]
 
-        cards = self._session.scalars(
-            select(Card).where(Card.image_uri.is_not(None)).order_by(Card.name)
-        ).all()
+        cards = self._cards.list_with_image_uri(ordered=True)
         return [(card.oracle_id, card.image_uri) for card in cards]

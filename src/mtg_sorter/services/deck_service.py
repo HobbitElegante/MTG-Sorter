@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
-from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck, DeckCard
+from mtg_sorter.models import CardCopy, Deck, DeckCard
 from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
+from mtg_sorter.repositories import CardRepository, CopyRepository, DeckRepository
 from mtg_sorter.services.activity_service import ActivityService
 
 
@@ -62,6 +62,7 @@ class CommanderLegalityIssue:
 class InventoryService:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._copies = CopyRepository(session)
 
     def add_copy(
         self,
@@ -70,12 +71,7 @@ class InventoryService:
         *,
         record_activity: bool = True,
     ) -> list[CardCopy]:
-        copies: list[CardCopy] = []
-        for _ in range(quantity):
-            copy = CardCopy(card_id=oracle_id)
-            self._session.add(copy)
-            copies.append(copy)
-        self._session.flush()
+        copies = self._copies.add_many(oracle_id, quantity)
         if record_activity and copies:
             ActivityService(self._session).record_copies_added(
                 oracle_id, len(copies)
@@ -92,21 +88,8 @@ class InventoryService:
         """Delete up to `quantity` unassigned copies. Returns how many were removed."""
         if quantity <= 0:
             return 0
-        assigned_copy_ids = select(CardAssignment.card_copy_id)
-        free_copies = list(
-            self._session.scalars(
-                select(CardCopy)
-                .where(
-                    CardCopy.card_id == oracle_id,
-                    CardCopy.id.not_in(assigned_copy_ids),
-                )
-                .order_by(CardCopy.id)
-                .limit(quantity)
-            ).all()
-        )
-        for copy in free_copies:
-            self._session.delete(copy)
-        self._session.flush()
+        free_copies = self._copies.list_free(oracle_id, limit=quantity)
+        self._copies.delete_copies(free_copies)
         removed = len(free_copies)
         if record_activity and removed:
             ActivityService(self._session).record_copies_removed(oracle_id, removed)
@@ -117,23 +100,8 @@ class InventoryService:
         if total < 0:
             raise ValueError("Copy count cannot be negative")
 
-        current_total = int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(CardCopy)
-                .where(CardCopy.card_id == oracle_id)
-            )
-            or 0
-        )
-        assigned = int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(CardCopy)
-                .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
-                .where(CardCopy.card_id == oracle_id)
-            )
-            or 0
-        )
+        current_total = self._copies.count_total(oracle_id)
+        assigned = self._copies.count_assigned(oracle_id)
         if total < assigned:
             raise ValueError(
                 f"Cannot set total below {assigned} copies assigned to armed decks"
@@ -147,41 +115,28 @@ class InventoryService:
                 raise ValueError("Not enough free copies to remove")
 
     def free_counts(self) -> dict[str, int]:
-        assigned_copy_ids = select(CardAssignment.card_copy_id)
-        rows = self._session.execute(
-            select(CardCopy.card_id, func.count(CardCopy.id))
-            .where(CardCopy.id.not_in(assigned_copy_ids))
-            .group_by(CardCopy.card_id)
-        ).all()
-        return {card_id: count for card_id, count in rows}
+        return self._copies.free_counts()
 
     def list_unassigned_copies(self) -> list[CardCopy]:
-        assigned_copy_ids = select(CardAssignment.card_copy_id)
-        return list(
-            self._session.scalars(
-                select(CardCopy)
-                .where(CardCopy.id.not_in(assigned_copy_ids))
-                .order_by(CardCopy.id)
-            ).all()
-        )
+        return self._copies.list_all_unassigned()
 
 
 class DeckService:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._decks = DeckRepository(session)
+        self._copies = CopyRepository(session)
+        self._cards = CardRepository(session)
 
     def list_decks(self, status: DeckStatus | None = None) -> list[Deck]:
-        query = select(Deck).order_by(Deck.sort_order, Deck.name, Deck.id)
-        if status is not None:
-            query = query.where(Deck.status == status)
-        return list(self._session.scalars(query).all())
+        return self._decks.list_decks(status=status)
 
     def get_deck(self, deck_id: int) -> Deck | None:
-        return self._session.get(Deck, deck_id)
+        return self._decks.get(deck_id)
 
     def next_sort_order(self) -> int:
-        current = self._session.scalar(select(func.max(Deck.sort_order)))
-        return 0 if current is None else int(current) + 1
+        current = self._decks.max_sort_order()
+        return 0 if current is None else current + 1
 
     def rename_deck(self, deck_id: int, name: str) -> Deck:
         cleaned = name.strip()
@@ -191,24 +146,14 @@ class DeckService:
         if deck is None:
             raise ValueError(f"Deck {deck_id} not found")
         deck.name = cleaned
-        self._session.flush()
+        self._decks.flush()
         return deck
 
     def commander_name(self, deck_id: int) -> str | None:
         return self.role_card_name(deck_id, DeckCardRole.COMMANDER)
 
     def role_card_name(self, deck_id: int, role: DeckCardRole) -> str | None:
-        row = self._session.execute(
-            select(Card.name)
-            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role == role,
-            )
-            .order_by(Card.name)
-            .limit(1)
-        ).first()
-        return row[0] if row else None
+        return self._decks.role_card_name(deck_id, role)
 
     def command_zone_cards(self, deck_id: int) -> list[tuple[str, str]]:
         """(oracle_id, name) for the command zone, commander first."""
@@ -218,14 +163,7 @@ class DeckService:
             DeckCardRole.COMPANION: 2,
             DeckCardRole.BACKGROUND: 3,
         }
-        rows = self._session.execute(
-            select(DeckCard.role, Card.oracle_id, Card.name)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role.in_(tuple(priority)),
-            )
-        ).all()
+        rows = self._decks.command_zone_rows(deck_id)
         ordered = sorted(
             rows, key=lambda item: (priority[item[0]], item[2].casefold())
         )
@@ -235,20 +173,7 @@ class DeckService:
         self, deck_id: int
     ) -> tuple[DeckCardRole, str] | None:
         """First Partner / Companion / Background entry, if any."""
-        rows = self._session.execute(
-            select(DeckCard.role, Card.name)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role.in_(
-                    (
-                        DeckCardRole.PARTNER,
-                        DeckCardRole.COMPANION,
-                        DeckCardRole.BACKGROUND,
-                    )
-                ),
-            )
-        ).all()
+        rows = self._decks.secondary_command_zone_rows(deck_id)
         if not rows:
             return None
         priority = {
@@ -285,45 +210,28 @@ class DeckService:
         if deck is None:
             raise ValueError(f"Deck {deck_id} not found")
 
-        if oracle_id is not None and self._session.get(Card, oracle_id) is None:
+        if oracle_id is not None and self._cards.get(oracle_id) is None:
             raise ValueError(f"Card {oracle_id} not found")
 
-        holders = list(
-            self._session.scalars(
-                select(DeckCard).where(
-                    DeckCard.deck_id == deck_id,
-                    DeckCard.role == role,
-                )
-            ).all()
-        )
+        holders = self._decks.list_deck_cards_by_role(deck_id, role)
         for entry in holders:
             if oracle_id is not None and entry.card_id == oracle_id:
                 continue
-            existing_main = self._session.scalar(
-                select(DeckCard).where(
-                    DeckCard.deck_id == deck_id,
-                    DeckCard.card_id == entry.card_id,
-                    DeckCard.role == DeckCardRole.MAIN,
-                )
+            existing_main = self._decks.get_deck_card(
+                deck_id, entry.card_id, DeckCardRole.MAIN
             )
             if existing_main is not None:
                 existing_main.quantity += entry.quantity
-                self._session.delete(entry)
+                self._decks.delete_deck_card(entry)
             else:
                 entry.role = DeckCardRole.MAIN
 
-        self._session.flush()
+        self._decks.flush()
 
         if oracle_id is None:
             return
 
-        already = self._session.scalar(
-            select(DeckCard).where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.card_id == oracle_id,
-                DeckCard.role == role,
-            )
-        )
+        already = self._decks.get_deck_card(deck_id, oracle_id, role)
         if already is not None:
             return
 
@@ -336,32 +244,20 @@ class DeckService:
         ):
             if other_role == role:
                 continue
-            other = self._session.scalar(
-                select(DeckCard).where(
-                    DeckCard.deck_id == deck_id,
-                    DeckCard.card_id == oracle_id,
-                    DeckCard.role == other_role,
-                )
-            )
+            other = self._decks.get_deck_card(deck_id, oracle_id, other_role)
             if other is not None:
-                self._session.delete(other)
-        self._session.flush()
+                self._decks.delete_deck_card(other)
+        self._decks.flush()
 
-        main_entry = self._session.scalar(
-            select(DeckCard).where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.card_id == oracle_id,
-                DeckCard.role == DeckCardRole.MAIN,
-            )
-        )
+        main_entry = self._decks.get_deck_card(deck_id, oracle_id, DeckCardRole.MAIN)
         if main_entry is not None:
             if main_entry.quantity > 1:
                 main_entry.quantity -= 1
             else:
-                self._session.delete(main_entry)
-            self._session.flush()
+                self._decks.delete_deck_card(main_entry)
+            self._decks.flush()
 
-        self._session.add(
+        self._decks.add_deck_card(
             DeckCard(
                 deck_id=deck_id,
                 card_id=oracle_id,
@@ -369,7 +265,7 @@ class DeckService:
                 role=role,
             )
         )
-        self._session.flush()
+        self._decks.flush()
 
     def set_secondary_command_zone(
         self,
@@ -424,7 +320,7 @@ class DeckService:
             neighbor.sort_order,
             current.sort_order,
         )
-        self._session.flush()
+        self._decks.flush()
         return True
 
     def deck_delete_impact(self, deck_id: int) -> list[DeckDeleteCardImpact]:
@@ -433,29 +329,15 @@ class DeckService:
         if not requirements:
             return []
 
-        total_rows = self._session.execute(
-            select(CardCopy.card_id, func.count(CardCopy.id))
-            .where(CardCopy.card_id.in_(requirements.keys()))
-            .group_by(CardCopy.card_id)
-        ).all()
-        totals = {card_id: count for card_id, count in total_rows}
-
-        assigned_here_rows = self._session.execute(
-            select(CardCopy.card_id, func.count(CardCopy.id))
-            .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
-            .where(
-                CardAssignment.deck_id == deck_id,
-                CardCopy.card_id.in_(requirements.keys()),
-            )
-            .group_by(CardCopy.card_id)
-        ).all()
-        assigned_here = {card_id: count for card_id, count in assigned_here_rows}
-
+        totals = self._copies.totals_for_cards(requirements.keys())
+        assigned_here = self._copies.assigned_counts_for_deck(
+            deck_id, requirements.keys()
+        )
         free = InventoryService(self._session).free_counts()
 
         impacts: list[DeckDeleteCardImpact] = []
         for oracle_id, list_qty in requirements.items():
-            card = self._session.get(Card, oracle_id)
+            card = self._cards.get(oracle_id)
             if card is None:
                 continue
             total = totals.get(oracle_id, 0)
@@ -494,12 +376,9 @@ class DeckService:
         if removals:
             self._delete_removable_copies(deck_id, removals)
 
-        self._session.execute(
-            delete(CardAssignment).where(CardAssignment.deck_id == deck.id)
-        )
-        self._session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
-        self._session.delete(deck)
-        self._session.flush()
+        self._decks.delete_assignments_for_deck(deck.id)
+        self._decks.delete_deck_cards(deck.id)
+        self._decks.delete(deck)
         ActivityService(self._session).record(
             ActivityEventType.DECK_DELETED,
             "history.event.deck_deleted",
@@ -519,63 +398,31 @@ class DeckService:
             if remaining <= 0:
                 continue
 
-            assigned = list(
-                self._session.scalars(
-                    select(CardCopy)
-                    .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
-                    .where(
-                        CardAssignment.deck_id == deck_id,
-                        CardCopy.card_id == oracle_id,
-                    )
-                    .order_by(CardCopy.id)
-                    .limit(remaining)
-                ).all()
+            assigned = self._copies.list_assigned_to_deck(
+                deck_id, oracle_id, limit=remaining
             )
             for copy in assigned:
-                self._session.execute(
-                    delete(CardAssignment).where(
-                        CardAssignment.card_copy_id == copy.id
-                    )
-                )
+                self._copies.delete_assignment_for_copy(copy.id)
                 self._session.delete(copy)
                 remaining -= 1
 
             if remaining <= 0:
                 continue
 
-            assigned_copy_ids = select(CardAssignment.card_copy_id)
-            free_copies = list(
-                self._session.scalars(
-                    select(CardCopy)
-                    .where(
-                        CardCopy.card_id == oracle_id,
-                        CardCopy.id.not_in(assigned_copy_ids),
-                    )
-                    .order_by(CardCopy.id)
-                    .limit(remaining)
-                ).all()
-            )
+            free_copies = self._copies.list_free(oracle_id, limit=remaining)
             for copy in free_copies:
                 self._session.delete(copy)
 
-        self._session.flush()
+        self._decks.flush()
 
     def deck_edit_rows(self, deck_id: int) -> list[DeckEditRow]:
-        rows = self._session.execute(
-            select(DeckCard, Card)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role != DeckCardRole.TOKEN,
-            )
-            .order_by(Card.name, DeckCard.role)
-        ).all()
+        rows = self._decks.list_deck_cards_with_card(deck_id, exclude_token=True)
         if not rows:
             return []
 
         oracle_ids = {card.oracle_id for _, card in rows}
         free = InventoryService(self._session).free_counts()
-        assigned_here = self._assigned_counts_for_deck(deck_id, oracle_ids)
+        assigned_here = self._copies.assigned_counts_for_deck(deck_id, oracle_ids)
 
         return [
             DeckEditRow(
@@ -628,8 +475,7 @@ class DeckService:
             for oracle_id, qty in creations.items():
                 inventory.add_copy(oracle_id, qty, record_activity=False)
 
-        self._session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
-        self._session.flush()
+        self._decks.delete_deck_cards(deck.id)
 
         merged: dict[tuple[str, DeckCardRole], int] = {}
         for line in lines:
@@ -639,7 +485,7 @@ class DeckService:
             merged[key] = merged.get(key, 0) + line.quantity
 
         for (oracle_id, role), quantity in merged.items():
-            self._session.add(
+            self._decks.add_deck_card(
                 DeckCard(
                     deck_id=deck.id,
                     card_id=oracle_id,
@@ -647,7 +493,7 @@ class DeckService:
                     role=role,
                 )
             )
-        self._session.flush()
+        self._decks.flush()
 
         if was_armed:
             self.set_status(deck, DeckStatus.ARMED, record_activity=False)
@@ -659,22 +505,6 @@ class DeckService:
             {"deck_id": deck.id, "deck_name": deck.name},
         )
 
-    def _assigned_counts_for_deck(
-        self, deck_id: int, oracle_ids: set[str]
-    ) -> dict[str, int]:
-        if not oracle_ids:
-            return {}
-        rows = self._session.execute(
-            select(CardCopy.card_id, func.count(CardCopy.id))
-            .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
-            .where(
-                CardAssignment.deck_id == deck_id,
-                CardCopy.card_id.in_(oracle_ids),
-            )
-            .group_by(CardCopy.card_id)
-        ).all()
-        return {card_id: count for card_id, count in rows}
-
     def set_status(
         self,
         deck: Deck,
@@ -683,10 +513,7 @@ class DeckService:
         record_activity: bool = True,
     ) -> None:
         if status == DeckStatus.DISMANTLED:
-            self._session.execute(
-                delete(CardAssignment).where(CardAssignment.deck_id == deck.id)
-            )
-            self._session.flush()
+            self._decks.delete_assignments_for_deck(deck.id)
             deck.status = status
             if record_activity:
                 ActivityService(self._session).record(
@@ -715,75 +542,33 @@ class DeckService:
             card_id = assignment.card_copy.card_id
             assigned_counts[card_id] = assigned_counts.get(card_id, 0) + 1
 
-        assigned_copy_ids = select(CardAssignment.card_copy_id)
-
         for card_id, required in self.deck_requirements(deck.id).items():
             missing = required - assigned_counts.get(card_id, 0)
             if missing <= 0:
                 continue
 
-            free_copies = list(
-                self._session.scalars(
-                    select(CardCopy)
-                    .where(
-                        CardCopy.card_id == card_id,
-                        CardCopy.id.not_in(assigned_copy_ids),
-                    )
-                    .order_by(CardCopy.id)
-                    .limit(missing)
-                ).all()
-            )
+            free_copies = self._copies.list_free(card_id, limit=missing)
             for copy in free_copies:
-                self._session.add(
-                    CardAssignment(card_copy_id=copy.id, deck_id=deck.id)
-                )
+                self._copies.add_assignment(copy.id, deck.id)
                 missing -= 1
 
             for _ in range(missing):
-                copy = CardCopy(card_id=card_id)
-                self._session.add(copy)
-                self._session.flush()
-                self._session.add(
-                    CardAssignment(card_copy_id=copy.id, deck_id=deck.id)
-                )
+                copy = self._copies.add(card_id)
+                self._decks.flush()
+                self._copies.add_assignment(copy.id, deck.id)
 
-        self._session.flush()
+        self._decks.flush()
 
     def deck_requirements(self, deck_id: int) -> dict[str, int]:
-        rows = self._session.execute(
-            select(DeckCard.card_id, func.sum(DeckCard.quantity))
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role != DeckCardRole.TOKEN,
-                Card.is_basic_land.is_(False),
-                Card.is_token.is_(False),
-            )
-            .group_by(DeckCard.card_id)
-        ).all()
-        return {card_id: int(qty) for card_id, qty in rows}
+        return self._decks.requirements(deck_id)
 
     def deck_basic_lands(self, deck_id: int) -> dict[str, int]:
         """Basic land quantities on the list (unlimited pool; not optimized)."""
-        rows = self._session.execute(
-            select(DeckCard.card_id, func.sum(DeckCard.quantity))
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role != DeckCardRole.TOKEN,
-                Card.is_basic_land.is_(True),
-            )
-            .group_by(DeckCard.card_id)
-        ).all()
-        return {card_id: int(qty) for card_id, qty in rows}
+        return self._decks.basic_land_requirements(deck_id)
 
     def armed_deck_supplies(self, exclude_deck_id: int | None = None) -> dict[int, dict[str, int]]:
-        query = select(Deck).where(Deck.status == DeckStatus.ARMED)
-        if exclude_deck_id is not None:
-            query = query.where(Deck.id != exclude_deck_id)
-
         supplies: dict[int, dict[str, int]] = {}
-        for deck in self._session.scalars(query).all():
+        for deck in self._decks.list_armed(exclude_deck_id=exclude_deck_id):
             supplies[deck.id] = self.deck_requirements(deck.id)
         return supplies
 
@@ -804,17 +589,8 @@ class DeckService:
         self, deck_id: int
     ) -> list[CommanderLegalityIssue]:
         """Cards on the list with Scryfall Commander legality issues (advisory)."""
-        rows = self._session.execute(
-            select(Card.oracle_id, Card.name, Card.commander_legality)
-            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
-            .where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.role != DeckCardRole.TOKEN,
-            )
-            .distinct()
-        ).all()
         issues: list[CommanderLegalityIssue] = []
-        for oracle_id, name, legality in rows:
+        for oracle_id, name, legality in self._decks.commander_legality_rows(deck_id):
             if not is_commander_legality_issue(legality):
                 continue
             issues.append(

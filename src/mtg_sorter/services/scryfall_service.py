@@ -1,7 +1,6 @@
 import re
 from collections.abc import Callable
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import (
@@ -12,8 +11,8 @@ from mtg_sorter.algorithms.card_utils import (
 )
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.config import SCRYFALL_COLLECTION_BATCH_SIZE
-from mtg_sorter.models import Card, CardCopy
-from mtg_sorter.models.deck import DeckCard
+from mtg_sorter.models import Card
+from mtg_sorter.repositories import CardRepository
 
 
 def normalize_card_name(name: str) -> str:
@@ -87,6 +86,7 @@ class ScryfallOfflineError(RuntimeError):
 class ScryfallService:
     def __init__(self, session: Session, client: ScryfallClient | None = None) -> None:
         self._session = session
+        self._cards = CardRepository(session)
         self._client = client or ScryfallClient()
         self._owns_client = client is None
 
@@ -99,11 +99,7 @@ class ScryfallService:
         if not trimmed:
             return None
 
-        exact_matches = list(
-            self._session.scalars(
-                select(Card).where(func.lower(Card.name) == trimmed.casefold())
-            ).all()
-        )
+        exact_matches = self._cards.list_exact_lower(trimmed)
         exact = _pick_preferred_card(exact_matches, prefer_token=prefer_token)
         if exact is not None:
             return exact
@@ -112,7 +108,7 @@ class ScryfallService:
         if normalized_query:
             normalized_matches = [
                 card
-                for card in self._session.scalars(select(Card)).all()
+                for card in self._cards.list_all()
                 if normalize_card_name(card.name) == normalized_query
             ]
             normalized = _pick_preferred_card(
@@ -121,11 +117,7 @@ class ScryfallService:
             if normalized is not None:
                 return normalized
 
-        fuzzy_matches = list(
-            self._session.scalars(
-                select(Card).where(Card.name.ilike(f"%{trimmed}%")).limit(20)
-            ).all()
-        )
+        fuzzy_matches = self._cards.list_fuzzy(trimmed, limit=20)
         preferred_fuzzy = [
             card
             for card in fuzzy_matches
@@ -143,10 +135,10 @@ class ScryfallService:
         return None
 
     def upsert_from_payload(self, payload: dict) -> Card:
-        card = self._session.get(Card, payload["oracle_id"])
+        card = self._cards.get(payload["oracle_id"])
         if card is None:
             card = card_from_scryfall(payload)
-            self._session.add(card)
+            self._cards.add(card)
         else:
             refreshed = card_from_scryfall(payload)
             card.name = refreshed.name
@@ -161,7 +153,7 @@ class ScryfallService:
             card.commander_legality = refreshed.commander_legality
             card.is_basic_land = refreshed.is_basic_land
             card.is_token = refreshed.is_token
-        self._session.flush()
+        self._cards.flush()
         return card
 
     def fetch_and_cache(self, name: str, *, prefer_token: bool = False) -> Card:
@@ -186,13 +178,11 @@ class ScryfallService:
         return preferred if preferred is not None else card
 
     def cached_card_count(self) -> int:
-        return int(self._session.scalar(select(func.count()).select_from(Card)) or 0)
+        return self._cards.count_all()
 
     def collection_oracle_ids(self) -> list[str]:
         """Oracle ids for physical inventory copies and cards on deck lists."""
-        copy_ids = set(self._session.scalars(select(CardCopy.card_id).distinct()).all())
-        deck_ids = set(self._session.scalars(select(DeckCard.card_id).distinct()).all())
-        return sorted(copy_ids | deck_ids)
+        return self._cards.collection_oracle_ids()
 
     def refresh_collection_card_data(
         self,
@@ -239,7 +229,7 @@ class ScryfallService:
                 oracle_id = entry.get("oracle_id")
                 if not isinstance(oracle_id, str):
                     continue
-                card = self._session.get(Card, oracle_id)
+                card = self._cards.get(oracle_id)
                 if card is None:
                     self.upsert_from_payload(entry)
                     continue
@@ -250,7 +240,7 @@ class ScryfallService:
                 if refreshed.image_uri_back:
                     card.image_uri_back = refreshed.image_uri_back
 
-            self._session.flush()
+            self._cards.flush()
 
         report(f"Card data refreshed for {total:,} collection cards.")
         return total

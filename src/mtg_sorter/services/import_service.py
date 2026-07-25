@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_basic_land_name
 from mtg_sorter.api.moxfield_client import fetch_moxfield_deck
-from mtg_sorter.models import Card, Deck, DeckCard
+from mtg_sorter.models import Deck, DeckCard
 from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
+from mtg_sorter.repositories import CardRepository, DeckRepository
 from mtg_sorter.services.activity_service import ActivityService
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 from mtg_sorter.services.decklist_parser import (
@@ -19,15 +19,12 @@ from mtg_sorter.services.decklist_parser import (
     parse_decklist,
     parse_moxfield_line,
 )
+from mtg_sorter.services.deck_export import (
+    ExportFormat,
+    format_deck_export,
+    load_deck_export_cards,
+)
 from mtg_sorter.services.scryfall_service import ScryfallService
-
-ROLE_EXPORT_PREFIX: dict[DeckCardRole, str] = {
-    DeckCardRole.COMMANDER: "Commander",
-    DeckCardRole.PARTNER: "Partner",
-    DeckCardRole.COMPANION: "Companion",
-    DeckCardRole.BACKGROUND: "Background",
-    DeckCardRole.TOKEN: "Token",
-}
 
 SECONDARY_ROLE_FROM_NAME: dict[str, DeckCardRole] = {
     "partner": DeckCardRole.PARTNER,
@@ -116,6 +113,8 @@ class ImportService:
     def __init__(self, session: Session, scryfall: ScryfallService) -> None:
         self._session = session
         self._scryfall = scryfall
+        self._decks = DeckRepository(session)
+        self._cards = CardRepository(session)
 
     def resolve_decklist_input(
         self,
@@ -206,7 +205,7 @@ class ImportService:
         text: str,
     ) -> DeckListUpdatePreview:
         """Diff a deck's current list against pasted text (or a Moxfield URL)."""
-        deck = self._session.get(Deck, deck_id)
+        deck = self._decks.get(deck_id)
         if deck is None:
             raise ValueError(f"Deck {deck_id} not found")
 
@@ -225,6 +224,9 @@ class ImportService:
             except Exception:
                 unresolved.append(line.raw_line.strip())
                 continue
+            # Tokens are not tracked on deck lists.
+            if line.role == DeckCardRole.TOKEN or card.is_token:
+                continue
             after[card.oracle_id] = after.get(card.oracle_id, 0) + line.quantity
             names[card.oracle_id] = card.name
 
@@ -233,11 +235,7 @@ class ImportService:
         )
 
         before: dict[str, int] = {}
-        rows = self._session.execute(
-            select(DeckCard, Card)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(DeckCard.deck_id == deck_id)
-        ).all()
+        rows = self._decks.list_deck_cards_with_card(deck_id, order_by_name=False)
         for deck_card, card in rows:
             before[card.oracle_id] = before.get(card.oracle_id, 0) + deck_card.quantity
             names.setdefault(card.oracle_id, card.name)
@@ -311,8 +309,7 @@ class ImportService:
             status=status,
             sort_order=DeckService(self._session).next_sort_order(),
         )
-        self._session.add(deck)
-        self._session.flush()
+        self._decks.add(deck)
 
         warnings = self._populate_deck_cards(
             deck.id,
@@ -349,20 +346,11 @@ class ImportService:
         )
 
     def deck_to_moxfield_text(self, deck_id: int) -> str:
-        rows = self._session.execute(
-            select(DeckCard, Card)
-            .join(Card, Card.oracle_id == DeckCard.card_id)
-            .where(DeckCard.deck_id == deck_id)
-            .order_by(DeckCard.role, Card.name)
-        ).all()
-        lines: list[str] = []
-        for deck_card, card in rows:
-            prefix = ROLE_EXPORT_PREFIX.get(deck_card.role)
-            if prefix is not None and deck_card.role != DeckCardRole.MAIN:
-                lines.append(f"{prefix}: {deck_card.quantity} {card.name}")
-            else:
-                lines.append(f"{deck_card.quantity} {card.name}")
-        return "\n".join(lines)
+        return self.deck_to_text(deck_id, ExportFormat.MOXFIELD)
+
+    def deck_to_text(self, deck_id: int, fmt: ExportFormat) -> str:
+        cards = load_deck_export_cards(self._session, deck_id)
+        return format_deck_export(cards, fmt)
 
     def replace_deck_list(
         self,
@@ -370,7 +358,7 @@ class ImportService:
         text: str,
         commander_name: str | None = None,
     ) -> list[ImportWarning]:
-        deck = self._session.get(Deck, deck_id)
+        deck = self._decks.get(deck_id)
         if deck is None:
             raise ValueError(f"Deck {deck_id} not found")
 
@@ -382,8 +370,8 @@ class ImportService:
             )
 
         for deck_card in list(deck.cards):
-            self._session.delete(deck_card)
-        self._session.flush()
+            self._decks.delete_deck_card(deck_card)
+        self._decks.flush()
 
         resolved = self.resolve_decklist_input(text)
         parsed_lines = parse_decklist(resolved.text)
@@ -414,15 +402,21 @@ class ImportService:
         warnings: list[ImportWarning] = []
 
         for line in parsed_lines:
+            # Tokens are unlimited / display-only elsewhere; never store on lists.
+            if line.role == DeckCardRole.TOKEN:
+                continue
             try:
                 card = self._scryfall.fetch_and_cache(
                     line.name,
-                    prefer_token=line.role == DeckCardRole.TOKEN,
+                    prefer_token=False,
                 )
             except Exception as exc:
                 warnings.append(
                     ImportWarning(line=line.raw_line, message=str(exc))
                 )
+                continue
+
+            if card.is_token:
                 continue
 
             if is_basic_land_name(line.name):
@@ -437,14 +431,14 @@ class ImportService:
         if commander_name:
             self._promote_commander(deck_id, commander_name)
 
-        self._session.flush()
+        self._decks.flush()
         return warnings
 
     def list_trackable_cards(self, deck_id: int) -> list[TrackableDeckCard]:
         requirements = DeckService(self._session).deck_requirements(deck_id)
         cards: list[TrackableDeckCard] = []
         for oracle_id, quantity in requirements.items():
-            card = self._session.get(Card, oracle_id)
+            card = self._cards.get(oracle_id)
             if card is None:
                 continue
             cards.append(
@@ -475,18 +469,12 @@ class ImportService:
         quantity: int,
         role: DeckCardRole,
     ) -> None:
-        existing = self._session.scalar(
-            select(DeckCard).where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.card_id == card_id,
-                DeckCard.role == role,
-            )
-        )
+        existing = self._decks.get_deck_card(deck_id, card_id, role)
         if existing:
             existing.quantity += quantity
             return
 
-        self._session.add(
+        self._decks.add_deck_card(
             DeckCard(
                 deck_id=deck_id,
                 card_id=card_id,
@@ -500,12 +488,8 @@ class ImportService:
         if card is None:
             return
 
-        main_entry = self._session.scalar(
-            select(DeckCard).where(
-                DeckCard.deck_id == deck_id,
-                DeckCard.card_id == card.oracle_id,
-                DeckCard.role == DeckCardRole.MAIN,
-            )
+        main_entry = self._decks.get_deck_card(
+            deck_id, card.oracle_id, DeckCardRole.MAIN
         )
         if main_entry is None:
             return
@@ -513,6 +497,6 @@ class ImportService:
         if main_entry.quantity > 1:
             main_entry.quantity -= 1
         else:
-            self._session.delete(main_entry)
+            self._decks.delete_deck_card(main_entry)
 
         self._upsert_deck_card(deck_id, card.oracle_id, 1, DeckCardRole.COMMANDER)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -27,7 +27,7 @@ class MoxfieldClient:
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=MOXFIELD_API_BASE,
-            headers={"User-Agent": "MTG-Sorter/0.4"},
+            headers={"User-Agent": "MTG-Sorter/0.6"},
             timeout=30.0,
         )
 
@@ -56,7 +56,7 @@ def deck_export_from_payload(payload: dict[str, Any]) -> MoxfieldDeckExport:
     secondary_role: str | None = None
     secondary_name: str | None = None
 
-    commanders = _board_entries(payload.get("commanders"))
+    commanders = _named_board_entries(payload, "commanders")
     for index, (card_name, quantity) in enumerate(commanders):
         if index == 0:
             commander_name = card_name
@@ -66,14 +66,21 @@ def deck_export_from_payload(payload: dict[str, Any]) -> MoxfieldDeckExport:
             secondary_name = card_name
             lines.append(f"Partner: {quantity} {card_name}")
 
-    companions = _board_entries(payload.get("companions"))
+    companions = _named_board_entries(payload, "companions")
     for card_name, quantity in companions:
         if secondary_role is None:
             secondary_role = "companion"
             secondary_name = card_name
         lines.append(f"Companion: {quantity} {card_name}")
 
-    for card_name, quantity in _board_entries(payload.get("mainboard")):
+    backgrounds = _named_board_entries(payload, "backgrounds")
+    for card_name, quantity in backgrounds:
+        if secondary_role is None:
+            secondary_role = "background"
+            secondary_name = card_name
+        lines.append(f"Background: {quantity} {card_name}")
+
+    for card_name, quantity in _named_board_entries(payload, "mainboard"):
         lines.append(f"{quantity} {card_name}")
 
     return MoxfieldDeckExport(
@@ -95,12 +102,27 @@ def fetch_moxfield_deck(public_id: str) -> MoxfieldDeckExport:
     return deck_export_from_payload(payload)
 
 
+def _named_board_entries(payload: dict[str, Any], board_name: str) -> list[tuple[str, int]]:
+    """Read a named board from v3 ``boards`` or legacy top-level v2 fields."""
+    boards = payload.get("boards")
+    if isinstance(boards, dict):
+        board = boards.get(board_name)
+        if isinstance(board, dict) and isinstance(board.get("cards"), dict):
+            return _board_entries(board["cards"])
+    return _board_entries(payload.get(board_name))
+
+
 def _board_entries(board: Any) -> list[tuple[str, int]]:
     if not isinstance(board, dict):
         return []
     entries: list[tuple[str, int]] = []
     for key, value in board.items():
+        if key in {"count", "cards"}:
+            continue
         if not isinstance(value, dict):
+            continue
+        # Skip non-entry metadata blobs.
+        if "quantity" not in value and "card" not in value:
             continue
         card = value.get("card")
         if isinstance(card, dict) and card.get("name"):

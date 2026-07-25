@@ -90,10 +90,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
         "decks.export_list": "Export list",
-        "decks.export.title": "Export “{name}” (MTGO)",
+        "decks.export.title": "Export “{name}”",
         "decks.export.hint": (
-            "Copy this MTGO-format list and paste it into Moxfield, Arena, or another tool."
+            "Choose a format, then copy the list and paste it into Moxfield, Arena, "
+            "Archidekt, MTGGoldfish, or another tool."
         ),
+        "decks.export.format": "Format",
+        "decks.export.format.mtgo": "MTGO",
+        "decks.export.format.moxfield": "Moxfield",
+        "decks.export.format.arena": "Arena",
+        "decks.export.format.archidekt": "Archidekt",
+        "decks.export.format.mtggoldfish": "MTGGoldfish",
         "decks.export.copy": "Copy to clipboard",
         "decks.export.copied": "Copied to clipboard.",
         "decks.empty": "No decks imported yet.",
@@ -239,6 +246,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.history.when": "When",
         "browse.history.event": "Event",
         "browse.history.empty": "No activity recorded yet.",
+        "browse.history.load_more": "Load more",
+        "browse.history.export": "Export CSV",
+        "browse.history.undo": "Undo last",
+        "browse.history.undo.confirm": (
+            "Undo the most recent change? This cannot be redone from History."
+        ),
         "history.event.copies_added": "Added {name} × {qty_delta}",
         "history.event.copies_removed": "Removed {name} × {qty_delta}",
         "history.event.deck_armed": "Armed {deck_name}",
@@ -251,6 +264,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "{donors_suffix}"
         ),
         "history.event.plan_applied.donors": " (dismantled {donors})",
+        "history.event.undone": "Undid: {detail}",
         "browse.overview.greeting": (
             " __  __  _______   _____          _____\n"
             "|  \\/  ||__   __| / ____|        / ____|\n"
@@ -433,10 +447,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
         "decks.export_list": "Exportar listado",
-        "decks.export.title": "Exportar “{name}” (MTGO)",
+        "decks.export.title": "Exportar “{name}”",
         "decks.export.hint": (
-            "Copia este listado en formato MTGO y pégalo en Moxfield, Arena u otra herramienta."
+            "Elige un formato, copia el listado y pégalo en Moxfield, Arena, "
+            "Archidekt, MTGGoldfish u otra herramienta."
         ),
+        "decks.export.format": "Formato",
+        "decks.export.format.mtgo": "MTGO",
+        "decks.export.format.moxfield": "Moxfield",
+        "decks.export.format.arena": "Arena",
+        "decks.export.format.archidekt": "Archidekt",
+        "decks.export.format.mtggoldfish": "MTGGoldfish",
         "decks.export.copy": "Copiar al portapapeles",
         "decks.export.copied": "Copiado al portapapeles.",
         "decks.empty": "Aún no hay mazos importados.",
@@ -584,6 +605,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.history.when": "Cuándo",
         "browse.history.event": "Evento",
         "browse.history.empty": "Todavía no hay actividad registrada.",
+        "browse.history.load_more": "Cargar más",
+        "browse.history.export": "Exportar CSV",
+        "browse.history.undo": "Deshacer último",
+        "browse.history.undo.confirm": (
+            "¿Deshacer el cambio más reciente? No se puede rehacer desde el Historial."
+        ),
         "history.event.copies_added": "Añadidas {name} × {qty_delta}",
         "history.event.copies_removed": "Quitadas {name} × {qty_delta}",
         "history.event.deck_armed": "Armado {deck_name}",
@@ -596,6 +623,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "{donors_suffix}"
         ),
         "history.event.plan_applied.donors": " (desarmados {donors})",
+        "history.event.undone": "Deshecho: {detail}",
         "browse.overview.greeting": (
             " __  __  _______   _____          _____\n"
             "|  \\/  ||__   __| / ____|        / ____|\n"

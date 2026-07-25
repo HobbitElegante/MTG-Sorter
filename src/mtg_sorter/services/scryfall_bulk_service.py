@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_scryfall_art_series
@@ -20,8 +19,8 @@ from mtg_sorter.config import (
     SETTING_BULK_ORACLE_UPDATED_AT,
     SETTING_BULK_PACK_TYPE,
 )
-from mtg_sorter.models import AppSetting, Card, CardCopy
-from mtg_sorter.models.deck import DeckCard
+from mtg_sorter.models import Card
+from mtg_sorter.repositories import CardRepository, SettingsRepository
 from mtg_sorter.services.scryfall_service import card_from_scryfall
 
 
@@ -92,6 +91,8 @@ def _is_newer_timestamp(remote: str | None, local: str | None) -> bool:
 class ScryfallBulkService:
     def __init__(self, session: Session, client: ScryfallClient | None = None) -> None:
         self._session = session
+        self._cards = CardRepository(session)
+        self._settings = SettingsRepository(session)
         self._client = client or ScryfallClient()
         self._owns_client = client is None
 
@@ -106,9 +107,7 @@ class ScryfallBulkService:
         if remote_updated_at is not None:
             update_available = _is_newer_timestamp(remote_updated_at, bulk_updated_at)
         return BulkSyncStatus(
-            cached_cards=int(
-                self._session.scalar(select(func.count()).select_from(Card)) or 0
-            ),
+            cached_cards=self._cards.count_all(),
             pack_type=pack_type,
             bulk_updated_at=bulk_updated_at,
             last_synced_at=self._get_setting(SETTING_BULK_ORACLE_SYNCED_AT),
@@ -181,7 +180,7 @@ class ScryfallBulkService:
                     continue
 
                 card = card_from_scryfall(payload)
-                existing = self._session.get(Card, card.oracle_id)
+                existing = self._cards.get(card.oracle_id)
                 if existing is None:
                     pending = batch_by_id.get(card.oracle_id)
                     if pending is None:
@@ -207,9 +206,7 @@ class ScryfallBulkService:
 
             removed_art_series = self._purge_orphan_art_series()
 
-            total_cards = int(
-                self._session.scalar(select(func.count()).select_from(Card)) or 0
-            )
+            total_cards = self._cards.count_all()
             synced_at = datetime.now(UTC).isoformat()
             self._set_setting(SETTING_BULK_PACK_TYPE, pack_type)
             self._set_setting(SETTING_BULK_ORACLE_SYNCED_AT, synced_at)
@@ -247,17 +244,7 @@ class ScryfallBulkService:
         target.is_token = source.is_token
 
     def _purge_orphan_art_series(self) -> int:
-        referenced = (
-            select(CardCopy.card_id).union(select(DeckCard.card_id))
-        ).subquery()
-        result = self._session.execute(
-            delete(Card).where(
-                Card.type_line == "Card // Card",
-                Card.oracle_id.not_in(select(referenced.c.card_id)),
-            )
-        )
-        self._session.flush()
-        return int(result.rowcount or 0)
+        return self._cards.purge_orphan_art_series()
 
     def _find_bulk_entry(self, bulk_type: str) -> dict:
         for entry in self._client.fetch_bulk_data():
@@ -266,8 +253,7 @@ class ScryfallBulkService:
         raise ValueError(f"Bulk type '{bulk_type}' was not found on Scryfall.")
 
     def _get_setting(self, key: str) -> str | None:
-        value = self._session.get(AppSetting, key)
-        return value.value if value is not None else None
+        return self._settings.get(key)
 
     def _get_int_setting(self, key: str) -> int | None:
         raw = self._get_setting(key)
@@ -276,10 +262,4 @@ class ScryfallBulkService:
         return int(raw)
 
     def _set_setting(self, key: str, value: str) -> None:
-        setting = self._session.get(AppSetting, key)
-        if setting is None:
-            setting = AppSetting(key=key, value=value)
-            self._session.add(setting)
-        else:
-            setting.value = value
-        self._session.flush()
+        self._settings.set(key, value)
