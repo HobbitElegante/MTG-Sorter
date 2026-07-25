@@ -11,34 +11,33 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # pytest-qt is installed via the dev extra and auto-loads Qt even though
+      # we have no GUI tests; offscreen + disabling the plugin avoids CI crashes.
+      QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --extra dev
 
       - name: Run tests
-        run: uv run pytest
+        # No qtbot tests yet; loading pytest-qt on headless runners is fragile.
+        run: uv run pytest -p no:pytestqt -q --tb=short
 
   build-linux:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
 
@@ -58,13 +57,10 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
 
