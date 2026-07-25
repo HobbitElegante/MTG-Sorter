@@ -17,6 +17,9 @@ dev = [
     "pytest>=8.3.0",
     "pytest-qt>=4.4.0",
 ]
+packaging = [
+    "pyinstaller>=6.12.0",
+]
 
 [project.scripts]
 mtg-sorter = "mtg_sorter.main:main"

@@ -6,13 +6,12 @@ also use the CLI: ``alembic -c alembic.ini upgrade head``.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, inspect, text
 
-ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
+from mtg_sorter.config import alembic_script_location
+
 # Baseline revision id (must match versions/001_initial_schema.py). Legacy
 # databases are bridged up to this point and stamped with it; later revisions
 # are then applied normally.
@@ -21,7 +20,7 @@ BASELINE_REVISION = "001_initial"
 
 def alembic_config(database_url: str) -> Config:
     cfg = Config()
-    cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg.set_main_option("script_location", str(alembic_script_location()))
     cfg.set_main_option("sqlalchemy.url", database_url)
     return cfg
 

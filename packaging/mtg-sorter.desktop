@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MTG Sorter
+Comment=MTG Commander collection manager
+Exec=MTG-Sorter
+Icon=mtg-sorter
+Categories=Utility;Game;
+Terminal=false

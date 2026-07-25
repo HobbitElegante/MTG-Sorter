@@ -8,8 +8,6 @@ Supports:
 
 from __future__ import annotations
 
-from logging.config import fileConfig
-
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -22,6 +20,8 @@ import mtg_sorter.models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
+    from logging.config import fileConfig
+
     fileConfig(config.config_file_name)
 
 # CLI defaults to the app SQLite file; runtime upgrade injects a connection.

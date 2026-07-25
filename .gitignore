@@ -10,6 +10,8 @@ __pycache__/
 .venv/
 dist/
 build/
+*.AppImage
+tools/appimagetool*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -26,3 +28,4 @@ Thumbs.db
 # Ignore all files in the data directory
 data/*
 handoff.md
+vision.md

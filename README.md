@@ -35,6 +35,17 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Browse: card search, availability, activity **History** (filter, load more, CSV, undo last)
 - UI in English or Spanish (persisted)
 
+## Download (friends)
+
+Prebuilt binaries (when a version tag has been published):
+
+**https://github.com/HobbitElegante/MTG-Sorter/releases/latest**
+
+- Linux: `.AppImage` — `chmod +x` then run.
+- Windows: `.zip` — unzip and run `MTG-Sorter.exe`.
+
+Developers still use `uv run mtg-sorter` below.
+
 ## Requirements
 
 - Python 3.13+
@@ -67,7 +78,7 @@ Or:
 python -m mtg_sorter
 ```
 
-The SQLite database is created at `data/mtg_sorter.db` (gitignored). On every launch, Alembic applies any pending schema migrations automatically (fresh clone → baseline schema; older local DBs → one-time bridge + stamp). Optional card images go under `data/images/` (also gitignored).
+In development, the SQLite database is created at `data/mtg_sorter.db` (gitignored) and optional card images under `data/images/`. Packaged builds (AppImage / Windows folder) store the same files in the platform user-data directory; override anytime with `MTG_SORTER_DATA_DIR`. On every launch, Alembic applies any pending schema migrations automatically (fresh clone → baseline schema; older local DBs → one-time bridge + stamp).
 
 ## Tests
 
@@ -75,7 +86,23 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored). On every la
 uv run pytest
 ```
 
-133 tests passing.
+180 tests passing.
+
+## Building a package
+
+Local builds (optional; CI publishes assets on version tags):
+
+```bash
+# Linux AppImage (~300 MB)
+./scripts/build_linux.sh
+# → dist/MTG-Sorter-x86_64.AppImage
+
+# Windows (run on Windows or CI)
+.\scripts\build_windows.ps1
+# → dist\MTG-Sorter\MTG-Sorter.exe + dist\MTG-Sorter-windows-x64.zip
+```
+
+To **publish** a GitHub Release for friends: bump version → push `main` → `git tag vX.Y.Z` → `git push origin vX.Y.Z`. Details: [`packaging/README.md`](packaging/README.md). Extra: `uv sync --extra packaging`.
 
 ## First-time setup
 
