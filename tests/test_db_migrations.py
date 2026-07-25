@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
-from mtg_sorter.database import session as session_module
+from mtg_sorter.database.migrate import HEAD_REVISION, upgrade_database
 
 
 @pytest.fixture
 def legacy_engine(tmp_path: Path):
-    """A pre-v0.5.0 cards table, without image_uri_back."""
+    """A pre-Alembic cards table (missing image_uri_back / commander_legality)."""
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
     with engine.begin() as conn:
         conn.execute(
@@ -22,6 +22,20 @@ def legacy_engine(tmp_path: Path):
         conn.execute(
             text("INSERT INTO cards (oracle_id, name) VALUES ('a', 'Sol Ring')")
         )
+        conn.execute(
+            text(
+                "CREATE TABLE decks ("
+                "id INTEGER PRIMARY KEY, "
+                "name VARCHAR(255) NOT NULL, "
+                "status VARCHAR(10) NOT NULL)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO decks (id, name, status) VALUES (1, 'Beta', 'DISMANTLED')")
+        )
+        conn.execute(
+            text("INSERT INTO decks (id, name, status) VALUES (2, 'Alpha', 'ARMED')")
+        )
     return engine
 
 
@@ -33,23 +47,68 @@ def _card_columns(engine) -> set[str]:
         }
 
 
-def test_migration_adds_image_uri_back(legacy_engine, monkeypatch) -> None:
-    monkeypatch.setattr(session_module, "engine", legacy_engine)
+def _deck_columns(engine) -> set[str]:
+    with engine.begin() as conn:
+        return {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(decks)")).fetchall()
+        }
 
-    session_module._ensure_card_image_uri_back()
+
+def _alembic_version(engine) -> str | None:
+    with engine.begin() as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            ).fetchall()
+        }
+        if "alembic_version" not in tables:
+            return None
+        return conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+
+
+def test_fresh_database_runs_initial_migration(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
+
+    upgrade_database(engine)
+
+    tables = set(inspect(engine).get_table_names())
+    assert "cards" in tables
+    assert "decks" in tables
+    assert "alembic_version" in tables
+    assert _alembic_version(engine) == HEAD_REVISION
+    assert "image_uri_back" in _card_columns(engine)
+    assert "commander_legality" in _card_columns(engine)
+    assert "sort_order" in _deck_columns(engine)
+
+
+def test_legacy_database_is_bridged_and_stamped(legacy_engine) -> None:
+    upgrade_database(legacy_engine)
 
     assert "image_uri_back" in _card_columns(legacy_engine)
+    assert "commander_legality" in _card_columns(legacy_engine)
+    assert "sort_order" in _deck_columns(legacy_engine)
+    assert _alembic_version(legacy_engine) == HEAD_REVISION
+
     with legacy_engine.begin() as conn:
         row = conn.execute(
-            text("SELECT name, image_uri_back FROM cards WHERE oracle_id = 'a'")
+            text("SELECT name, image_uri_back, commander_legality FROM cards WHERE oracle_id = 'a'")
         ).first()
-    assert row == ("Sol Ring", None)
+        assert row == ("Sol Ring", None, None)
+        orders = {
+            name: order
+            for name, order in conn.execute(
+                text("SELECT name, sort_order FROM decks")
+            ).fetchall()
+        }
+    # Bridged sort_order backfill orders by name: Alpha=0, Beta=1
+    assert orders == {"Alpha": 0, "Beta": 1}
 
 
-def test_migration_is_idempotent(legacy_engine, monkeypatch) -> None:
-    monkeypatch.setattr(session_module, "engine", legacy_engine)
+def test_upgrade_is_idempotent(legacy_engine) -> None:
+    upgrade_database(legacy_engine)
+    upgrade_database(legacy_engine)
 
-    session_module._ensure_card_image_uri_back()
-    session_module._ensure_card_image_uri_back()
-
+    assert _alembic_version(legacy_engine) == HEAD_REVISION
     assert "image_uri_back" in _card_columns(legacy_engine)

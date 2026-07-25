@@ -2,37 +2,35 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.6.0)
+## Features (v0.6.1)
 
-- Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
-- **Card images in the UI:** preview panel beside Browse → Cards, Inventory, the deck list (commander plus partner/companion/background), Edit list, and the card pickers. Images come from the local cache and are downloaded on demand when missing; double-faced cards get a **Flip card** button. Toggle with **Browse → Overview → Show card images** (persisted); drag the splitter to resize
-- **Inventory tab:** searchable table with columns Name · Colors · Total · Free · Assigned · In decks; click headers to sort (text A–Z, numbers high→low first); Name column stretched; add/edit copy counts (cannot drop below assigned copies)
-- **Add list to collection:** full-tab paste/load (Moxfield / Archidekt / Arena / MTGO `.dek` / Moxfield URL) → review identified cards (qty from 1, remove/replace) with unresolved lines on the right (edit + recheck, or remove); confirm adds free copies
-- **Deck import:** auto-detect format — Moxfield MTGO text, Archidekt, Arena (`Commander`/`Deck` sections), MTGO `.dek` XML, or paste a public Moxfield deck URL (fetched, then review); armed/dismantled flow with −/+ quantity steppers; strips set codes including The List (`SOI-51`, `115a`, …)
-- **Import new list** takes the full Decks tab (deck list hidden while importing); optional Partner / Companion / Background via `+` (same as edit details)
-- **Update list:** re-sync a deck from a new paste, file, or Moxfield URL — the deck's list is replaced after a review dialog showing cards to add / remove, the resulting card count, and any unrecognized lines. Unlike **Edit list**, it can grow or shrink the list, so it also fixes decks left incomplete by an earlier import
-- **Export list** with format picker — MTGO, Moxfield, Arena, Archidekt, MTGGoldfish (name + qty; dialog + copy to clipboard)
-- Deck list storage with armed/dismantled status and automatic copy assignment
-- **Edit name / commander**, optional Partner / Companion / Background via `+`, filter All / Armed / Dismantled (compact), **search decks by name or commander**, reorder with Move up / Move down
-- Deck actions: Edit list · Update list · Edit name / commander · Export · Delete (left); Mark armed / dismantled (right)
-- Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
-- Delete deck with optional removal of physical copies
-- Commander roles: commander, partner, companion, background
-- **Commander legality warnings (advisory):** Scryfall `legalities.commander` is cached locally; decks with banned / not legal / restricted cards show ⚠ left of Armed/Dismantled (tooltip lists them). Edit list shows ⚠ flush-right in the Name column. Never blocks import or arming. **Browse → Scryfall → Refresh card data** updates legalities and image links for owned/list cards without a full bulk download.
-- Unlimited basics (listed in Optimize free-inventory); tokens never block reassembly and are **not** stored on deck lists or shown in Optimize
-- Card lookup prefers the playable card when a token shares the same name (e.g. Darkstar Augur)
-- ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
-- **Optimize target:** searchable dropdown — type deck or commander name (`Name — Commander`)
-- Optimize section titles show counts (free coverage, decks to dismantle, still missing)
-- Already-armed target decks skip optimization with a clear message
-- **Optimize plan UX:** large centered status (armed / no path / N decks); expanded **Decks to dismantle** tree with per-deck cards; Confirm / Cancel to apply dismantle+arm; **Cards covered by free inventory** lists free copies + basic lands from the unlimited pool
-- **Still missing (infeasible):** tree grouped by armed deck that holds the card; remainder under **Need to find** / **Faltan por encontrar**
-- Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
-- **Browse tab:** overview (language + show-images toggle), card search (type to search — does not dump the full ~36k cache), availability (same columns as Inventory minus Colors), **History** (activity log with filter All / Inventory / Decks, page size 50 + Load more, export CSV, undo last reversible event), Scryfall bulk sync (oracle-cards / unique-artwork) + local image download + **Refresh card data (collection)**
-- Lightweight UI refresh after collection changes (avoids rebuilding the full card catalog)
-- Offline card resolution via local cache + Scryfall bulk packs (`oracle_cards` / optional `unique_artwork`)
-- **Local card images:** Browse → Scryfall can download Scryfall `normal` JPEGs for the collection or full cache (`data/images/`); back faces are saved as `{oracle_id}_back.jpg`
-- Art Series cards filtered from bulk import and Browse catalog
+### Collection
+
+- Physical inventory in SQLite, grouped by card: total / free / assigned
+- Inventory table: Name · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; search
+- Add a single card or paste a whole list (multi-format / Moxfield URL) into free inventory
+- Card image preview beside the table (on-demand download; flip for double-faced cards)
+
+### Decks
+
+- Import with auto-detect: Moxfield MTGO, Archidekt, Arena, MTGO `.dek`, or public Moxfield URL
+- Armed / dismantled status with automatic physical-copy assignment
+- Command zone: commander plus optional Partner / Companion / Background
+- Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
+- Search, filter by status, and reorder decks; advisory ⚠ for Scryfall Commander legality (never blocks)
+
+### Optimize
+
+- ILP plan: minimize how many **armed** decks to dismantle to assemble a target
+- Confirm / cancel to apply; searchable target picker; clear status when already armed or infeasible
+- Free inventory + unlimited basics count toward coverage; tokens are ignored (not stored on lists)
+
+### Browse & data
+
+- Offline card cache via Scryfall bulk (`oracle_cards` / optional `unique_artwork`); Art Series excluded
+- Local JPEGs under `data/images/`; refresh legality + image URLs for the collection without a full re-bulk
+- Browse: card search, availability, activity **History** (filter, load more, CSV, undo last)
+- UI in English or Spanish (persisted)
 
 ## Requirements
 
@@ -66,7 +64,7 @@ Or:
 python -m mtg_sorter
 ```
 
-The SQLite database is created at `data/mtg_sorter.db` (gitignored). Optional card images go under `data/images/` (also gitignored).
+The SQLite database is created at `data/mtg_sorter.db` (gitignored). On every launch, Alembic applies any pending schema migrations automatically (fresh clone → baseline schema; older local DBs → one-time bridge + stamp). Optional card images go under `data/images/` (also gitignored).
 
 ## Tests
 
@@ -74,7 +72,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored). Optional ca
 uv run pytest
 ```
 
-132 tests passing.
+133 tests passing.
 
 ## First-time setup
 
@@ -149,7 +147,7 @@ Tip: **Edit list** keeps the list size fixed (open slots only). To add or remove
 src/mtg_sorter/
   algorithms/     # ILP deck dismantle optimizer, card helpers (incl. legality)
   api/            # Scryfall + Moxfield HTTP clients (bulk + CDN image download)
-  database/       # SQLite session bootstrap (+ column migrates)
+  database/       # SQLite + Alembic (session, migrate, alembic/versions)
   i18n/           # EN/ES translations
   models/         # SQLAlchemy models (ActivityEvent, Card.commander_legality/image_uri_back, …)
   repositories/   # Thin data-access layer (Card, Copy, Deck, Activity, Settings)
@@ -157,22 +155,11 @@ src/mtg_sorter/
   ui/             # PySide6 desktop UI (+ inventory_display, card_preview, import/update dialogs)
 tests/
   fixtures/       # Sample exports (kellan, arena, archidekt, mtgo .dek)
+alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 ```
 
-## Continuity
+**Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-See [`handoff.md`](handoff.md) for full project state (**v0.6.0**, 2026-07-24).
+## Latest (v0.6.1)
 
-**Done (v0.6.0):** multi-format export (MTGO / Moxfield / Arena / Archidekt / MTGGoldfish); History load-more + CSV + undo last; Moxfield URL import fixed for API v3 boards. Tokens deliberately ignored (not stored on lists, not listed in Optimize).
-
-**Done (docs/infra polish):** `repositories/` layer — SQLAlchemy queries extracted from services (same behavior; 132 tests).
-
-**Backlog (no mandatory next item):**
-
-| Priority | Items |
-|----------|--------|
-| **Product / UX** | Commander game-rules validation (color identity, Partner/Background); manual print choice only if prints are tracked later |
-| **Infra** | Packaging (`.exe` / AppImage / `.desktop`); Alembic formal migrations |
-| **Later** | Lock decks, priorities, multi-deck planner, stats, print tracking (`default_cards`) |
-
-Note: `handoff.md` is gitignored (local continuity); README is the tracked summary.
+Schema migrations via **Alembic**: versioned revisions under `database/alembic/`, applied automatically on launch. Fresh clones get the baseline schema; databases from before v0.6.1 are bridged once and stamped. 133 tests.
