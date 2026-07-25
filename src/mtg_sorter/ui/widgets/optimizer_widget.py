@@ -140,7 +140,11 @@ class OptimizerWidget(QWidget):
         search_icon = self.style().standardIcon(
             QStyle.StandardPixmap.SP_FileDialogContentsView
         )
-        search_action = QAction(search_icon if not search_icon.isNull() else QIcon(), self)
+        search_action = QAction(
+            search_icon if not search_icon.isNull() else QIcon(),
+            "",
+            self,
+        )
         search_action.setEnabled(False)
         line_edit.addAction(search_action, line_edit.ActionPosition.LeadingPosition)
         completer = QCompleter(self._deck_combo.model(), self._deck_combo)
