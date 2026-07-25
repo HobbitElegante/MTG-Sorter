@@ -73,6 +73,12 @@ CI builds and publishes automatically when you **push a version tag**. You do no
    git push origin v0.7.1
    ```
 
+Known headless pitfalls already handled in `.github/workflows/release.yml`:
+
+- Do **not** install `pytest-qt` in the test job (it auto-loads Qt). Entry point name is `pytest-qt` (hyphen), not `pytestqt`.
+- `ui/__init__.py` must stay lazy so formatter tests do not import PySide6.
+- Linux build needs system libs (`libegl1`, …) because PyInstaller imports PySide6.
+
 ### Prerequisite
 
 The packaging scripts, workflow (`.github/workflows/release.yml`), and related code must already be on the commit you tag. Tagging an old commit will not include AppImage/Windows builds.
