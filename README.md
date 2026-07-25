@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.7.0)
+## Features (v0.8.0)
 
 ### Collection
 
@@ -174,6 +174,6 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.7.0+)
+## Latest (v0.8.0)
 
 Commander rule warnings cover **singleton** (basics, “any number of cards named…”, and “up to N” caps like Seven Dwarves) and **list size** (100 cards; Companion outside). Decks can be **locked** (🔒) so Optimize will not dismantle them. Optimize builds an **assembly sequence**: add targets one by one, each with its own viability / missing-cards panel, simulating prior steps. The target picker looks like a committed selection (not free text) once a deck is chosen; clear resets the field. See also edition tracking and Optimize concentration tie-break from v0.7.0.
