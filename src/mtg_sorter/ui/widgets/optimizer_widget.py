@@ -3,6 +3,8 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
+    QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -19,8 +21,63 @@ from PySide6.QtWidgets import (
 
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.services import DeckService, OptimizationService
-from mtg_sorter.services.optimization_service import AssemblyPlan
+from mtg_sorter.services import DeckService, InventoryService, OptimizationService
+from mtg_sorter.services.optimization_service import AssemblyPlan, MovedCopy
+from mtg_sorter.services.settings_service import SettingsService
+from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable
+
+
+class SpecifyEditionsDialog(QDialog):
+    """Optional prompt after a rebuild: which edition is each moved copy?"""
+
+    def __init__(
+        self,
+        translator: Translator,
+        deck_name: str,
+        copies: list[MovedCopy],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self._editions: dict[int, str | None] = {}
+        self.setWindowTitle(self._translator.t("inventory.editions.prompt_title"))
+        self.resize(560, 520)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel(
+            self._translator.t("inventory.editions.prompt_hint").format(deck=deck_name)
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._table = CopyEditionTable(self._translator)
+        self._table.set_copies(
+            [
+                (copy.copy_id, copy.oracle_id, copy.card_name, None)
+                for copy in copies
+            ]
+        )
+        layout.addWidget(self._table, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
+        skip = buttons.addButton(
+            self._translator.t("inventory.editions.skip"),
+            QDialogButtonBox.ButtonRole.RejectRole,
+        )
+        skip.clicked.connect(self.reject)
+        buttons.accepted.connect(self._accept)
+        layout.addWidget(buttons)
+
+    def _accept(self) -> None:
+        self._editions = {
+            copy_id: edition
+            for copy_id, edition in self._table.editions().items()
+            if edition is not None
+        }
+        self.accept()
+
+    def editions(self) -> dict[int, str | None]:
+        return self._editions
 
 
 class OptimizerWidget(QWidget):
@@ -30,8 +87,13 @@ class OptimizerWidget(QWidget):
         super().__init__(parent)
         self._translator = translator
         self._current_plan: AssemblyPlan | None = None
+        with get_session() as session:
+            self._track_editions = SettingsService(session).get_track_editions()
         self._build_ui()
         self.refresh_decks()
+
+    def set_track_editions(self, enabled: bool) -> None:
+        self._track_editions = enabled
 
     def retranslate(self) -> None:
         self._target_label.setText(self._translator.t("optimize.target"))
@@ -339,8 +401,10 @@ class OptimizerWidget(QWidget):
             summary = f"{summary}\n{self._translator.t('optimize.multiple')}"
         self._summary.setText(summary)
 
-        for solution in result.solutions:
+        for index, solution in enumerate(result.solutions):
             label = plan.solution_labels.get(solution, ", ".join(sorted(solution)))
+            if index == 0 and len(result.solutions) > 1:
+                label = f"{label} — {self._translator.t('optimize.solution.suggested')}"
             self._solution_combo.addItem(label, solution)
 
         self._solution_combo.setVisible(len(result.solutions) > 1)
@@ -457,9 +521,12 @@ class OptimizerWidget(QWidget):
             return
 
         target_id = plan.target_deck_id
+        target_name = plan.target_deck_name
         try:
             with get_session() as session:
-                OptimizationService(session).apply_assembly_plan(target_id, solution)
+                moved = OptimizationService(session).apply_assembly_plan(
+                    target_id, solution
+                )
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -470,8 +537,28 @@ class OptimizerWidget(QWidget):
 
         self._clear_plan_ui()
         self._summary.setText(self._translator.t("optimize.apply.success"))
+        if self._track_editions and moved:
+            self._prompt_for_editions(target_name, moved)
         self.refresh_decks()
         self.changed.emit()
+
+    def _prompt_for_editions(self, deck_name: str, moved: list[MovedCopy]) -> None:
+        """Offer to record set codes; skipping leaves the copies unspecified."""
+        dialog = SpecifyEditionsDialog(self._translator, deck_name, moved, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        editions = dialog.editions()
+        if not editions:
+            return
+        try:
+            with get_session() as session:
+                InventoryService(session).set_copy_editions(editions)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
 
     def _cancel_plan(self) -> None:
         self._clear_plan_ui()

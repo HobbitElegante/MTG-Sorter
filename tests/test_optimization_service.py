@@ -8,6 +8,7 @@ from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services.optimization_service import (
     OptimizationService,
     allocate_solution_cards,
+    sort_solutions_by_concentration,
 )
 
 
@@ -276,6 +277,65 @@ def test_plan_assembly_cards_taken_match_residual_needs(session: Session) -> Non
         for card_id, qty in cards.items():
             attributed[card_id] = attributed.get(card_id, 0) + qty
     assert attributed == plan.residual_needs
+
+
+def test_sort_solutions_prefers_the_richest_single_donor() -> None:
+    residual = {"a": 1, "b": 1, "c": 1}
+    supplies = {
+        "1": {"a": 1},
+        "2": {"b": 1, "c": 1},
+        "3": {"a": 1, "b": 1, "c": 1},
+        "4": {"x": 1},
+    }
+    names = {"1": "Alpha", "2": "Beta", "3": "Gamma", "4": "Delta"}
+    spread = frozenset({"1", "2"})
+    concentrated = frozenset({"3", "4"})
+
+    ordered = sort_solutions_by_concentration(
+        residual, supplies, names, (spread, concentrated)
+    )
+
+    assert ordered == (concentrated, spread)
+
+
+def test_sort_solutions_breaks_full_ties_by_label() -> None:
+    residual = {"a": 1}
+    supplies = {"1": {"a": 1}, "2": {"a": 1}}
+    names = {"1": "Zed", "2": "Ada"}
+
+    ordered = sort_solutions_by_concentration(
+        residual, supplies, names, (frozenset({"1"}), frozenset({"2"}))
+    )
+
+    assert ordered == (frozenset({"2"}), frozenset({"1"}))
+
+
+def test_plan_assembly_orders_solutions_without_dropping_any(session: Session) -> None:
+    ring = Card(oracle_id="ring", name="Sol Ring", is_basic_land=False, is_token=False)
+    tower = Card(oracle_id="tower", name="Command Tower", is_basic_land=False, is_token=False)
+    target = Deck(name="Target", status=DeckStatus.DISMANTLED)
+    rich = Deck(name="Rich Donor", status=DeckStatus.ARMED)
+    poor = Deck(name="Poor Donor", status=DeckStatus.ARMED)
+    session.add_all([ring, tower, target, rich, poor])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(deck_id=target.id, card_id="ring", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=target.id, card_id="tower", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=rich.id, card_id="ring", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=rich.id, card_id="tower", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=poor.id, card_id="ring", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=poor.id, card_id="tower", quantity=1, role=DeckCardRole.MAIN),
+        ]
+    )
+    session.flush()
+
+    plan = OptimizationService(session).plan_assembly(target.id)
+
+    assert plan.result.minimum_decks_to_dismantle == 1
+    assert len(plan.result.solutions) == 2
+    # Both donors cover everything, so the alphabetical label decides.
+    assert plan.solution_labels[plan.result.solutions[0]] == "Poor Donor"
 
 
 def test_apply_assembly_plan_dismantles_then_arms(session: Session) -> None:

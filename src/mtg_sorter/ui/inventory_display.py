@@ -1,4 +1,6 @@
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
+from mtg_sorter.algorithms.commander_rules import CommanderRuleIssue, CommanderRuleKind
+from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services.browse_service import InventorySummaryRow
 from mtg_sorter.services.deck_service import CommanderLegalityIssue
@@ -11,6 +13,18 @@ def format_color_identity(
     if not color_identity:
         return translator.t("inventory.table.colorless")
     return color_identity
+
+
+def format_edition_summary(row: InventorySummaryRow) -> str:
+    """One set code when they all match, otherwise a per-edition breakdown."""
+    if not row.editions:
+        return UNSPECIFIED_EDITION_LABEL
+    if len(row.editions) == 1:
+        code, _ = row.editions[0]
+        return code or UNSPECIFIED_EDITION_LABEL
+    return ", ".join(
+        f"{code or UNSPECIFIED_EDITION_LABEL} x{count}" for code, count in row.editions
+    )
 
 
 def format_inventory_decks(row: InventorySummaryRow, translator: Translator) -> str:
@@ -63,6 +77,50 @@ def format_commander_legality_tooltip(
         for issue in issues
     ]
     return header + "\n" + "\n".join(lines)
+
+
+def format_commander_rules_tooltip(
+    issues: list[CommanderRuleIssue], translator: Translator
+) -> str:
+    if not issues:
+        return ""
+    colorless = translator.t("decks.rules.colorless")
+    lines = []
+    for issue in issues:
+        if issue.kind is CommanderRuleKind.COLOR_IDENTITY:
+            lines.append(
+                translator.t("decks.rules.color_identity").format(
+                    name=issue.name,
+                    colors=issue.colors or colorless,
+                    allowed=issue.allowed or colorless,
+                )
+            )
+        elif issue.kind is CommanderRuleKind.PAIRING:
+            lines.append(
+                translator.t("decks.rules.pairing").format(
+                    name=issue.name,
+                    commander=issue.commander,
+                )
+            )
+        else:
+            lines.append(
+                translator.t("decks.rules.missing_data").format(name=issue.name)
+            )
+    header = translator.t("decks.rules.tooltip_header")
+    return header + "\n" + "\n".join(lines)
+
+
+def format_deck_warning_tooltip(
+    legality_issues: list[CommanderLegalityIssue],
+    rule_issues: list[CommanderRuleIssue],
+    translator: Translator,
+) -> str:
+    """Both advisory checks share one ⚠, so their tooltips are stacked."""
+    blocks = [
+        format_commander_legality_tooltip(legality_issues, translator),
+        format_commander_rules_tooltip(rule_issues, translator),
+    ]
+    return "\n\n".join(block for block in blocks if block)
 
 
 def format_card_legality_tooltip(

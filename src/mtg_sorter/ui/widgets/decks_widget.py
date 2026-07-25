@@ -34,7 +34,7 @@ from mtg_sorter.services import (
 )
 from mtg_sorter.services.deck_export import load_deck_export_cards
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
-from mtg_sorter.ui.inventory_display import format_commander_legality_tooltip
+from mtg_sorter.ui.inventory_display import format_deck_warning_tooltip
 from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, build_preview_splitter
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
@@ -430,17 +430,20 @@ class DecksWidget(QWidget):
                     index, deck.name, deck.status, self._translator
                 )
                 issues = service.commander_legality_issues(deck.id)
+                rule_issues = service.commander_rule_issues(deck.id)
                 item = QListWidgetItem(name_label)
                 item.setData(Qt.ItemDataRole.UserRole, deck.id)
                 item.setData(DECK_NAME_ROLE, name_label)
                 item.setData(DECK_STATUS_ROLE, status_label)
-                if issues:
+                if issues or rule_issues:
                     item.setData(
                         DECK_WARNING_ROLE,
                         self._translator.t("decks.legality.warning"),
                     )
                     item.setToolTip(
-                        format_commander_legality_tooltip(issues, self._translator)
+                        format_deck_warning_tooltip(
+                            issues, rule_issues, self._translator
+                        )
                     )
                 else:
                     item.setData(DECK_WARNING_ROLE, "")

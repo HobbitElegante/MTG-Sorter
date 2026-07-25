@@ -38,6 +38,21 @@ class InventorySummaryRow:
     free_copies: int
     assigned_decks: tuple[str, ...]
     color_identity: str | None = None
+    # (set code or None for unspecified, copies) — only populated when the
+    # edition-tracking setting is on.
+    editions: tuple[tuple[str | None, int], ...] = ()
+
+
+def _sorted_editions(
+    counts: dict[str | None, int],
+) -> tuple[tuple[str | None, int], ...]:
+    """Most copies first; unspecified last so real set codes lead the summary."""
+    return tuple(
+        sorted(
+            counts.items(),
+            key=lambda item: (item[0] is None, -item[1], item[0] or ""),
+        )
+    )
 
 
 class BrowseService:
@@ -75,7 +90,10 @@ class BrowseService:
             for card in self._cards.list_playable(search)
         ]
 
-    def list_inventory(self) -> list[InventorySummaryRow]:
+    def list_inventory(
+        self, *, include_editions: bool = False
+    ) -> list[InventorySummaryRow]:
+        edition_counts = self._copies.edition_counts() if include_editions else {}
         summaries: list[InventorySummaryRow] = []
         for oracle_id, name, color_identity, total in self._decks.inventory_copy_rows():
             assigned_count = self._copies.count_assigned(oracle_id)
@@ -87,6 +105,7 @@ class BrowseService:
                     free_copies=total - assigned_count,
                     assigned_decks=self._decks.deck_names_for_card(oracle_id),
                     color_identity=color_identity,
+                    editions=_sorted_editions(edition_counts.get(oracle_id, {})),
                 )
             )
         return summaries

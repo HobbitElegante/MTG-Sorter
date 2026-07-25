@@ -12,7 +12,7 @@ from mtg_sorter.algorithms.card_utils import (
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.config import SCRYFALL_COLLECTION_BATCH_SIZE
 from mtg_sorter.models import Card
-from mtg_sorter.repositories import CardRepository
+from mtg_sorter.repositories import CardPrintRepository, CardRepository
 
 
 def normalize_card_name(name: str) -> str:
@@ -79,6 +79,24 @@ def card_from_scryfall(payload: dict) -> Card:
     )
 
 
+def prints_from_scryfall(payloads: list[dict]) -> list[tuple[str, str | None, str | None]]:
+    """Collapse Scryfall printings to one row per set, newest release kept."""
+    by_code: dict[str, tuple[str, str | None, str | None]] = {}
+    for entry in payloads:
+        set_code = entry.get("set")
+        if not isinstance(set_code, str) or not set_code.strip():
+            continue
+        code = set_code.strip().upper()
+        set_name = entry.get("set_name")
+        released_at = entry.get("released_at")
+        by_code[code] = (
+            code,
+            set_name if isinstance(set_name, str) else None,
+            released_at if isinstance(released_at, str) else None,
+        )
+    return sorted(by_code.values(), key=lambda row: (row[2] or "", row[0]))
+
+
 class ScryfallOfflineError(RuntimeError):
     pass
 
@@ -87,6 +105,7 @@ class ScryfallService:
     def __init__(self, session: Session, client: ScryfallClient | None = None) -> None:
         self._session = session
         self._cards = CardRepository(session)
+        self._prints = CardPrintRepository(session)
         self._client = client or ScryfallClient()
         self._owns_client = client is None
 
@@ -176,6 +195,31 @@ class ScryfallService:
         # side of a shared name, try the local cache again after upserting.
         preferred = self.lookup_local(name, prefer_token=prefer_token)
         return preferred if preferred is not None else card
+
+    def list_prints(
+        self, oracle_id: str, *, refresh: bool = False
+    ) -> list[tuple[str, str | None]]:
+        """Sets the card was printed in, as ``(set_code, set_name)``.
+
+        Cached per card after the first lookup. Returns whatever is cached when
+        Scryfall is unreachable, so the edition picker still opens offline.
+        """
+        if not refresh and self._prints.has_any(oracle_id):
+            return [(row.set_code, row.set_name) for row in self._prints.list_for_card(oracle_id)]
+
+        try:
+            payloads = self._client.fetch_card_prints(oracle_id)
+        except Exception:
+            return [
+                (row.set_code, row.set_name)
+                for row in self._prints.list_for_card(oracle_id)
+            ]
+
+        rows = prints_from_scryfall(payloads)
+        if not rows:
+            return []
+        self._prints.replace_for_card(oracle_id, rows)
+        return [(set_code, set_name) for set_code, set_name, _ in rows]
 
     def cached_card_count(self) -> int:
         return self._cards.count_all()

@@ -49,6 +49,27 @@ class ScryfallClient:
             raise ValueError("Unexpected Scryfall collection response shape")
         return payload
 
+    def fetch_card_prints(self, oracle_id: str) -> list[dict[str, Any]]:
+        """Every printing of one card (the oracle bulk pack keeps only one)."""
+        prints: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            payload = self._get(
+                "/cards/search",
+                params={
+                    "q": f"oracleid:{oracle_id}",
+                    "unique": "prints",
+                    "order": "released",
+                    "page": page,
+                },
+            )
+            data = payload.get("data")
+            if isinstance(data, list):
+                prints.extend(entry for entry in data if isinstance(entry, dict))
+            if not payload.get("has_more"):
+                return prints
+            page += 1
+
     def fetch_bulk_data(self) -> list[dict[str, Any]]:
         payload = self._get("/bulk-data")
         data = payload.get("data")

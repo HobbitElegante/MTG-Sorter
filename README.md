@@ -2,13 +2,14 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.6.1)
+## Features (v0.7.0)
 
 ### Collection
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
 - Inventory table: Name · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; search
 - Add a single card or paste a whole list (multi-format / Moxfield URL) into free inventory
+- Optional **edition tracking**: turn it on in Browse → Overview to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)
 
 ### Decks
@@ -17,11 +18,13 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Armed / dismantled status with automatic physical-copy assignment
 - Command zone: commander plus optional Partner / Companion / Background
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
-- Search, filter by status, and reorder decks; advisory ⚠ for Scryfall Commander legality (never blocks)
+- Search, filter by status, and reorder decks
+- Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity of the 99, Partner / Background / Companion pairings)
 
 ### Optimize
 
 - ILP plan: minimize how many **armed** decks to dismantle to assemble a target
+- Equally optimal plans are ordered so the one drawing the most cards from a single donor comes first; every plan stays selectable
 - Confirm / cancel to apply; searchable target picker; clear status when already armed or infeasible
 - Free inventory + unlimited basics count toward coverage; tokens are ignored (not stored on lists)
 
@@ -160,6 +163,6 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.6.1)
+## Latest (v0.7.0)
 
-Schema migrations via **Alembic**: versioned revisions under `database/alembic/`, applied automatically on launch. Fresh clones get the baseline schema; databases from before v0.6.1 are bridged once and stamped. 133 tests.
+Three additions, all opt-in or advisory. Deck lists now get **Commander rule warnings** — cards outside the commander's color identity and illegal Partner / Background / Companion pairings — sharing the same non-blocking ⚠ as format legality. **Edition tracking** is a setting in Browse → Overview: off by default, it adds an Edition column, lets you assign a set code per physical copy, and offers a skippable prompt for the copies you moved after rebuilding a deck. **Optimize** now sorts equally optimal plans so the one taking the most cards from a single donor deck comes first, without hiding the alternatives. 166 tests.

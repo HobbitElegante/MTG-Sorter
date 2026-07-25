@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from mtg_sorter.models.enums import DeckCardRole
@@ -36,7 +36,7 @@ CARD_LINE_RE = re.compile(
     r"^(?:(?P<role>[A-Za-z ]+):\s*)?"
     r"(?P<qty>\d+)\s*(?:x\s*)?"
     r"(?P<name>.+?)"
-    r"(?:\s*\([A-Z0-9]+\)(?:\s+[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)?(?:\s*\*F\*)?)?"
+    r"(?:\s*\((?P<set>[A-Z0-9]+)\)(?:\s+[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)?(?:\s*\*F\*)?)?"
     r"(?:\s*\[[^\]]*\])?"
     r"\s*$"
 )
@@ -61,6 +61,8 @@ class ParsedDeckLine:
     name: str
     role: DeckCardRole
     raw_line: str
+    # Set code when the line carried one, e.g. "1 Sol Ring (C21) 263".
+    set_code: str | None = None
 
 
 def extract_moxfield_deck_id(text: str) -> str | None:
@@ -183,11 +185,13 @@ def _parse_card_line(
     if not name:
         return None
 
+    set_code = match.group("set")
     return ParsedDeckLine(
         quantity=int(match.group("qty")),
         name=name,
         role=parsed_role or default_role,
         raw_line=line,
+        set_code=set_code.upper() if set_code else None,
     )
 
 
@@ -243,19 +247,9 @@ def _parse_arena(text: str) -> list[ParsedDeckLine]:
                 else DeckCardRole.COMMANDER
             )
             commanders_in_section += 1
-            item = ParsedDeckLine(
-                quantity=item.quantity,
-                name=item.name,
-                role=role,
-                raw_line=item.raw_line,
-            )
+            item = replace(item, role=role)
         elif section_role == DeckCardRole.COMPANION:
-            item = ParsedDeckLine(
-                quantity=item.quantity,
-                name=item.name,
-                role=DeckCardRole.COMPANION,
-                raw_line=item.raw_line,
-            )
+            item = replace(item, role=DeckCardRole.COMPANION)
 
         parsed.append(item)
 

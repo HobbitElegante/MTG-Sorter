@@ -57,6 +57,8 @@ class InventoryListCard:
     oracle_id: str
     name: str
     list_quantity: int
+    # Set code from the pasted line, when it carried one.
+    set_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -183,12 +185,21 @@ class ImportService:
                     oracle_id=card.oracle_id,
                     name=card.name,
                     list_quantity=parsed.quantity,
+                    set_code=parsed.set_code,
                 )
             else:
+                # Same card listed twice with different sets: the edition is
+                # ambiguous, so drop it rather than guess.
+                set_code = (
+                    existing.set_code
+                    if existing.set_code == parsed.set_code
+                    else None
+                )
                 merged[card.oracle_id] = InventoryListCard(
                     oracle_id=card.oracle_id,
                     name=card.name,
                     list_quantity=existing.list_quantity + parsed.quantity,
+                    set_code=set_code,
                 )
 
         unresolved.extend(self._unparsed_lines(body, fmt, parsed_lines))
@@ -450,14 +461,21 @@ class ImportService:
             )
         return sorted(cards, key=lambda entry: entry.name.casefold())
 
-    def apply_available_copies(self, quantities: dict[str, int]) -> int:
+    def apply_available_copies(
+        self,
+        quantities: dict[str, int],
+        editions: dict[str, str | None] | None = None,
+    ) -> int:
         inventory = InventoryService(self._session)
         added = 0
         for oracle_id, quantity in quantities.items():
             if quantity <= 0:
                 continue
             inventory.add_copy(
-                oracle_id, quantity, record_activity=True
+                oracle_id,
+                quantity,
+                edition=(editions or {}).get(oracle_id),
+                record_activity=True,
             )
             added += quantity
         return added

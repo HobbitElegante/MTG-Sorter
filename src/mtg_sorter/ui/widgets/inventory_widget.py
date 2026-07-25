@@ -2,6 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import (
@@ -31,22 +33,29 @@ from mtg_sorter.services import (
     SettingsService,
 )
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
-from mtg_sorter.ui.inventory_display import format_color_identity, format_inventory_decks
+from mtg_sorter.services.deck_service import CopyDetail
+from mtg_sorter.ui.inventory_display import (
+    format_color_identity,
+    format_edition_summary,
+    format_inventory_decks,
+)
 from mtg_sorter.ui.widgets.card_preview import (
     CardPreviewPanel,
     build_preview_splitter,
     card_images_enabled,
 )
+from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable, EditionComboBox
 from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
 
 COL_NAME = 0
 COL_COLOR = 1
-COL_TOTAL = 2
-COL_FREE = 3
-COL_ASSIGNED = 4
-COL_DECKS = 5
+COL_EDITION = 2
+COL_TOTAL = 3
+COL_FREE = 4
+COL_ASSIGNED = 5
+COL_DECKS = 6
 
 
 class AddInventoryCardDialog(QDialog):
@@ -151,15 +160,18 @@ class EditInventoryCopiesDialog(QDialog):
         self,
         translator: Translator,
         row: InventorySummaryRow,
+        copies: list[CopyDetail] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._translator = translator
         self._row = row
         self._total = row.total_copies
+        self._copies = copies or []
+        self._editions: dict[int, str | None] = {}
         assigned = row.total_copies - row.free_copies
         self.setWindowTitle(self._translator.t("inventory.edit_dialog.title"))
-        self.resize(420, 200)
+        self.resize(480, 420 if self._copies else 200)
         self._build_ui(assigned)
 
     def _build_ui(self, assigned: int) -> None:
@@ -185,6 +197,41 @@ class EditInventoryCopiesDialog(QDialog):
             note.setWordWrap(True)
             layout.addWidget(note)
 
+        self._edition_table: CopyEditionTable | None = None
+        if self._copies:
+            group = QGroupBox(self._translator.t("inventory.editions.title"))
+            group_layout = QVBoxLayout(group)
+            hint = QLabel(self._translator.t("inventory.editions.hint"))
+            hint.setWordWrap(True)
+            group_layout.addWidget(hint)
+
+            self._edition_table = CopyEditionTable(self._translator)
+            self._edition_table.set_copies(
+                [
+                    (
+                        copy.copy_id,
+                        copy.oracle_id,
+                        self._copy_label(number, copy),
+                        copy.edition,
+                    )
+                    for number, copy in enumerate(self._copies, start=1)
+                ]
+            )
+            group_layout.addWidget(self._edition_table, 1)
+
+            apply_row = QHBoxLayout()
+            self._apply_all_combo = EditionComboBox(
+                self._row.oracle_id, None, self._translator
+            )
+            self._apply_all_button = QPushButton(
+                self._translator.t("inventory.editions.apply_all")
+            )
+            self._apply_all_button.clicked.connect(self._apply_edition_to_all)
+            apply_row.addWidget(self._apply_all_combo, 1)
+            apply_row.addWidget(self._apply_all_button)
+            group_layout.addLayout(apply_row)
+            layout.addWidget(group, 1)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -192,12 +239,27 @@ class EditInventoryCopiesDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _copy_label(self, number: int, copy: CopyDetail) -> str:
+        where = copy.deck_name or self._translator.t("browse.inventory.free")
+        return self._translator.t("inventory.editions.copy_label").format(
+            number=number, where=where
+        )
+
+    def _apply_edition_to_all(self) -> None:
+        if self._edition_table is not None:
+            self._edition_table.apply_to_all(self._apply_all_combo.edition())
+
     def _accept(self) -> None:
         self._total = self._qty.value()
+        if self._edition_table is not None:
+            self._editions = self._edition_table.editions()
         self.accept()
 
     def total_copies(self) -> int:
         return self._total
+
+    def copy_editions(self) -> dict[int, str | None]:
+        return self._editions
 
 
 class InventoryWidget(QWidget):
@@ -211,13 +273,23 @@ class InventoryWidget(QWidget):
         self._sort_column = COL_NAME
         self._sort_ascending = True
         with get_session() as session:
-            self._show_card_images = SettingsService(session).get_show_card_images()
+            settings = SettingsService(session)
+            self._show_card_images = settings.get_show_card_images()
+            self._track_editions = settings.get_track_editions()
         self._build_ui()
         self.refresh()
 
     def set_show_card_images(self, enabled: bool) -> None:
         self._show_card_images = enabled
         self._preview.setVisible(enabled)
+
+    def set_track_editions(self, enabled: bool) -> None:
+        self._track_editions = enabled
+        self._table.setColumnHidden(COL_EDITION, not enabled)
+        if self._sort_column == COL_EDITION and not enabled:
+            self._sort_column = COL_NAME
+            self._sort_ascending = True
+        self.refresh()
 
     def retranslate(self) -> None:
         self._search.setPlaceholderText(
@@ -241,6 +313,7 @@ class InventoryWidget(QWidget):
         return [
             self._translator.t("browse.cards.name"),
             self._translator.t("inventory.table.color"),
+            self._translator.t("inventory.table.edition"),
             self._translator.t("inventory.table.total"),
             self._translator.t("inventory.table.free"),
             self._translator.t("inventory.table.assigned"),
@@ -277,12 +350,16 @@ class InventoryWidget(QWidget):
         actions.addStretch()
         collection.addLayout(actions)
 
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(self._header_labels())
+        self._table.setColumnHidden(COL_EDITION, not self._track_editions)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            COL_EDITION, QHeaderView.ResizeMode.ResizeToContents
+        )
         header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(
@@ -348,7 +425,9 @@ class InventoryWidget(QWidget):
 
     def refresh(self) -> None:
         with get_session() as session:
-            self._rows = BrowseService(session).list_inventory()
+            self._rows = BrowseService(session).list_inventory(
+                include_editions=self._track_editions
+            )
         self._populate_table()
 
     def _on_header_clicked(self, column: int) -> None:
@@ -357,7 +436,12 @@ class InventoryWidget(QWidget):
         else:
             self._sort_column = column
             # Numbers: high → low first; text: A → Z first
-            self._sort_ascending = column in (COL_NAME, COL_COLOR, COL_DECKS)
+            self._sort_ascending = column in (
+                COL_NAME,
+                COL_COLOR,
+                COL_EDITION,
+                COL_DECKS,
+            )
         header = self._table.horizontalHeader()
         order = (
             Qt.SortOrder.AscendingOrder
@@ -373,6 +457,8 @@ class InventoryWidget(QWidget):
             return row.card_name.casefold()
         if self._sort_column == COL_COLOR:
             return (row.color_identity or "").casefold()
+        if self._sort_column == COL_EDITION:
+            return format_edition_summary(row).casefold()
         if self._sort_column == COL_TOTAL:
             return row.total_copies
         if self._sort_column == COL_FREE:
@@ -404,6 +490,9 @@ class InventoryWidget(QWidget):
             color_item = QTableWidgetItem(color_text)
             color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
+            edition_item = QTableWidgetItem(format_edition_summary(row))
+            edition_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
             total_item = QTableWidgetItem(str(row.total_copies))
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -419,6 +508,7 @@ class InventoryWidget(QWidget):
 
             self._table.setItem(index, COL_NAME, name_item)
             self._table.setItem(index, COL_COLOR, color_item)
+            self._table.setItem(index, COL_EDITION, edition_item)
             self._table.setItem(index, COL_TOTAL, total_item)
             self._table.setItem(index, COL_FREE, free_item)
             self._table.setItem(index, COL_ASSIGNED, assigned_item)
@@ -533,11 +623,14 @@ class InventoryWidget(QWidget):
         quantities = dialog.quantities()
         if not quantities:
             return
+        set_codes = dialog.set_codes() if self._track_editions else {}
         try:
             with get_session() as session:
                 inventory = InventoryService(session)
                 for oracle_id, quantity in quantities.items():
-                    inventory.add_copy(oracle_id, quantity)
+                    inventory.add_copy(
+                        oracle_id, quantity, edition=set_codes.get(oracle_id)
+                    )
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -555,14 +648,20 @@ class InventoryWidget(QWidget):
         row = self._selected_row()
         if row is None:
             return
-        dialog = EditInventoryCopiesDialog(self._translator, row, self)
+        copies: list[CopyDetail] = []
+        if self._track_editions:
+            with get_session() as session:
+                copies = InventoryService(session).list_copies_with_deck(row.oracle_id)
+        dialog = EditInventoryCopiesDialog(self._translator, row, copies, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
             with get_session() as session:
-                InventoryService(session).set_total_copies(
-                    row.oracle_id, dialog.total_copies()
-                )
+                inventory = InventoryService(session)
+                editions = dialog.copy_editions()
+                if editions:
+                    inventory.set_copy_editions(editions)
+                inventory.set_total_copies(row.oracle_id, dialog.total_copies())
         except Exception as exc:
             QMessageBox.critical(
                 self,

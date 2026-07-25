@@ -46,10 +46,15 @@ class MainWindow(QMainWindow):
         self._browse.changed.connect(self._refresh_from_browse)
         self._browse.locale_changed.connect(self.set_locale)
         self._browse.show_images_changed.connect(self._on_show_images_changed)
+        self._browse.track_editions_changed.connect(self._on_track_editions_changed)
 
     def _on_show_images_changed(self, enabled: bool) -> None:
         self._inventory.set_show_card_images(enabled)
         self._decks.set_show_card_images(enabled)
+
+    def _on_track_editions_changed(self, enabled: bool) -> None:
+        self._inventory.set_track_editions(enabled)
+        self._optimizer.set_track_editions(enabled)
 
     def _refresh_from_browse(self) -> None:
         self._inventory.refresh()

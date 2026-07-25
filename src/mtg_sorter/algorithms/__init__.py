@@ -6,6 +6,12 @@ from mtg_sorter.algorithms.card_utils import (
     is_scryfall_art_series,
     is_token_type_line,
 )
+from mtg_sorter.algorithms.commander_rules import (
+    CommanderCard,
+    CommanderRuleIssue,
+    CommanderRuleKind,
+    evaluate_deck,
+)
 from mtg_sorter.algorithms.deck_optimizer import (
     DeckSupply,
     OptimizationResult,
@@ -13,8 +19,12 @@ from mtg_sorter.algorithms.deck_optimizer import (
 )
 
 __all__ = [
+    "CommanderCard",
+    "CommanderRuleIssue",
+    "CommanderRuleKind",
     "DeckSupply",
     "OptimizationResult",
+    "evaluate_deck",
     "find_all_optimal_solutions",
     "is_art_series_type_line",
     "is_basic_land_name",

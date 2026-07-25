@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mtg_sorter.models.base import Base
@@ -24,6 +24,27 @@ class Card(Base):
     is_token: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     copies: Mapped[list["CardCopy"]] = relationship(back_populates="card")
+
+
+class CardPrint(Base):
+    """A set the card was printed in, cached for the edition picker.
+
+    The oracle bulk pack collapses to one row per card, so the sets a card
+    exists in are fetched per card on demand and kept here.
+    """
+
+    __tablename__ = "card_prints"
+    __table_args__ = (
+        UniqueConstraint("oracle_id", "set_code", name="uq_card_print_set"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    oracle_id: Mapped[str] = mapped_column(
+        ForeignKey("cards.oracle_id"), index=True, nullable=False
+    )
+    set_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    set_name: Mapped[str | None] = mapped_column(String(255))
+    released_at: Mapped[str | None] = mapped_column(String(16))
 
 
 class CardCopy(Base):

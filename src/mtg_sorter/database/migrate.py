@@ -13,8 +13,10 @@ from alembic.config import Config
 from sqlalchemy import Engine, inspect, text
 
 ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
-# Baseline revision id (must match versions/001_initial_schema.py).
-HEAD_REVISION = "001_initial"
+# Baseline revision id (must match versions/001_initial_schema.py). Legacy
+# databases are bridged up to this point and stamped with it; later revisions
+# are then applied normally.
+BASELINE_REVISION = "001_initial"
 
 
 def alembic_config(database_url: str) -> Config:
@@ -97,6 +99,5 @@ def upgrade_database(engine: Engine) -> None:
         cfg.attributes["connection"] = connection
         if existing_tables and "alembic_version" not in existing_tables:
             _bridge_legacy_schema(connection)
-            command.stamp(cfg, HEAD_REVISION)
-        else:
-            command.upgrade(cfg, "head")
+            command.stamp(cfg, BASELINE_REVISION)
+        command.upgrade(cfg, "head")

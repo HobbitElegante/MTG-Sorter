@@ -3,7 +3,18 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
-from mtg_sorter.database.migrate import HEAD_REVISION, upgrade_database
+from alembic.script import ScriptDirectory
+
+from mtg_sorter.database.migrate import (
+    BASELINE_REVISION,
+    alembic_config,
+    upgrade_database,
+)
+
+
+def _script_head() -> str:
+    """Newest revision on disk, so adding migrations doesn't break the tests."""
+    return ScriptDirectory.from_config(alembic_config("sqlite://")).get_current_head()
 
 
 @pytest.fixture
@@ -77,7 +88,7 @@ def test_fresh_database_runs_initial_migration(tmp_path: Path) -> None:
     assert "cards" in tables
     assert "decks" in tables
     assert "alembic_version" in tables
-    assert _alembic_version(engine) == HEAD_REVISION
+    assert _alembic_version(engine) == _script_head()
     assert "image_uri_back" in _card_columns(engine)
     assert "commander_legality" in _card_columns(engine)
     assert "sort_order" in _deck_columns(engine)
@@ -89,7 +100,7 @@ def test_legacy_database_is_bridged_and_stamped(legacy_engine) -> None:
     assert "image_uri_back" in _card_columns(legacy_engine)
     assert "commander_legality" in _card_columns(legacy_engine)
     assert "sort_order" in _deck_columns(legacy_engine)
-    assert _alembic_version(legacy_engine) == HEAD_REVISION
+    assert _alembic_version(legacy_engine) == _script_head()
 
     with legacy_engine.begin() as conn:
         row = conn.execute(
@@ -110,5 +121,13 @@ def test_upgrade_is_idempotent(legacy_engine) -> None:
     upgrade_database(legacy_engine)
     upgrade_database(legacy_engine)
 
-    assert _alembic_version(legacy_engine) == HEAD_REVISION
+    assert _alembic_version(legacy_engine) == _script_head()
     assert "image_uri_back" in _card_columns(legacy_engine)
+
+
+def test_legacy_database_receives_migrations_past_the_baseline(legacy_engine) -> None:
+    """Bridging stamps the baseline; later revisions must still be applied."""
+    upgrade_database(legacy_engine)
+
+    assert _script_head() != BASELINE_REVISION
+    assert "card_prints" in set(inspect(legacy_engine).get_table_names())

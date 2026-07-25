@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.deck_optimizer import DeckSupply, OptimizationResult, find_all_optimal_solutions
 from mtg_sorter.models.enums import ActivityEventType, DeckStatus
-from mtg_sorter.repositories import CardRepository
+from mtg_sorter.repositories import CardRepository, CopyRepository
 from mtg_sorter.services.activity_service import ActivityService
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 
@@ -42,6 +42,31 @@ def allocate_solution_cards(
     return taken
 
 
+def sort_solutions_by_concentration(
+    residual_needs: dict[str, int],
+    deck_supplies: dict[str, dict[str, int]],
+    deck_names: dict[str, str],
+    solutions: tuple[frozenset[str], ...],
+) -> tuple[frozenset[str], ...]:
+    """Order equally optimal solutions; none are dropped.
+
+    All solutions dismantle the same number of decks, so the tie-break prefers
+    the one where a single donor covers the most cards the target needs: fewer
+    boxes to dig through for the same result. The user can still pick any of
+    them in the UI.
+    """
+
+    def key(solution: frozenset[str]) -> tuple[int, str]:
+        taken = allocate_solution_cards(
+            residual_needs, deck_supplies, deck_names, solution
+        )
+        best_donor = max((sum(cards.values()) for cards in taken.values()), default=0)
+        label = ", ".join(deck_names.get(deck_id, deck_id) for deck_id in sorted(solution))
+        return (-best_donor, label.casefold())
+
+    return tuple(sorted(solutions, key=key))
+
+
 def remaining_after_allocation(
     needs: dict[str, int],
     taken: dict[str, dict[str, int]],
@@ -54,6 +79,15 @@ def remaining_after_allocation(
             if leftover.get(card_id, 0) <= 0:
                 leftover.pop(card_id, None)
     return {card_id: qty for card_id, qty in leftover.items() if qty > 0}
+
+
+@dataclass(frozen=True)
+class MovedCopy:
+    """A copy the target deck now holds that has no edition recorded."""
+
+    copy_id: int
+    oracle_id: str
+    card_name: str
 
 
 @dataclass(frozen=True)
@@ -109,6 +143,7 @@ class OptimizationService:
         self._decks = DeckService(session)
         self._inventory = InventoryService(session)
         self._cards = CardRepository(session)
+        self._copies = CopyRepository(session)
 
     def plan_assembly(self, target_deck_id: int) -> AssemblyPlan:
         target = self._decks.get_deck(target_deck_id)
@@ -172,6 +207,12 @@ class OptimizationService:
             deck_supplies[deck_key] = dict(cards)
 
         result = find_all_optimal_solutions(needs, supplies)
+        result = replace(
+            result,
+            solutions=sort_solutions_by_concentration(
+                needs, deck_supplies, deck_names, result.solutions
+            ),
+        )
 
         labels = {
             solution: ", ".join(
@@ -202,8 +243,12 @@ class OptimizationService:
         self,
         target_deck_id: int,
         solution: frozenset[str],
-    ) -> None:
-        """Dismantle each deck in ``solution``, then arm the target."""
+    ) -> list[MovedCopy]:
+        """Dismantle each deck in ``solution``, then arm the target.
+
+        Returns the copies that ended up in the target without a recorded
+        edition, so the UI can offer to fill them in.
+        """
         target = self._decks.get_deck(target_deck_id)
         if target is None:
             raise ValueError(f"Deck {target_deck_id} not found")
@@ -238,6 +283,14 @@ class OptimizationService:
                 "donor_names": donor_names,
             },
         )
+        return [
+            MovedCopy(
+                copy_id=copy.id,
+                oracle_id=copy.card_id,
+                card_name=card_name,
+            )
+            for copy, card_name in self._copies.list_unspecified_for_deck(target.id)
+        ]
 
     def _card_names(self, card_ids: set[str]) -> dict[str, str]:
         return self._cards.names_by_ids(card_ids)

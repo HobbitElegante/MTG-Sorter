@@ -5,6 +5,7 @@ from mtg_sorter.config import (
     DEFAULT_LOCALE,
     SETTING_CARD_PREVIEW_WIDTH,
     SETTING_SHOW_CARD_IMAGES,
+    SETTING_TRACK_EDITIONS,
     SETTING_UI_LOCALE,
 )
 from mtg_sorter.i18n.translator import TRANSLATIONS
@@ -41,6 +42,13 @@ class SettingsService:
 
     def set_show_card_images(self, enabled: bool) -> None:
         self.set(SETTING_SHOW_CARD_IMAGES, "1" if enabled else "0")
+
+    def get_track_editions(self) -> bool:
+        """Off by default: existing collections have no per-copy edition data."""
+        return self.get(SETTING_TRACK_EDITIONS) == "1"
+
+    def set_track_editions(self, enabled: bool) -> None:
+        self.set(SETTING_TRACK_EDITIONS, "1" if enabled else "0")
 
     def get_card_preview_width(self) -> int:
         value = self.get(SETTING_CARD_PREVIEW_WIDTH)

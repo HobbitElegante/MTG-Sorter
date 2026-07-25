@@ -696,6 +696,7 @@ class EditableInventoryListLine:
     name: str
     list_quantity: int
     add_quantity: int
+    set_code: str | None = None
 
 
 class AddInventoryListDialog(QDialog):
@@ -716,6 +717,7 @@ class AddInventoryListDialog(QDialog):
                 name=card.name,
                 list_quantity=card.list_quantity,
                 add_quantity=min(1, card.list_quantity),
+                set_code=card.set_code,
             )
             for card in identified
         ]
@@ -916,6 +918,7 @@ class AddInventoryListDialog(QDialog):
                 name=card.name,
                 list_quantity=card.list_quantity,
                 add_quantity=min(1, card.list_quantity),
+                set_code=card.set_code,
             )
         )
         self._lines.sort(key=lambda entry: entry.name.casefold())
@@ -1025,6 +1028,13 @@ class AddInventoryListDialog(QDialog):
     def quantities(self) -> dict[str, int]:
         return {
             line.oracle_id: line.add_quantity
+            for line in self._lines
+            if line.add_quantity > 0
+        }
+
+    def set_codes(self) -> dict[str, str | None]:
+        return {
+            line.oracle_id: line.set_code
             for line in self._lines
             if line.add_quantity > 0
         }

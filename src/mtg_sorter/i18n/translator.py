@@ -68,8 +68,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.assigned": "Assigned",
         "inventory.table.decks": "In decks",
         "inventory.table.color": "Colors",
+        "inventory.table.edition": "Edition",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
+        "inventory.editions.title": "Editions",
+        "inventory.editions.hint": (
+            "Assign a set code to each physical copy. Leave “-” for copies you "
+            "have not identified yet."
+        ),
+        "inventory.editions.copy": "Copy",
+        "inventory.editions.edition": "Edition",
+        "inventory.editions.copy_label": "Copy {number} — {where}",
+        "inventory.editions.apply_all": "Apply to all",
+        "inventory.editions.prompt_title": "Editions of the cards you moved",
+        "inventory.editions.prompt_hint": (
+            "These copies are now in {deck} and have no edition recorded. Fill in "
+            "the ones you know; the rest stay as “-”."
+        ),
+        "inventory.editions.skip": "Skip",
         "decks.import": "Import new list",
         "decks.name": "Deck name",
         "decks.commander": "Commander name (optional)",
@@ -87,6 +103,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.legality.tooltip_header": "Commander format warnings (advisory — does not block assembly):",
         "decks.legality.tooltip_line": "• {name} — {status}",
         "decks.legality.card_tooltip": "{name} is {status} in Commander (advisory).",
+        "decks.rules.tooltip_header": "Commander rule warnings (advisory — does not block assembly):",
+        "decks.rules.color_identity": "• {name} ({colors}) is outside the color identity {allowed}",
+        "decks.rules.pairing": "• {name} is not a legal second commander for {commander}",
+        "decks.rules.missing_data": "• {name} — no cached Scryfall data, color identity unchecked",
+        "decks.rules.colorless": "colorless",
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
         "decks.export_list": "Export list",
@@ -212,6 +233,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.no_solutions": "No feasible dismantle plan found.",
         "optimize.already_armed": "This deck is already armed — nothing to optimize.",
         "optimize.multiple": "Multiple optimal plans — choose one:",
+        "optimize.solution.suggested": "suggested",
         "optimize.from_inventory": "Cards covered by free inventory",
         "optimize.decks_to_dismantle": "Decks to dismantle",
         "optimize.summary.dismantle": "Dismantle {count} deck(s) to assemble this list",
@@ -290,6 +312,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flag.basic": "basic",
         "browse.cards.flag.token": "token",
         "browse.overview.show_images": "Show card images",
+        "browse.overview.track_editions": "Track card editions",
+        "browse.overview.track_editions_hint": (
+            "Adds an Edition column to Inventory and asks for set codes after "
+            "reassembling a deck. Copies with no edition yet show as “-”."
+        ),
         "preview.title": "Card image",
         "preview.empty": "Select a card to preview it.",
         "preview.loading": "Loading image…",
@@ -425,8 +452,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.assigned": "Asignadas",
         "inventory.table.decks": "En mazos",
         "inventory.table.color": "Colores",
+        "inventory.table.edition": "Edición",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
+        "inventory.editions.title": "Ediciones",
+        "inventory.editions.hint": (
+            "Asigna un código de set a cada copia física. Deja «-» en las copias "
+            "que todavía no identificaste."
+        ),
+        "inventory.editions.copy": "Copia",
+        "inventory.editions.edition": "Edición",
+        "inventory.editions.copy_label": "Copia {number} — {where}",
+        "inventory.editions.apply_all": "Aplicar a todas",
+        "inventory.editions.prompt_title": "Ediciones de las cartas que moviste",
+        "inventory.editions.prompt_hint": (
+            "Estas copias quedaron en {deck} y no tienen edición registrada. "
+            "Completa las que sepas; el resto queda en «-»."
+        ),
+        "inventory.editions.skip": "Omitir",
         "decks.import": "Importar listado nuevo",
         "decks.name": "Nombre del mazo",
         "decks.commander": "Nombre del commander (opcional)",
@@ -444,6 +487,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.legality.tooltip_header": "Avisos de formato Commander (informativos — no impiden armar):",
         "decks.legality.tooltip_line": "• {name} — {status}",
         "decks.legality.card_tooltip": "{name} está {status} en Commander (aviso).",
+        "decks.rules.tooltip_header": "Avisos de reglas Commander (informativos — no impiden armar):",
+        "decks.rules.color_identity": "• {name} ({colors}) está fuera de la identidad de color {allowed}",
+        "decks.rules.pairing": "• {name} no es un segundo comandante legal para {commander}",
+        "decks.rules.missing_data": "• {name} — sin datos de Scryfall en caché, identidad de color sin verificar",
+        "decks.rules.colorless": "incolora",
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
         "decks.export_list": "Exportar listado",
@@ -571,6 +619,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.no_solutions": "No hay plan viable de desmontaje.",
         "optimize.already_armed": "Este mazo ya está armado — no hay nada que optimizar.",
         "optimize.multiple": "Hay varios planes óptimos — elige uno:",
+        "optimize.solution.suggested": "sugerida",
         "optimize.from_inventory": "Cartas cubiertas por inventario libre",
         "optimize.decks_to_dismantle": "Mazos a desarmar",
         "optimize.summary.dismantle": "Desarmar {count} mazo(s) para armar este listado",
@@ -649,6 +698,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flag.basic": "básica",
         "browse.cards.flag.token": "token",
         "browse.overview.show_images": "Mostrar imágenes de cartas",
+        "browse.overview.track_editions": "Registrar ediciones de las cartas",
+        "browse.overview.track_editions_hint": (
+            "Agrega la columna Edición en Inventario y pide los códigos de set "
+            "al rearmar un mazo. Las copias sin edición se muestran como «-»."
+        ),
         "preview.title": "Imagen de la carta",
         "preview.empty": "Selecciona una carta para verla.",
         "preview.loading": "Cargando imagen…",

@@ -106,6 +106,132 @@ def test_deck_commander_legality_issues_are_advisory(session: Session) -> None:
     assert issues[0].legality == "banned"
 
 
+def test_deck_commander_rule_issues_from_cached_card_data(session: Session) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="ghen",
+                name="Ghen, Arcanum Weaver",
+                is_basic_land=False,
+                is_token=False,
+                color_identity="WBR",
+                type_line="Legendary Creature — Human Shaman",
+            ),
+            Card(
+                oracle_id="in_identity",
+                name="Anguished Unmaking",
+                is_basic_land=False,
+                is_token=False,
+                color_identity="WB",
+            ),
+            Card(
+                oracle_id="off_identity",
+                name="Cultivate",
+                is_basic_land=False,
+                is_token=False,
+                color_identity="G",
+            ),
+            Card(
+                oracle_id="forest",
+                name="Forest",
+                is_basic_land=True,
+                is_token=False,
+                color_identity="G",
+            ),
+        ]
+    )
+    deck = Deck(name="Ghen", status=DeckStatus.DISMANTLED)
+    session.add(deck)
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=deck.id,
+                card_id="ghen",
+                quantity=1,
+                role=DeckCardRole.COMMANDER,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="in_identity",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="off_identity",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="forest",
+                quantity=10,
+                role=DeckCardRole.MAIN,
+            ),
+        ]
+    )
+    session.flush()
+
+    issues = DeckService(session).commander_rule_issues(deck.id)
+
+    # Basics are an unlimited shared pool, so the Forest is not flagged.
+    assert [issue.name for issue in issues] == ["Cultivate"]
+    assert issues[0].colors == "G"
+    assert issues[0].allowed == "WBR"
+
+
+def test_deck_commander_rule_issues_flag_illegal_partner(session: Session) -> None:
+    session.add_all(
+        [
+            Card(
+                oracle_id="thrasios",
+                name="Thrasios, Triton Hero",
+                is_basic_land=False,
+                is_token=False,
+                color_identity="GU",
+                oracle_text="Partner (You can have two commanders if both have partner.)",
+                type_line="Legendary Creature — Merfolk Wizard",
+            ),
+            Card(
+                oracle_id="plain",
+                name="Plain Legend",
+                is_basic_land=False,
+                is_token=False,
+                color_identity="R",
+                oracle_text="Haste",
+                type_line="Legendary Creature — Goblin",
+            ),
+        ]
+    )
+    deck = Deck(name="Partners", status=DeckStatus.DISMANTLED)
+    session.add(deck)
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=deck.id,
+                card_id="thrasios",
+                quantity=1,
+                role=DeckCardRole.COMMANDER,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="plain",
+                quantity=1,
+                role=DeckCardRole.PARTNER,
+            ),
+        ]
+    )
+    session.flush()
+
+    issues = DeckService(session).commander_rule_issues(deck.id)
+
+    assert len(issues) == 1
+    assert issues[0].name == "Plain Legend"
+    assert issues[0].commander == "Thrasios, Triton Hero"
+
+
 class _FakeCollectionClient:
     def __init__(self) -> None:
         self.calls: list[list[dict[str, str]]] = []

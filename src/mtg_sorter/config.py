@@ -18,7 +18,9 @@ DEFAULT_LOCALE = "en"
 
 SETTING_UI_LOCALE = "ui_locale"
 SETTING_SHOW_CARD_IMAGES = "ui_show_card_images"
+SETTING_TRACK_EDITIONS = "ui_track_editions"
 SETTING_CARD_PREVIEW_WIDTH = "ui_card_preview_width"
+UNSPECIFIED_EDITION_LABEL = "-"
 DEFAULT_CARD_PREVIEW_WIDTH = 280
 SETTING_BULK_PACK_TYPE = "scryfall_bulk_pack_type"
 SETTING_BULK_ORACLE_UPDATED_AT = "scryfall_bulk_oracle_updated_at"

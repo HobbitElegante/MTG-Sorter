@@ -148,12 +148,15 @@ class BrowseWidget(QWidget):
     changed = Signal()
     locale_changed = Signal(str)
     show_images_changed = Signal(bool)
+    track_editions_changed = Signal(bool)
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._translator = translator
         with get_session() as session:
-            self._show_card_images = SettingsService(session).get_show_card_images()
+            settings = SettingsService(session)
+            self._show_card_images = settings.get_show_card_images()
+            self._track_editions = settings.get_track_editions()
         self._sync_worker: BulkSyncWorker | None = None
         self._card_data_worker: CardDataRefreshWorker | None = None
         self._image_worker: ImageDownloadWorker | None = None
@@ -237,6 +240,12 @@ class BrowseWidget(QWidget):
         self._show_images_check.setText(
             self._translator.t("browse.overview.show_images")
         )
+        self._track_editions_check.setText(
+            self._translator.t("browse.overview.track_editions")
+        )
+        self._track_editions_check.setToolTip(
+            self._translator.t("browse.overview.track_editions_hint")
+        )
         self._card_preview.retranslate()
         self._sync_language_combo()
         self.refresh()
@@ -244,6 +253,10 @@ class BrowseWidget(QWidget):
     @property
     def show_card_images(self) -> bool:
         return self._show_card_images
+
+    @property
+    def track_editions(self) -> bool:
+        return self._track_editions
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
@@ -297,6 +310,16 @@ class BrowseWidget(QWidget):
         self._overview_label.setWordWrap(True)
         layout.addWidget(self._overview_label)
 
+        self._track_editions_check = QCheckBox(
+            self._translator.t("browse.overview.track_editions")
+        )
+        self._track_editions_check.setToolTip(
+            self._translator.t("browse.overview.track_editions_hint")
+        )
+        self._track_editions_check.setChecked(self._track_editions)
+        self._track_editions_check.toggled.connect(self._on_track_editions_toggled)
+        layout.addWidget(self._track_editions_check)
+
         self._language_group = QGroupBox(self._translator.t("config.language"))
         language_form = QFormLayout(self._language_group)
         self._language_label = QLabel(self._translator.t("config.language"))
@@ -315,6 +338,14 @@ class BrowseWidget(QWidget):
         self._sync_language_combo()
         layout.addStretch()
         return panel
+
+    def _on_track_editions_toggled(self, checked: bool) -> None:
+        if checked == self._track_editions:
+            return
+        self._track_editions = checked
+        with get_session() as session:
+            SettingsService(session).set_track_editions(checked)
+        self.track_editions_changed.emit(checked)
 
     def _on_show_images_toggled(self, checked: bool) -> None:
         if checked == self._show_card_images:

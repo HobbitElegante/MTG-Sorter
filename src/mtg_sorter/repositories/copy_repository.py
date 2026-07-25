@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from mtg_sorter.models import CardAssignment, CardCopy
+from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck
 
 
 class CopyRepository:
@@ -21,8 +21,12 @@ class CopyRepository:
         self._session.add(copy)
         return copy
 
-    def add_many(self, card_id: str, quantity: int) -> list[CardCopy]:
-        copies = [CardCopy(card_id=card_id) for _ in range(quantity)]
+    def add_many(
+        self, card_id: str, quantity: int, *, edition: str | None = None
+    ) -> list[CardCopy]:
+        copies = [
+            CardCopy(card_id=card_id, edition=edition) for _ in range(quantity)
+        ]
         for copy in copies:
             self._session.add(copy)
         self._session.flush()
@@ -168,6 +172,60 @@ class CopyRepository:
         assignment = CardAssignment(card_copy_id=card_copy_id, deck_id=deck_id)
         self._session.add(assignment)
         return assignment
+
+    def edition_counts(self) -> dict[str, dict[str | None, int]]:
+        """Copies per (card, edition); ``None`` keys are unspecified editions."""
+        rows = self._session.execute(
+            select(CardCopy.card_id, CardCopy.edition, func.count(CardCopy.id))
+            .group_by(CardCopy.card_id, CardCopy.edition)
+        ).all()
+        counts: dict[str, dict[str | None, int]] = {}
+        for card_id, edition, count in rows:
+            counts.setdefault(card_id, {})[edition] = int(count)
+        return counts
+
+    def list_with_deck(self, oracle_id: str) -> list[tuple[CardCopy, str | None]]:
+        """Every copy of a card with the deck holding it, if any."""
+        rows = self._session.execute(
+            select(CardCopy, Deck.name)
+            .outerjoin(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
+            .outerjoin(Deck, Deck.id == CardAssignment.deck_id)
+            .where(CardCopy.card_id == oracle_id)
+            .order_by(CardCopy.id)
+        ).all()
+        return [(copy, deck_name) for copy, deck_name in rows]
+
+    def list_unspecified_for_deck(self, deck_id: int) -> list[tuple[CardCopy, str]]:
+        """Copies assigned to a deck that have no edition recorded yet."""
+        rows = self._session.execute(
+            select(CardCopy, Card.name)
+            .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
+            .join(Card, Card.oracle_id == CardCopy.card_id)
+            .where(
+                CardAssignment.deck_id == deck_id,
+                CardCopy.edition.is_(None),
+                Card.is_basic_land.is_(False),
+            )
+            .order_by(Card.name, CardCopy.id)
+        ).all()
+        return [(copy, card_name) for copy, card_name in rows]
+
+    def set_editions(self, editions: dict[int, str | None]) -> int:
+        """Assign editions by copy id; returns how many rows changed."""
+        if not editions:
+            return 0
+        copies = self._session.scalars(
+            select(CardCopy).where(CardCopy.id.in_(list(editions)))
+        ).all()
+        changed = 0
+        for copy in copies:
+            edition = editions[copy.id]
+            if copy.edition == edition:
+                continue
+            copy.edition = edition
+            changed += 1
+        self._session.flush()
+        return changed
 
     def distinct_card_ids(self) -> set[str]:
         return set(self._session.scalars(select(CardCopy.card_id).distinct()).all())

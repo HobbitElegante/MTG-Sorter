@@ -3,6 +3,11 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
+from mtg_sorter.algorithms.commander_rules import (
+    CommanderCard,
+    CommanderRuleIssue,
+    evaluate_deck,
+)
 from mtg_sorter.models import CardCopy, Deck, DeckCard
 from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
 from mtg_sorter.repositories import CardRepository, CopyRepository, DeckRepository
@@ -59,6 +64,16 @@ class CommanderLegalityIssue:
     legality: str
 
 
+@dataclass(frozen=True)
+class CopyDetail:
+    """One physical copy: which edition it is and where it currently lives."""
+
+    copy_id: int
+    oracle_id: str
+    edition: str | None
+    deck_name: str | None
+
+
 class InventoryService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -69,9 +84,10 @@ class InventoryService:
         oracle_id: str,
         quantity: int = 1,
         *,
+        edition: str | None = None,
         record_activity: bool = True,
     ) -> list[CardCopy]:
-        copies = self._copies.add_many(oracle_id, quantity)
+        copies = self._copies.add_many(oracle_id, quantity, edition=edition)
         if record_activity and copies:
             ActivityService(self._session).record_copies_added(
                 oracle_id, len(copies)
@@ -119,6 +135,26 @@ class InventoryService:
 
     def list_unassigned_copies(self) -> list[CardCopy]:
         return self._copies.list_all_unassigned()
+
+    def list_copies_with_deck(self, oracle_id: str) -> list[CopyDetail]:
+        """Physical copies of a card, with the deck holding each one."""
+        return [
+            CopyDetail(
+                copy_id=copy.id,
+                oracle_id=copy.card_id,
+                edition=copy.edition,
+                deck_name=deck_name,
+            )
+            for copy, deck_name in self._copies.list_with_deck(oracle_id)
+        ]
+
+    def set_copy_editions(self, editions: dict[int, str | None]) -> int:
+        """Record set codes per copy. Blank values reset to unspecified."""
+        normalized = {
+            copy_id: (edition.strip().upper() or None) if edition else None
+            for copy_id, edition in editions.items()
+        }
+        return self._copies.set_editions(normalized)
 
 
 class DeckService:
@@ -601,3 +637,24 @@ class DeckService:
                 )
             )
         return sorted(issues, key=lambda item: item.name.casefold())
+
+    def commander_rule_issues(self, deck_id: int) -> list[CommanderRuleIssue]:
+        """Game-rule warnings for the list: color identity and pairings.
+
+        Advisory like the format legality check — it never blocks importing or
+        arming a deck.
+        """
+        cards = [
+            CommanderCard(
+                oracle_id=oracle_id,
+                name=name,
+                role=role,
+                color_identity=color_identity,
+                oracle_text=oracle_text,
+                type_line=type_line,
+            )
+            for oracle_id, name, role, color_identity, oracle_text, type_line in (
+                self._decks.commander_rule_rows(deck_id)
+            )
+        ]
+        return evaluate_deck(cards)

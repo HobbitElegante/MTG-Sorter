@@ -217,6 +217,36 @@ class DeckRepository:
         ).all()
         return [(oracle_id, name, legality) for oracle_id, name, legality in rows]
 
+    def commander_rule_rows(
+        self, deck_id: int
+    ) -> list[tuple[str, str, str, str | None, str | None, str | None]]:
+        """Fields needed to check color identity and command-zone pairings.
+
+        Basics are excluded: the app treats them as an unlimited shared pool,
+        so flagging them would be noise the user cannot act on.
+        """
+        rows = self._session.execute(
+            select(
+                Card.oracle_id,
+                Card.name,
+                DeckCard.role,
+                Card.color_identity,
+                Card.oracle_text,
+                Card.type_line,
+            )
+            .join(DeckCard, DeckCard.card_id == Card.oracle_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role != DeckCardRole.TOKEN,
+                Card.is_basic_land.is_(False),
+            )
+            .distinct()
+        ).all()
+        return [
+            (oracle_id, name, str(role), color_identity, oracle_text, type_line)
+            for oracle_id, name, role, color_identity, oracle_text, type_line in rows
+        ]
+
     def deck_names_for_card(self, oracle_id: str) -> tuple[str, ...]:
         return tuple(
             self._session.scalars(
