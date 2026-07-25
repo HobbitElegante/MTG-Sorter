@@ -175,6 +175,49 @@ def test_plan_assembly_names_still_missing_cards(session: Session) -> None:
     assert plan.still_missing == {"sol": 1}
     assert plan.card_names["sol"] == "Sol Ring"
     assert plan.result.solutions == ()
+    by_deck, need_to_find = plan.missing_by_source()
+    assert by_deck == {}
+    assert need_to_find == {"sol": 1}
+
+
+def test_missing_by_source_groups_armed_and_unfindable(session: Session) -> None:
+    ring = Card(oracle_id="ring", name="Sol Ring", is_basic_land=False, is_token=False)
+    rare = Card(oracle_id="rare", name="Rare Card", is_basic_land=False, is_token=False)
+    target = Deck(name="Target", status=DeckStatus.DISMANTLED)
+    donor = Deck(name="Donor Deck", status=DeckStatus.ARMED)
+    session.add_all([ring, rare, target, donor])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=target.id,
+                card_id="ring",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=target.id,
+                card_id="rare",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=donor.id,
+                card_id="ring",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+        ]
+    )
+    session.flush()
+
+    plan = OptimizationService(session).plan_assembly(target.id)
+
+    assert plan.still_missing == {"ring": 1, "rare": 1}
+    assert plan.result.solutions == ()
+    by_deck, need_to_find = plan.missing_by_source()
+    assert by_deck == {str(donor.id): {"ring": 1}}
+    assert need_to_find == {"rare": 1}
 
 
 def test_allocate_solution_cards_splits_needs_across_decks() -> None:

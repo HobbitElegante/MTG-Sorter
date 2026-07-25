@@ -115,6 +115,17 @@ class _FakeCollectionClient:
                 "name": "Sol Ring",
                 "type_line": "Artifact",
                 "legalities": {"commander": "legal"},
+                "image_uris": {"normal": "https://example.test/sol.jpg"},
+            },
+            "dfc": {
+                "oracle_id": "dfc",
+                "name": "Delver of Secrets // Insectile Aberration",
+                "type_line": "Creature — Human Wizard",
+                "legalities": {"commander": "legal"},
+                "card_faces": [
+                    {"image_uris": {"normal": "https://example.test/front.jpg"}},
+                    {"image_uris": {"normal": "https://example.test/back.jpg"}},
+                ],
             },
             "banned": {
                 "oracle_id": "banned",
@@ -137,7 +148,7 @@ class _FakeCollectionClient:
         return None
 
 
-def test_refresh_collection_commander_legalities(session: Session) -> None:
+def test_refresh_collection_card_data(session: Session) -> None:
     session.add_all(
         [
             Card(
@@ -162,7 +173,7 @@ def test_refresh_collection_commander_legalities(session: Session) -> None:
 
     client = _FakeCollectionClient()
     service = ScryfallService(session, client=client)
-    count = service.refresh_collection_commander_legalities()
+    count = service.refresh_collection_card_data()
 
     assert count == 1  # only inventory copy (sol); banned not in collection
     assert session.get(Card, "sol").commander_legality == "legal"
@@ -195,6 +206,31 @@ def test_refresh_includes_deck_list_cards(session: Session) -> None:
     session.flush()
 
     client = _FakeCollectionClient()
-    count = ScryfallService(session, client=client).refresh_collection_commander_legalities()
+    count = ScryfallService(session, client=client).refresh_collection_card_data()
     assert count == 1
     assert session.get(Card, "banned").commander_legality == "banned"
+
+
+def test_refresh_backfills_image_uris_including_back_face(session: Session) -> None:
+    session.add_all(
+        [
+            Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False),
+            Card(
+                oracle_id="dfc",
+                name="Delver of Secrets // Insectile Aberration",
+                is_basic_land=False,
+                is_token=False,
+            ),
+        ]
+    )
+    session.flush()
+    session.add_all([CardCopy(card_id="sol"), CardCopy(card_id="dfc")])
+    session.flush()
+
+    ScryfallService(session, client=_FakeCollectionClient()).refresh_collection_card_data()
+
+    assert session.get(Card, "sol").image_uri == "https://example.test/sol.jpg"
+    assert session.get(Card, "sol").image_uri_back is None
+    dfc = session.get(Card, "dfc")
+    assert dfc.image_uri == "https://example.test/front.jpg"
+    assert dfc.image_uri_back == "https://example.test/back.jpg"

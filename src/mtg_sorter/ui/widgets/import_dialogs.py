@@ -41,6 +41,11 @@ from mtg_sorter.services.deck_service import (
 from mtg_sorter.services.import_service import InventoryListCard, TrackableDeckCard
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.ui.inventory_display import format_card_legality_tooltip
+from mtg_sorter.ui.widgets.card_preview import (
+    CardPreviewPanel,
+    build_preview_splitter,
+    card_images_enabled,
+)
 
 SECONDARY_ROLES: tuple[DeckCardRole, ...] = (
     DeckCardRole.PARTNER,
@@ -567,7 +572,10 @@ class AddInventoryListDialog(QDialog):
         self._unresolved_lines = list(unresolved_lines)
         self._qty_steppers: list[QuantityStepper] = []
         self.setWindowTitle(self._translator.t("inventory.add_list.title"))
-        self.resize(1000, 600)
+        self._preview = (
+            CardPreviewPanel(self._translator, self) if card_images_enabled() else None
+        )
+        self.resize(1280 if self._preview is not None else 1000, 620)
         self._build_ui()
         self._rebuild_table()
         self._rebuild_unresolved()
@@ -595,8 +603,18 @@ class AddInventoryListDialog(QDialog):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.currentCellChanged.connect(
+            lambda row, *_: self._on_row_selected(row)
+        )
         left.addWidget(self._table)
         panes.addLayout(left, stretch=3)
+
+        if self._preview is not None:
+            preview_column = QVBoxLayout()
+            preview_column.addWidget(self._preview)
+            panes.addLayout(preview_column, stretch=1)
 
         right = QVBoxLayout()
         right.addWidget(QLabel(self._translator.t("inventory.add_list.unresolved")))
@@ -638,6 +656,15 @@ class AddInventoryListDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _on_row_selected(self, row: int) -> None:
+        if self._preview is None:
+            return
+        if row < 0 or row >= len(self._lines):
+            self._preview.clear()
+            return
+        line = self._lines[row]
+        self._preview.set_card(line.oracle_id, line.name)
 
     def _rebuild_table(self) -> None:
         self._qty_steppers = []
@@ -1025,7 +1052,7 @@ class CardPickDialog(QDialog):
         self._show_available = show_available
         self._results: list[CardSummary] = []
         self.setWindowTitle(title)
-        self.resize(560, 480)
+        self.resize(880 if card_images_enabled() else 560, 520)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1038,8 +1065,15 @@ class CardPickDialog(QDialog):
         layout.addWidget(self._search)
 
         self._results_list = QListWidget()
-        self._results_list.currentRowChanged.connect(lambda _row: self._sync_available_max())
-        layout.addWidget(self._results_list)
+        self._results_list.currentRowChanged.connect(
+            lambda _row: self._on_result_selected()
+        )
+        self._preview: CardPreviewPanel | None = None
+        if card_images_enabled():
+            self._preview = CardPreviewPanel(self._translator)
+            layout.addWidget(build_preview_splitter(self._results_list, self._preview))
+        else:
+            layout.addWidget(self._results_list)
 
         form = QFormLayout()
         self._qty = QuantityStepper(self._max_quantity)
@@ -1096,6 +1130,16 @@ class CardPickDialog(QDialog):
         self._result: CardPickResult | None = None
         self._sync_available_max()
         self._refresh_results()
+
+    def _on_result_selected(self) -> None:
+        self._sync_available_max()
+        if self._preview is None:
+            return
+        card = self._selected_card()
+        if card is None:
+            self._preview.clear()
+        else:
+            self._preview.set_card(card.oracle_id, card.name)
 
     def _sync_available_max(self) -> None:
         qty = self._qty.value()
@@ -1189,7 +1233,8 @@ class DeckEditDialog(QDialog):
         self._qty_steppers: list[QuantityStepper] = []
         self._free_steppers: list[QuantityStepper | None] = []
         self.setWindowTitle(f"{self._translator.t('decks.edit.title')} — {deck_name}")
-        self.resize(960, 600)
+        self._preview: CardPreviewPanel | None = None
+        self.resize(1240 if card_images_enabled() else 960, 620)
         self._build_ui()
         self._rebuild_table()
 
@@ -1217,7 +1262,16 @@ class DeckEditDialog(QDialog):
         self._table.setColumnWidth(1, 160)
         self._table.setColumnWidth(2, 160)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self._table)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.currentCellChanged.connect(
+            lambda row, *_: self._on_row_selected(row)
+        )
+        if card_images_enabled():
+            self._preview = CardPreviewPanel(self._translator)
+            layout.addWidget(build_preview_splitter(self._table, self._preview))
+        else:
+            layout.addWidget(self._table)
 
         actions = QHBoxLayout()
         self._add_button = QPushButton(self._translator.t("decks.edit.add"))
@@ -1236,6 +1290,15 @@ class DeckEditDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _on_row_selected(self, row: int) -> None:
+        if self._preview is None:
+            return
+        if row < 0 or row >= len(self._lines):
+            self._preview.clear()
+            return
+        line = self._lines[row]
+        self._preview.set_card(line.oracle_id, line.name)
 
     def _current_total(self) -> int:
         return sum(line.quantity for line in self._lines)

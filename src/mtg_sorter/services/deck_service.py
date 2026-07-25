@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.models import Card, CardAssignment, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
+from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
+from mtg_sorter.services.activity_service import ActivityService
 
 
 @dataclass(frozen=True)
@@ -62,16 +63,32 @@ class InventoryService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def add_copy(self, oracle_id: str, quantity: int = 1) -> list[CardCopy]:
+    def add_copy(
+        self,
+        oracle_id: str,
+        quantity: int = 1,
+        *,
+        record_activity: bool = True,
+    ) -> list[CardCopy]:
         copies: list[CardCopy] = []
         for _ in range(quantity):
             copy = CardCopy(card_id=oracle_id)
             self._session.add(copy)
             copies.append(copy)
         self._session.flush()
+        if record_activity and copies:
+            ActivityService(self._session).record_copies_added(
+                oracle_id, len(copies)
+            )
         return copies
 
-    def remove_free_copies(self, oracle_id: str, quantity: int) -> int:
+    def remove_free_copies(
+        self,
+        oracle_id: str,
+        quantity: int,
+        *,
+        record_activity: bool = True,
+    ) -> int:
         """Delete up to `quantity` unassigned copies. Returns how many were removed."""
         if quantity <= 0:
             return 0
@@ -90,7 +107,10 @@ class InventoryService:
         for copy in free_copies:
             self._session.delete(copy)
         self._session.flush()
-        return len(free_copies)
+        removed = len(free_copies)
+        if record_activity and removed:
+            ActivityService(self._session).record_copies_removed(oracle_id, removed)
+        return removed
 
     def set_total_copies(self, oracle_id: str, total: int) -> None:
         """Set physical copy count. Cannot go below copies assigned to armed decks."""
@@ -189,6 +209,27 @@ class DeckService:
             .limit(1)
         ).first()
         return row[0] if row else None
+
+    def command_zone_cards(self, deck_id: int) -> list[tuple[str, str]]:
+        """(oracle_id, name) for the command zone, commander first."""
+        priority = {
+            DeckCardRole.COMMANDER: 0,
+            DeckCardRole.PARTNER: 1,
+            DeckCardRole.COMPANION: 2,
+            DeckCardRole.BACKGROUND: 3,
+        }
+        rows = self._session.execute(
+            select(DeckCard.role, Card.oracle_id, Card.name)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(
+                DeckCard.deck_id == deck_id,
+                DeckCard.role.in_(tuple(priority)),
+            )
+        ).all()
+        ordered = sorted(
+            rows, key=lambda item: (priority[item[0]], item[2].casefold())
+        )
+        return [(oracle_id, name) for _role, oracle_id, name in ordered]
 
     def secondary_command_zone(
         self, deck_id: int
@@ -444,6 +485,7 @@ class DeckService:
         if deck is None:
             return False
 
+        deck_name = deck.name
         removals = {
             oracle_id: qty
             for oracle_id, qty in (remove_copies or {}).items()
@@ -458,6 +500,15 @@ class DeckService:
         self._session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
         self._session.delete(deck)
         self._session.flush()
+        ActivityService(self._session).record(
+            ActivityEventType.DECK_DELETED,
+            "history.event.deck_deleted",
+            {
+                "deck_id": deck_id,
+                "deck_name": deck_name,
+                "copies_removed": sum(removals.values()) if removals else 0,
+            },
+        )
         return True
 
     def _delete_removable_copies(
@@ -557,7 +608,7 @@ class DeckService:
 
         was_armed = deck.status == DeckStatus.ARMED
         if was_armed:
-            self.set_status(deck, DeckStatus.DISMANTLED)
+            self.set_status(deck, DeckStatus.DISMANTLED, record_activity=False)
 
         removals = {
             oracle_id: qty
@@ -575,7 +626,7 @@ class DeckService:
         if creations:
             inventory = InventoryService(self._session)
             for oracle_id, qty in creations.items():
-                inventory.add_copy(oracle_id, qty)
+                inventory.add_copy(oracle_id, qty, record_activity=False)
 
         self._session.execute(delete(DeckCard).where(DeckCard.deck_id == deck.id))
         self._session.flush()
@@ -599,9 +650,14 @@ class DeckService:
         self._session.flush()
 
         if was_armed:
-            self.set_status(deck, DeckStatus.ARMED)
+            self.set_status(deck, DeckStatus.ARMED, record_activity=False)
 
         self._session.refresh(deck)
+        ActivityService(self._session).record(
+            ActivityEventType.DECK_LIST_EDITED,
+            "history.event.deck_list_edited",
+            {"deck_id": deck.id, "deck_name": deck.name},
+        )
 
     def _assigned_counts_for_deck(
         self, deck_id: int, oracle_ids: set[str]
@@ -619,18 +675,36 @@ class DeckService:
         ).all()
         return {card_id: count for card_id, count in rows}
 
-    def set_status(self, deck: Deck, status: DeckStatus) -> None:
+    def set_status(
+        self,
+        deck: Deck,
+        status: DeckStatus,
+        *,
+        record_activity: bool = True,
+    ) -> None:
         if status == DeckStatus.DISMANTLED:
             self._session.execute(
                 delete(CardAssignment).where(CardAssignment.deck_id == deck.id)
             )
             self._session.flush()
             deck.status = status
+            if record_activity:
+                ActivityService(self._session).record(
+                    ActivityEventType.DECK_DISMANTLED,
+                    "history.event.deck_dismantled",
+                    {"deck_id": deck.id, "deck_name": deck.name},
+                )
             return
 
         if status == DeckStatus.ARMED:
             deck.status = status
             self._ensure_assignments(deck)
+            if record_activity:
+                ActivityService(self._session).record(
+                    ActivityEventType.DECK_ARMED,
+                    "history.event.deck_armed",
+                    {"deck_id": deck.id, "deck_name": deck.name},
+                )
             return
 
         deck.status = status

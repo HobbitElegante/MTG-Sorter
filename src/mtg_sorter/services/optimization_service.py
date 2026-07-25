@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.deck_optimizer import DeckSupply, OptimizationResult, find_all_optimal_solutions
 from mtg_sorter.models import Card
-from mtg_sorter.models.enums import DeckStatus
+from mtg_sorter.models.enums import ActivityEventType, DeckStatus
+from mtg_sorter.services.activity_service import ActivityService
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 
 
@@ -42,6 +43,20 @@ def allocate_solution_cards(
     return taken
 
 
+def remaining_after_allocation(
+    needs: dict[str, int],
+    taken: dict[str, dict[str, int]],
+) -> dict[str, int]:
+    """Subtract allocated quantities from needs; drop zeros."""
+    leftover = dict(needs)
+    for cards in taken.values():
+        for card_id, qty in cards.items():
+            leftover[card_id] = leftover.get(card_id, 0) - qty
+            if leftover.get(card_id, 0) <= 0:
+                leftover.pop(card_id, None)
+    return {card_id: qty for card_id, qty in leftover.items() if qty > 0}
+
+
 @dataclass(frozen=True)
 class AssemblyPlan:
     target_deck_id: int
@@ -65,6 +80,28 @@ class AssemblyPlan:
             self.deck_names,
             solution,
         )
+
+    def missing_by_source(
+        self,
+    ) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
+        """Group unmet needs by armed decks vs not findable anywhere.
+
+        Returns ``(by_deck, need_to_find)`` where ``by_deck`` maps armed deck
+        ids to cards they could cover from ``still_missing``, and
+        ``need_to_find`` is the remainder not present in free inventory or
+        any armed deck.
+        """
+        if not self.still_missing:
+            return {}, {}
+        all_armed = frozenset(self.deck_supplies.keys())
+        by_deck = allocate_solution_cards(
+            self.still_missing,
+            self.deck_supplies,
+            self.deck_names,
+            all_armed,
+        )
+        need_to_find = remaining_after_allocation(self.still_missing, by_deck)
+        return by_deck, need_to_find
 
 
 class OptimizationService:
@@ -173,7 +210,9 @@ class OptimizationService:
         if target.status == DeckStatus.ARMED:
             raise ValueError("Target deck is already armed")
 
-        for deck_key in solution:
+        donor_names: list[str] = []
+        donor_ids: list[int] = []
+        for deck_key in sorted(solution):
             try:
                 deck_id = int(deck_key)
             except ValueError as exc:
@@ -183,10 +222,22 @@ class OptimizationService:
                 raise ValueError(f"Deck {deck_id} not found")
             if deck.status != DeckStatus.ARMED:
                 raise ValueError(f"Deck {deck.name} is not armed")
-            self._decks.set_status(deck, DeckStatus.DISMANTLED)
+            donor_names.append(deck.name)
+            donor_ids.append(deck_id)
+            self._decks.set_status(deck, DeckStatus.DISMANTLED, record_activity=False)
 
         self._session.refresh(target)
-        self._decks.set_status(target, DeckStatus.ARMED)
+        self._decks.set_status(target, DeckStatus.ARMED, record_activity=False)
+        ActivityService(self._session).record(
+            ActivityEventType.PLAN_APPLIED,
+            "history.event.plan_applied",
+            {
+                "deck_id": target.id,
+                "deck_name": target.name,
+                "donor_deck_ids": donor_ids,
+                "donor_names": donor_names,
+            },
+        )
 
     def _card_names(self, card_ids: set[str]) -> dict[str, str]:
         if not card_ids:

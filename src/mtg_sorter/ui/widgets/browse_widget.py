@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -19,40 +20,63 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mtg_sorter.config import (
+    SCRYFALL_BULK_ORACLE_TYPE,
+    SCRYFALL_BULK_UNIQUE_ARTWORK_TYPE,
+)
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
-from mtg_sorter.services import BrowseService, ScryfallBulkService, ScryfallService
+from mtg_sorter.models.enums import ActivityCategory
+from mtg_sorter.services import (
+    ActivityService,
+    BrowseService,
+    CardImageService,
+    ScryfallBulkService,
+    ScryfallService,
+    SettingsService,
+)
+from mtg_sorter.services.card_image_service import ImageCacheStatus, ImageDownloadScope
+from mtg_sorter.services.scryfall_bulk_service import BulkSyncStatus
 from mtg_sorter.ui.inventory_display import (
     format_availability_status,
     format_inventory_decks,
 )
+from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, build_preview_splitter
 
 INV_COL_NAME = 0
 INV_COL_TOTAL = 1
 INV_COL_FREE = 2
 INV_COL_ASSIGNED = 3
 INV_COL_DECKS = 4
+SCRYFALL_SECTION_INDEX = 4
+CARD_ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
 
 
 class BulkSyncWorker(QThread):
     progress = Signal(str)
-    finished_ok = Signal(int)
+    finished_ok = Signal(int, str)
     failed = Signal(str)
+
+    def __init__(self, pack_type: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._pack_type = pack_type
 
     def run(self) -> None:
         try:
             with get_session() as session:
                 bulk = ScryfallBulkService(session)
                 try:
-                    result = bulk.sync_oracle_cards(progress=self.progress.emit)
+                    result = bulk.sync_bulk(
+                        self._pack_type, progress=self.progress.emit
+                    )
                 finally:
                     bulk.close()
-            self.finished_ok.emit(result.imported_cards)
+            self.finished_ok.emit(result.imported_cards, result.pack_type)
         except Exception as exc:
             self.failed.emit(str(exc))
 
 
-class LegalityRefreshWorker(QThread):
+class CardDataRefreshWorker(QThread):
     progress = Signal(str)
     finished_ok = Signal(int)
     failed = Signal(str)
@@ -62,7 +86,7 @@ class LegalityRefreshWorker(QThread):
             with get_session() as session:
                 scryfall = ScryfallService(session)
                 try:
-                    count = scryfall.refresh_collection_commander_legalities(
+                    count = scryfall.refresh_collection_card_data(
                         progress=self.progress.emit
                     )
                 finally:
@@ -72,15 +96,65 @@ class LegalityRefreshWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class ImageDownloadWorker(QThread):
+    progress = Signal(str)
+    finished_ok = Signal(int, int)
+    failed = Signal(str)
+
+    def __init__(
+        self, scope: ImageDownloadScope, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._scope = scope
+
+    def run(self) -> None:
+        try:
+            with get_session() as session:
+                images = CardImageService(session)
+                try:
+                    result = images.download_images(
+                        self._scope, progress=self.progress.emit
+                    )
+                finally:
+                    images.close()
+            self.finished_ok.emit(result.downloaded, result.skipped)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class RemoteBulkStatusWorker(QThread):
+    finished_ok = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            with get_session() as session:
+                bulk = ScryfallBulkService(session)
+                try:
+                    status = bulk.check_remote_status()
+                finally:
+                    bulk.close()
+            self.finished_ok.emit(status)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class BrowseWidget(QWidget):
     changed = Signal()
     locale_changed = Signal(str)
+    show_images_changed = Signal(bool)
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._translator = translator
+        with get_session() as session:
+            self._show_card_images = SettingsService(session).get_show_card_images()
         self._sync_worker: BulkSyncWorker | None = None
-        self._legality_worker: LegalityRefreshWorker | None = None
+        self._card_data_worker: CardDataRefreshWorker | None = None
+        self._image_worker: ImageDownloadWorker | None = None
+        self._remote_worker: RemoteBulkStatusWorker | None = None
+        self._bulk_status: BulkSyncStatus | None = None
+        self._scryfall_busy = False
         self._build_ui()
         self.refresh()
 
@@ -91,14 +165,26 @@ class BrowseWidget(QWidget):
             self._translator.t("browse.section.availability")
         )
         self._section_list.item(3).setText(
+            self._translator.t("browse.section.history")
+        )
+        self._section_list.item(4).setText(
             self._translator.t("browse.section.scryfall")
         )
         self._card_search.setPlaceholderText(self._translator.t("browse.cards.search"))
-        self._sync_button.setText(self._translator.t("browse.scryfall.sync"))
-        self._legality_button.setText(
-            self._translator.t("browse.scryfall.legality_refresh")
+        self._unique_button.setText(
+            self._translator.t("browse.scryfall.sync_unique")
+        )
+        self._images_collection_button.setText(
+            self._translator.t("browse.scryfall.images_collection")
+        )
+        self._images_cached_button.setText(
+            self._translator.t("browse.scryfall.images_cached")
+        )
+        self._card_data_button.setText(
+            self._translator.t("browse.scryfall.card_data_refresh")
         )
         self._scryfall_info.setText(self._translator.t("browse.scryfall.info"))
+        self._update_oracle_button_label()
         self._language_group.setTitle(self._translator.t("config.language"))
         self._language_label.setText(self._translator.t("config.language"))
         self._inventory_summary_group.setTitle(
@@ -127,9 +213,26 @@ class BrowseWidget(QWidget):
                 self._translator.t("inventory.table.decks"),
             ]
         )
+        self._history_filter_label.setText(self._translator.t("browse.history.filter"))
+        self._sync_history_filter_combo()
+        self._history_table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.history.when"),
+                self._translator.t("browse.history.event"),
+            ]
+        )
+        self._history_empty.setText(self._translator.t("browse.history.empty"))
         self._scryfall_group.setTitle(self._translator.t("browse.section.scryfall"))
+        self._show_images_check.setText(
+            self._translator.t("browse.overview.show_images")
+        )
+        self._card_preview.retranslate()
         self._sync_language_combo()
         self.refresh()
+
+    @property
+    def show_card_images(self) -> bool:
+        return self._show_card_images
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
@@ -140,6 +243,7 @@ class BrowseWidget(QWidget):
         self._section_list.addItem(self._translator.t("browse.section.overview"))
         self._section_list.addItem(self._translator.t("browse.section.cards"))
         self._section_list.addItem(self._translator.t("browse.section.availability"))
+        self._section_list.addItem(self._translator.t("browse.section.history"))
         self._section_list.addItem(self._translator.t("browse.section.scryfall"))
         splitter.addWidget(self._section_list)
 
@@ -150,10 +254,16 @@ class BrowseWidget(QWidget):
         self._panels.addWidget(self._build_overview_panel())
         self._panels.addWidget(self._build_cards_panel())
         self._panels.addWidget(self._build_inventory_panel())
+        self._panels.addWidget(self._build_history_panel())
         self._panels.addWidget(self._build_scryfall_panel())
 
-        self._section_list.currentRowChanged.connect(self._panels.setCurrentIndex)
+        self._section_list.currentRowChanged.connect(self._on_section_changed)
         self._section_list.setCurrentRow(0)
+
+    def _on_section_changed(self, index: int) -> None:
+        self._panels.setCurrentIndex(index)
+        if index == SCRYFALL_SECTION_INDEX:
+            self._start_remote_status_check()
 
     def _build_overview_panel(self) -> QWidget:
         panel = QWidget()
@@ -184,9 +294,25 @@ class BrowseWidget(QWidget):
         language_form.addRow(self._language_label, self._language_combo)
         layout.addWidget(self._language_group)
 
+        self._show_images_check = QCheckBox(
+            self._translator.t("browse.overview.show_images")
+        )
+        self._show_images_check.setChecked(self._show_card_images)
+        self._show_images_check.toggled.connect(self._on_show_images_toggled)
+        layout.addWidget(self._show_images_check)
+
         self._sync_language_combo()
         layout.addStretch()
         return panel
+
+    def _on_show_images_toggled(self, checked: bool) -> None:
+        if checked == self._show_card_images:
+            return
+        self._show_card_images = checked
+        with get_session() as session:
+            SettingsService(session).set_show_card_images(checked)
+        self._card_preview.setVisible(checked)
+        self.show_images_changed.emit(checked)
 
     def _sync_language_combo(self) -> None:
         self._language_combo.blockSignals(True)
@@ -228,8 +354,33 @@ class BrowseWidget(QWidget):
             ]
         )
         self._cards_table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self._cards_table)
+        self._cards_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._cards_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._cards_table.itemSelectionChanged.connect(self._on_card_selected)
+
+        self._card_preview = CardPreviewPanel(self._translator)
+        self._card_preview.setVisible(self._show_card_images)
+
+        self._cards_splitter = build_preview_splitter(
+            self._cards_table, self._card_preview
+        )
+        layout.addWidget(self._cards_splitter)
         return panel
+
+    def _on_card_selected(self) -> None:
+        item = self._cards_table.currentItem()
+        row = item.row() if item is not None else -1
+        name_item = self._cards_table.item(row, 0) if row >= 0 else None
+        if name_item is None:
+            self._card_preview.clear()
+            return
+        oracle_id = name_item.data(CARD_ORACLE_ID_ROLE)
+        if not isinstance(oracle_id, str):
+            self._card_preview.clear()
+            return
+        self._card_preview.set_card(oracle_id, name_item.text())
 
     def _build_inventory_panel(self) -> QWidget:
         panel = QWidget()
@@ -282,6 +433,81 @@ class BrowseWidget(QWidget):
         layout.addWidget(self._inventory_results_table)
         return panel
 
+    def _build_history_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        filter_row = QHBoxLayout()
+        self._history_filter_label = QLabel(
+            self._translator.t("browse.history.filter")
+        )
+        self._history_filter = QComboBox()
+        self._history_filter.currentIndexChanged.connect(self._refresh_history)
+        filter_row.addWidget(self._history_filter_label)
+        filter_row.addWidget(self._history_filter, stretch=1)
+        layout.addLayout(filter_row)
+        self._sync_history_filter_combo()
+
+        self._history_empty = QLabel(self._translator.t("browse.history.empty"))
+        self._history_empty.setWordWrap(True)
+        layout.addWidget(self._history_empty)
+
+        self._history_table = QTableWidget(0, 2)
+        self._history_table.setHorizontalHeaderLabels(
+            [
+                self._translator.t("browse.history.when"),
+                self._translator.t("browse.history.event"),
+            ]
+        )
+        self._history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._history_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._history_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._history_table.verticalHeader().setVisible(False)
+        history_header = self._history_table.horizontalHeader()
+        history_header.setStretchLastSection(True)
+        history_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        history_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self._history_table, stretch=1)
+        return panel
+
+    def _sync_history_filter_combo(self) -> None:
+        current = self._history_filter.currentData()
+        self._history_filter.blockSignals(True)
+        self._history_filter.clear()
+        self._history_filter.addItem(
+            self._translator.t("browse.history.filter.all"), None
+        )
+        self._history_filter.addItem(
+            self._translator.t("browse.history.filter.inventory"),
+            ActivityCategory.INVENTORY.value,
+        )
+        self._history_filter.addItem(
+            self._translator.t("browse.history.filter.decks"),
+            ActivityCategory.DECKS.value,
+        )
+        if current is not None:
+            index = self._history_filter.findData(current)
+            if index >= 0:
+                self._history_filter.setCurrentIndex(index)
+        self._history_filter.blockSignals(False)
+
+    def _format_history_event(self, summary_key: str, payload: dict) -> str:
+        values = dict(payload)
+        if summary_key == "history.event.plan_applied":
+            donors = payload.get("donor_names") or []
+            if donors:
+                values["donors_suffix"] = self._translator.t(
+                    "history.event.plan_applied.donors"
+                ).format(donors=", ".join(str(name) for name in donors))
+            else:
+                values["donors_suffix"] = ""
+        try:
+            return self._translator.t(summary_key).format(**values)
+        except (KeyError, ValueError):
+            return self._translator.t(summary_key)
+
     def _build_scryfall_panel(self) -> QWidget:
         panel = QWidget()
         layout = QVBoxLayout(panel)
@@ -296,38 +522,92 @@ class BrowseWidget(QWidget):
         self._sync_progress_label.setWordWrap(True)
         form.addRow(self._sync_progress_label)
 
-        self._sync_button = QPushButton(self._translator.t("browse.scryfall.sync"))
-        self._sync_button.clicked.connect(self._start_bulk_sync)
+        self._sync_button = QPushButton()
+        self._sync_button.clicked.connect(self._start_oracle_sync)
         form.addRow(self._sync_button)
 
-        self._legality_button = QPushButton(
-            self._translator.t("browse.scryfall.legality_refresh")
+        self._unique_button = QPushButton(
+            self._translator.t("browse.scryfall.sync_unique")
         )
-        self._legality_button.clicked.connect(self._start_legality_refresh)
-        form.addRow(self._legality_button)
+        self._unique_button.clicked.connect(self._start_unique_sync)
+        form.addRow(self._unique_button)
+
+        self._images_collection_button = QPushButton(
+            self._translator.t("browse.scryfall.images_collection")
+        )
+        self._images_collection_button.clicked.connect(
+            self._start_images_collection
+        )
+        form.addRow(self._images_collection_button)
+
+        self._images_cached_button = QPushButton(
+            self._translator.t("browse.scryfall.images_cached")
+        )
+        self._images_cached_button.clicked.connect(self._start_images_cached)
+        form.addRow(self._images_cached_button)
+
+        self._card_data_button = QPushButton(
+            self._translator.t("browse.scryfall.card_data_refresh")
+        )
+        self._card_data_button.clicked.connect(self._start_card_data_refresh)
+        form.addRow(self._card_data_button)
         layout.addWidget(self._scryfall_group)
 
         self._scryfall_info = QLabel(self._translator.t("browse.scryfall.info"))
         self._scryfall_info.setWordWrap(True)
         layout.addWidget(self._scryfall_info)
         layout.addStretch()
+        self._update_oracle_button_label()
         return panel
 
     def refresh(self) -> None:
         self._refresh_overview()
         self._refresh_cards()
         self._refresh_inventory()
+        self._refresh_history()
         self._refresh_scryfall_status()
+        if self._section_list.currentRow() == SCRYFALL_SECTION_INDEX:
+            self._start_remote_status_check()
 
     def refresh_collection_stats(self) -> None:
-        """Update overview + availability after deck/inventory changes.
+        """Update overview + availability + history after deck/inventory changes.
 
         Skips rebuilding the full Scryfall cards table (tens of thousands of rows).
         """
         self._refresh_overview()
         self._refresh_inventory()
+        self._refresh_history()
         if self._card_search.text().strip():
             self._refresh_cards()
+
+    def _refresh_history(self) -> None:
+        category_value = self._history_filter.currentData()
+        category: ActivityCategory | None = None
+        if category_value == ActivityCategory.INVENTORY.value:
+            category = ActivityCategory.INVENTORY
+        elif category_value == ActivityCategory.DECKS.value:
+            category = ActivityCategory.DECKS
+
+        with get_session() as session:
+            rows = ActivityService(session).list_events(category=category)
+
+        self._history_table.setRowCount(len(rows))
+        self._history_empty.setVisible(not rows)
+        self._history_table.setVisible(bool(rows))
+        for row_index, row in enumerate(rows):
+            created = row.created_at
+            if created.tzinfo is not None:
+                local_dt = created.astimezone()
+            else:
+                local_dt = created
+            when = local_dt.strftime("%Y-%m-%d %H:%M")
+            event_text = self._format_history_event(row.summary_key, row.payload)
+            when_item = QTableWidgetItem(when)
+            when_item.setFlags(when_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            event_item = QTableWidgetItem(event_text)
+            event_item.setFlags(event_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._history_table.setItem(row_index, 0, when_item)
+            self._history_table.setItem(row_index, 1, event_item)
 
     def _refresh_overview(self) -> None:
         self._greeting_label.setText(self._translator.t("browse.overview.greeting"))
@@ -351,19 +631,23 @@ class BrowseWidget(QWidget):
         if not search:
             # Avoid loading the full ~36k oracle-cards cache into the table.
             self._cards_table.setRowCount(0)
+            self._card_preview.clear()
             return
 
         with get_session() as session:
             cards = BrowseService(session).list_cards(search)
 
         self._cards_table.setRowCount(len(cards))
+        self._card_preview.clear()
         for row, card in enumerate(cards):
             flags: list[str] = []
             if card.is_basic_land:
                 flags.append(self._translator.t("browse.cards.flag.basic"))
             if card.is_token:
                 flags.append(self._translator.t("browse.cards.flag.token"))
-            self._cards_table.setItem(row, 0, QTableWidgetItem(card.name))
+            name_item = QTableWidgetItem(card.name)
+            name_item.setData(CARD_ORACLE_ID_ROLE, card.oracle_id)
+            self._cards_table.setItem(row, 0, name_item)
             self._cards_table.setItem(row, 1, QTableWidgetItem(card.type_line or ""))
             self._cards_table.setItem(
                 row, 2, QTableWidgetItem("" if card.cmc is None else str(card.cmc))
@@ -449,47 +733,169 @@ class BrowseWidget(QWidget):
     def _refresh_scryfall_status(self) -> None:
         with get_session() as session:
             status = BrowseService(session).scryfall_status()
+            images = CardImageService(session).status()
 
+        if self._bulk_status is not None and self._bulk_status.remote_updated_at:
+            status = BulkSyncStatus(
+                cached_cards=status.cached_cards,
+                pack_type=status.pack_type,
+                bulk_updated_at=status.bulk_updated_at,
+                last_synced_at=status.last_synced_at,
+                imported_cards=status.imported_cards,
+                remote_updated_at=self._bulk_status.remote_updated_at,
+                update_available=(
+                    self._bulk_status.remote_updated_at is not None
+                    and (
+                        status.bulk_updated_at is None
+                        or self._bulk_status.remote_updated_at > status.bulk_updated_at
+                    )
+                ),
+            )
+        self._bulk_status = status
+        self._apply_scryfall_status(status, images)
+
+    def _apply_scryfall_status(
+        self, status: BulkSyncStatus, images: ImageCacheStatus
+    ) -> None:
+        never = self._translator.t("browse.scryfall.never")
         imported = (
             str(status.imported_cards)
             if status.imported_cards is not None
-            else self._translator.t("browse.scryfall.never")
+            else never
         )
+        if status.remote_updated_at is None and status.last_synced_at is not None:
+            update_text = self._translator.t("browse.scryfall.update_unknown")
+        elif status.update_available:
+            update_text = self._translator.t("browse.scryfall.update_yes")
+        else:
+            update_text = self._translator.t("browse.scryfall.update_no")
+
         self._scryfall_status_label.setText(
             self._translator.t("browse.scryfall.status").format(
                 cached=status.cached_cards,
-                bulk_updated=status.bulk_updated_at
-                or self._translator.t("browse.scryfall.never"),
-                last_synced=status.last_synced_at
-                or self._translator.t("browse.scryfall.never"),
+                pack=status.pack_type
+                or self._translator.t("browse.scryfall.none"),
+                bulk_updated=status.bulk_updated_at or never,
+                last_synced=status.last_synced_at or never,
                 imported=imported,
+                update_available=update_text,
+                images_collection=(
+                    f"{images.collection_on_disk:,}/{images.collection_with_uri:,}"
+                ),
+                images_cached=f"{images.cached_on_disk:,}/{images.cached_with_uri:,}",
             )
         )
+        self._update_oracle_button_label()
+        self._set_scryfall_busy(self._scryfall_busy)
+
+    def _update_oracle_button_label(self) -> None:
+        status = self._bulk_status
+        if status is None or status.cached_cards == 0 or status.last_synced_at is None:
+            self._sync_button.setText(
+                self._translator.t("browse.scryfall.sync_download")
+            )
+            self._sync_button.setProperty("oracle_action", "download")
+            return
+        if status.pack_type == SCRYFALL_BULK_ORACLE_TYPE and not status.update_available:
+            self._sync_button.setText(
+                self._translator.t("browse.scryfall.sync_current")
+            )
+            self._sync_button.setProperty("oracle_action", "current")
+            return
+        if status.pack_type == SCRYFALL_BULK_ORACLE_TYPE and status.update_available:
+            self._sync_button.setText(
+                self._translator.t("browse.scryfall.sync_update")
+            )
+            self._sync_button.setProperty("oracle_action", "update")
+            return
+        self._sync_button.setText(self._translator.t("browse.scryfall.sync_resync"))
+        self._sync_button.setProperty("oracle_action", "resync")
+
+    def _any_scryfall_worker_running(self) -> bool:
+        for worker in (
+            self._sync_worker,
+            self._card_data_worker,
+            self._image_worker,
+        ):
+            if worker is not None and worker.isRunning():
+                return True
+        return False
 
     def _set_scryfall_busy(self, busy: bool) -> None:
-        self._sync_button.setEnabled(not busy)
-        self._legality_button.setEnabled(not busy)
+        self._scryfall_busy = busy
+        status = self._bulk_status
+        oracle_current = (
+            status is not None
+            and status.pack_type == SCRYFALL_BULK_ORACLE_TYPE
+            and not status.update_available
+            and status.cached_cards > 0
+            and status.last_synced_at is not None
+        )
+        self._sync_button.setEnabled(not busy and not oracle_current)
+        self._unique_button.setEnabled(not busy)
+        self._images_collection_button.setEnabled(not busy)
+        self._images_cached_button.setEnabled(not busy)
+        self._card_data_button.setEnabled(not busy)
 
-    def _start_bulk_sync(self) -> None:
-        if self._sync_worker is not None and self._sync_worker.isRunning():
+    def _start_remote_status_check(self) -> None:
+        if self._scryfall_busy:
             return
-        if self._legality_worker is not None and self._legality_worker.isRunning():
+        if self._remote_worker is not None and self._remote_worker.isRunning():
+            return
+
+        self._remote_worker = RemoteBulkStatusWorker()
+        self._remote_worker.finished_ok.connect(self._on_remote_status)
+        self._remote_worker.failed.connect(self._on_remote_status_failed)
+        self._remote_worker.start()
+
+    def _on_remote_status(self, status: object) -> None:
+        if not isinstance(status, BulkSyncStatus):
+            return
+        self._bulk_status = status
+        with get_session() as session:
+            images = CardImageService(session).status()
+        self._apply_scryfall_status(status, images)
+
+    def _on_remote_status_failed(self, _message: str) -> None:
+        # Keep local status; update_available stays unknown.
+        self._refresh_scryfall_status()
+
+    def _start_oracle_sync(self) -> None:
+        self._start_bulk_sync(SCRYFALL_BULK_ORACLE_TYPE)
+
+    def _start_unique_sync(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            self._translator.t("browse.scryfall.confirm_unique_title"),
+            self._translator.t("browse.scryfall.confirm_unique_body"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._start_bulk_sync(SCRYFALL_BULK_UNIQUE_ARTWORK_TYPE)
+
+    def _start_bulk_sync(self, pack_type: str) -> None:
+        if self._any_scryfall_worker_running():
             return
 
         self._set_scryfall_busy(True)
         self._sync_progress_label.setText(self._translator.t("browse.scryfall.starting"))
 
-        self._sync_worker = BulkSyncWorker()
+        self._sync_worker = BulkSyncWorker(pack_type)
         self._sync_worker.progress.connect(self._sync_progress_label.setText)
         self._sync_worker.finished_ok.connect(self._on_sync_finished)
         self._sync_worker.failed.connect(self._on_sync_failed)
         self._sync_worker.start()
 
-    def _on_sync_finished(self, imported_cards: int) -> None:
+    def _on_sync_finished(self, imported_cards: int, pack_type: str) -> None:
         self._set_scryfall_busy(False)
         self._sync_progress_label.setText(
-            self._translator.t("browse.scryfall.done").format(count=imported_cards)
+            self._translator.t("browse.scryfall.done").format(
+                count=imported_cards, pack=pack_type
+            )
         )
+        self._bulk_status = None
         self.refresh()
         self.changed.emit()
 
@@ -502,32 +908,77 @@ class BrowseWidget(QWidget):
             message,
         )
 
-    def _start_legality_refresh(self) -> None:
-        if self._legality_worker is not None and self._legality_worker.isRunning():
+    def _start_images_collection(self) -> None:
+        self._start_image_download(ImageDownloadScope.COLLECTION)
+
+    def _start_images_cached(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            self._translator.t("browse.scryfall.confirm_images_title"),
+            self._translator.t("browse.scryfall.confirm_images_body"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
-        if self._sync_worker is not None and self._sync_worker.isRunning():
+        self._start_image_download(ImageDownloadScope.CACHED)
+
+    def _start_image_download(self, scope: ImageDownloadScope) -> None:
+        if self._any_scryfall_worker_running():
             return
 
         self._set_scryfall_busy(True)
         self._sync_progress_label.setText(
-            self._translator.t("browse.scryfall.legality_starting")
+            self._translator.t("browse.scryfall.images_starting")
         )
+        self._image_worker = ImageDownloadWorker(scope)
+        self._image_worker.progress.connect(self._sync_progress_label.setText)
+        self._image_worker.finished_ok.connect(self._on_images_finished)
+        self._image_worker.failed.connect(self._on_images_failed)
+        self._image_worker.start()
 
-        self._legality_worker = LegalityRefreshWorker()
-        self._legality_worker.progress.connect(self._sync_progress_label.setText)
-        self._legality_worker.finished_ok.connect(self._on_legality_finished)
-        self._legality_worker.failed.connect(self._on_legality_failed)
-        self._legality_worker.start()
-
-    def _on_legality_finished(self, count: int) -> None:
+    def _on_images_finished(self, downloaded: int, skipped: int) -> None:
         self._set_scryfall_busy(False)
         self._sync_progress_label.setText(
-            self._translator.t("browse.scryfall.legality_done").format(count=count)
+            self._translator.t("browse.scryfall.images_done").format(
+                downloaded=downloaded, skipped=skipped
+            )
+        )
+        self._refresh_scryfall_status()
+
+    def _on_images_failed(self, message: str) -> None:
+        self._set_scryfall_busy(False)
+        self._sync_progress_label.setText("")
+        QMessageBox.critical(
+            self,
+            self._translator.t("common.error"),
+            message,
+        )
+
+    def _start_card_data_refresh(self) -> None:
+        if self._any_scryfall_worker_running():
+            return
+
+        self._set_scryfall_busy(True)
+        self._sync_progress_label.setText(
+            self._translator.t("browse.scryfall.card_data_starting")
+        )
+
+        self._card_data_worker = CardDataRefreshWorker()
+        self._card_data_worker.progress.connect(self._sync_progress_label.setText)
+        self._card_data_worker.finished_ok.connect(self._on_card_data_finished)
+        self._card_data_worker.failed.connect(self._on_card_data_failed)
+        self._card_data_worker.start()
+
+    def _on_card_data_finished(self, count: int) -> None:
+        self._set_scryfall_busy(False)
+        self._sync_progress_label.setText(
+            self._translator.t("browse.scryfall.card_data_done").format(count=count)
         )
         self.refresh()
         self.changed.emit()
 
-    def _on_legality_failed(self, message: str) -> None:
+    def _on_card_data_failed(self, message: str) -> None:
         self._set_scryfall_busy(False)
         self._sync_progress_label.setText("")
         QMessageBox.critical(

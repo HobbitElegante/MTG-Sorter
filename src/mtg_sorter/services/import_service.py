@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from mtg_sorter.algorithms.card_utils import is_basic_land_name
 from mtg_sorter.api.moxfield_client import fetch_moxfield_deck
 from mtg_sorter.models import Card, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
+from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
+from mtg_sorter.services.activity_service import ActivityService
 from mtg_sorter.services.deck_service import DeckService, InventoryService
 from mtg_sorter.services.decklist_parser import (
     ARENA_SECTION_RE,
@@ -207,6 +208,15 @@ class ImportService:
         )
 
         self._session.refresh(deck)
+        ActivityService(self._session).record(
+            ActivityEventType.DECK_IMPORTED,
+            "history.event.deck_imported",
+            {
+                "deck_id": deck.id,
+                "deck_name": deck.name,
+                "status": status.value,
+            },
+        )
         return ImportResult(deck=deck, warnings=warnings)
 
     def import_moxfield_text(
@@ -332,7 +342,9 @@ class ImportService:
         for oracle_id, quantity in quantities.items():
             if quantity <= 0:
                 continue
-            inventory.add_copy(oracle_id, quantity)
+            inventory.add_copy(
+                oracle_id, quantity, record_activity=True
+            )
             added += quantity
         return added
 

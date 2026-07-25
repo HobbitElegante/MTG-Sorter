@@ -41,17 +41,26 @@ def _pick_preferred_card(candidates: list[Card], *, prefer_token: bool) -> Card 
     return usable[0]
 
 
+def _normal_image_uri(source: object) -> str | None:
+    if not isinstance(source, dict):
+        return None
+    images = source.get("image_uris")
+    if not isinstance(images, dict):
+        return None
+    normal = images.get("normal")
+    return normal if isinstance(normal, str) else None
+
+
 def card_from_scryfall(payload: dict) -> Card:
-    image_uri = None
-    image_uris = payload.get("image_uris")
-    if isinstance(image_uris, dict):
-        image_uri = image_uris.get("normal")
-    elif isinstance(payload.get("card_faces"), list) and payload["card_faces"]:
-        face = payload["card_faces"][0]
-        if isinstance(face, dict):
-            face_images = face.get("image_uris")
-            if isinstance(face_images, dict):
-                image_uri = face_images.get("normal")
+    faces = payload.get("card_faces")
+    faces = faces if isinstance(faces, list) else []
+
+    image_uri = _normal_image_uri(payload)
+    if image_uri is None and faces:
+        image_uri = _normal_image_uri(faces[0])
+    # Split/adventure cards carry a single top-level image, so only true
+    # double-faced layouts end up with a back image here.
+    image_uri_back = _normal_image_uri(faces[1]) if len(faces) > 1 else None
 
     type_line = payload.get("type_line")
     return Card(
@@ -64,6 +73,7 @@ def card_from_scryfall(payload: dict) -> Card:
         color_identity="".join(payload.get("color_identity") or []),
         cmc=float(payload.get("cmc") or 0),
         image_uri=image_uri,
+        image_uri_back=image_uri_back,
         commander_legality=commander_legality_from_payload(payload),
         is_basic_land=is_basic_land_type_line(type_line),
         is_token=is_token_type_line(type_line),
@@ -147,6 +157,7 @@ class ScryfallService:
             card.color_identity = refreshed.color_identity
             card.cmc = refreshed.cmc
             card.image_uri = refreshed.image_uri
+            card.image_uri_back = refreshed.image_uri_back
             card.commander_legality = refreshed.commander_legality
             card.is_basic_land = refreshed.is_basic_land
             card.is_token = refreshed.is_token
@@ -183,11 +194,14 @@ class ScryfallService:
         deck_ids = set(self._session.scalars(select(DeckCard.card_id).distinct()).all())
         return sorted(copy_ids | deck_ids)
 
-    def refresh_collection_commander_legalities(
+    def refresh_collection_card_data(
         self,
         progress: Callable[[str], None] | None = None,
     ) -> int:
-        """Fetch Scryfall legalities.commander for collection cards.
+        """Refresh Commander legalities and image URLs for collection cards.
+
+        Both come from the same payload, so this keeps ⚠ warnings and card
+        previews current without re-downloading the full bulk pack.
 
         Returns how many cards were looked up (inventory copies ∪ deck lists).
         """
@@ -206,15 +220,14 @@ class ScryfallService:
         for start in range(0, total, batch_size):
             chunk = oracle_ids[start : start + batch_size]
             report(
-                f"Refreshing Commander legalities… "
-                f"{min(start + len(chunk), total):,}/{total:,}"
+                f"Refreshing card data… {min(start + len(chunk), total):,}/{total:,}"
             )
             identifiers = [{"oracle_id": oracle_id} for oracle_id in chunk]
             try:
                 payload = self._client.fetch_cards_collection(identifiers)
             except Exception as exc:
                 raise ScryfallOfflineError(
-                    "Could not refresh Commander legalities from Scryfall."
+                    "Could not refresh collection card data from Scryfall."
                 ) from exc
 
             data = payload.get("data")
@@ -227,13 +240,17 @@ class ScryfallService:
                 if not isinstance(oracle_id, str):
                     continue
                 card = self._session.get(Card, oracle_id)
-                legality = commander_legality_from_payload(entry)
                 if card is None:
                     self.upsert_from_payload(entry)
                     continue
-                card.commander_legality = legality
+                refreshed = card_from_scryfall(entry)
+                card.commander_legality = refreshed.commander_legality
+                if refreshed.image_uri:
+                    card.image_uri = refreshed.image_uri
+                if refreshed.image_uri_back:
+                    card.image_uri_back = refreshed.image_uri_back
 
             self._session.flush()
 
-        report(f"Commander legalities refreshed for {total:,} collection cards.")
+        report(f"Card data refreshed for {total:,} collection cards.")
         return total

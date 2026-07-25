@@ -27,7 +27,7 @@ class MoxfieldClient:
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=MOXFIELD_API_BASE,
-            headers={"User-Agent": "MTG-Sorter/0.3"},
+            headers={"User-Agent": "MTG-Sorter/0.4"},
             timeout=30.0,
         )
 

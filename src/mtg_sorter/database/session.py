@@ -76,10 +76,25 @@ def _ensure_card_commander_legality() -> None:
         )
 
 
+def _ensure_card_image_uri_back() -> None:
+    """Add cards.image_uri_back on existing DBs (v0.5.0)."""
+    with engine.begin() as conn:
+        columns = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(cards)")).fetchall()
+        }
+        if not columns:
+            return
+        if "image_uri_back" in columns:
+            return
+        conn.execute(text("ALTER TABLE cards ADD COLUMN image_uri_back VARCHAR(512)"))
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_deck_sort_order()
     _ensure_card_commander_legality()
+    _ensure_card_image_uri_back()
 
 
 @contextmanager

@@ -195,6 +195,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.summary.dismantle": "Dismantle {count} deck(s) to assemble this list",
         "optimize.summary.inventory_only": "Assemble from free inventory — no decks to dismantle",
         "optimize.missing": "Still missing",
+        "optimize.missing.need_to_find": "Need to find",
         "optimize.unit.cards": "cards",
         "optimize.unit.decks": "decks",
         "optimize.confirm": "Confirm plan",
@@ -214,7 +215,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.section.cards": "Cards",
         "browse.section.decks": "Decks",
         "browse.section.availability": "Availability",
+        "browse.section.history": "History",
         "browse.section.scryfall": "Scryfall",
+        "browse.history.filter": "Filter",
+        "browse.history.filter.all": "All",
+        "browse.history.filter.inventory": "Inventory",
+        "browse.history.filter.decks": "Decks",
+        "browse.history.when": "When",
+        "browse.history.event": "Event",
+        "browse.history.empty": "No activity recorded yet.",
+        "history.event.copies_added": "Added {name} × {qty_delta}",
+        "history.event.copies_removed": "Removed {name} × {qty_delta}",
+        "history.event.deck_armed": "Armed {deck_name}",
+        "history.event.deck_dismantled": "Dismantled {deck_name}",
+        "history.event.deck_imported": "Imported {deck_name}",
+        "history.event.deck_deleted": "Deleted {deck_name}",
+        "history.event.deck_list_edited": "Edited list: {deck_name}",
+        "history.event.plan_applied": (
+            "Applied plan: armed {deck_name}"
+            "{donors_suffix}"
+        ),
+        "history.event.plan_applied.donors": " (dismantled {donors})",
         "browse.overview.greeting": (
             " __  __  _______   _____          _____\n"
             "|  \\/  ||__   __| / ____|        / ____|\n"
@@ -239,6 +260,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flags": "Flags",
         "browse.cards.flag.basic": "basic",
         "browse.cards.flag.token": "token",
+        "browse.overview.show_images": "Show card images",
+        "preview.title": "Card image",
+        "preview.empty": "Select a card to preview it.",
+        "preview.loading": "Loading image…",
+        "preview.missing": "No image available.",
+        "preview.flip": "Flip card",
         "browse.decks.quantity": "Qty",
         "browse.decks.role": "Role",
         "browse.inventory.copy": "Copy #",
@@ -246,27 +273,58 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.inventory.mixed": "{free} free · {decks}",
         "browse.inventory.assigned": "Assigned to",
         "browse.inventory.free": "Free",
-        "browse.scryfall.sync": "Download oracle-cards bulk pack",
-        "browse.scryfall.legality_refresh": "Refresh Commander legalities (collection)",
-        "browse.scryfall.legality_starting": "Refreshing Commander legalities…",
-        "browse.scryfall.legality_done": (
-            "Updated Commander legalities for {count:,} collection cards."
+        "browse.scryfall.sync_download": "Download oracle-cards bulk pack",
+        "browse.scryfall.sync_update": "Update oracle-cards bulk pack",
+        "browse.scryfall.sync_current": "oracle-cards up to date",
+        "browse.scryfall.sync_resync": "Re-sync oracle-cards bulk pack",
+        "browse.scryfall.sync_unique": "Use unique-artwork (better art)",
+        "browse.scryfall.images_collection": "Download images (collection)",
+        "browse.scryfall.images_cached": "Download images (full cache)",
+        "browse.scryfall.card_data_refresh": "Refresh card data (collection)",
+        "browse.scryfall.card_data_starting": "Refreshing card data…",
+        "browse.scryfall.card_data_done": (
+            "Updated Commander legalities and image links for "
+            "{count:,} collection cards."
         ),
         "browse.scryfall.starting": "Starting Scryfall sync…",
-        "browse.scryfall.done": "Imported {count:,} oracle cards.",
+        "browse.scryfall.done": "Imported {count:,} cards from {pack}.",
+        "browse.scryfall.images_starting": "Starting image download…",
+        "browse.scryfall.images_done": (
+            "Images: {downloaded:,} downloaded, {skipped:,} already local."
+        ),
         "browse.scryfall.never": "Never",
+        "browse.scryfall.none": "None",
+        "browse.scryfall.update_yes": "Yes — newer pack on Scryfall",
+        "browse.scryfall.update_no": "No",
+        "browse.scryfall.update_unknown": "Unknown (offline)",
         "browse.scryfall.status": (
             "Cached cards in database: {cached}\n"
+            "Local pack: {pack}\n"
             "Scryfall bulk updated at: {bulk_updated}\n"
             "Last local sync: {last_synced}\n"
-            "Cards processed in last sync: {imported}"
+            "Cards processed in last sync: {imported}\n"
+            "Update available: {update_available}\n"
+            "Collection images on disk: {images_collection}\n"
+            "Cache images on disk: {images_cached}"
         ),
         "browse.scryfall.info": (
             "Individual API lookups are saved in the local Card cache. "
-            "Download the Scryfall oracle-cards bulk pack once to resolve "
-            "imports and inventory searches offline. "
-            "Use Refresh Commander legalities to update format status for "
-            "cards you own or have on deck lists (faster than a full bulk sync)."
+            "Download oracle-cards once for offline name resolution, or "
+            "unique-artwork for better default card art. "
+            "Image download saves Scryfall normal JPEGs under data/images/ "
+            "(collection or full cache). "
+            "Refresh Commander legalities updates format status for cards you "
+            "own or have on deck lists (faster than a full bulk sync)."
+        ),
+        "browse.scryfall.confirm_unique_title": "Use unique-artwork?",
+        "browse.scryfall.confirm_unique_body": (
+            "This downloads the unique-artwork bulk pack (~250 MB) and updates "
+            "local card art URLs. Continue?"
+        ),
+        "browse.scryfall.confirm_images_title": "Download full cache images?",
+        "browse.scryfall.confirm_images_body": (
+            "This may download tens of thousands of images and take a long time. "
+            "Continue?"
         ),
     },
     "es": {
@@ -467,6 +525,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.summary.dismantle": "Desarmar {count} mazo(s) para armar este listado",
         "optimize.summary.inventory_only": "Armar desde inventario libre — no hace falta desarmar mazos",
         "optimize.missing": "Aún faltan",
+        "optimize.missing.need_to_find": "Faltan por encontrar",
         "optimize.unit.cards": "cartas",
         "optimize.unit.decks": "mazos",
         "optimize.confirm": "Confirmar plan",
@@ -486,7 +545,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.section.cards": "Cartas",
         "browse.section.decks": "Mazos",
         "browse.section.availability": "Disponibilidad",
+        "browse.section.history": "Historial",
         "browse.section.scryfall": "Scryfall",
+        "browse.history.filter": "Filtro",
+        "browse.history.filter.all": "Todos",
+        "browse.history.filter.inventory": "Inventario",
+        "browse.history.filter.decks": "Mazos",
+        "browse.history.when": "Cuándo",
+        "browse.history.event": "Evento",
+        "browse.history.empty": "Todavía no hay actividad registrada.",
+        "history.event.copies_added": "Añadidas {name} × {qty_delta}",
+        "history.event.copies_removed": "Quitadas {name} × {qty_delta}",
+        "history.event.deck_armed": "Armado {deck_name}",
+        "history.event.deck_dismantled": "Desarmado {deck_name}",
+        "history.event.deck_imported": "Importado {deck_name}",
+        "history.event.deck_deleted": "Eliminado {deck_name}",
+        "history.event.deck_list_edited": "Listado editado: {deck_name}",
+        "history.event.plan_applied": (
+            "Plan aplicado: armado {deck_name}"
+            "{donors_suffix}"
+        ),
+        "history.event.plan_applied.donors": " (desarmados {donors})",
         "browse.overview.greeting": (
             " __  __  _______   _____          _____\n"
             "|  \\/  ||__   __| / ____|        / ____|\n"
@@ -511,6 +590,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flags": "Etiquetas",
         "browse.cards.flag.basic": "básica",
         "browse.cards.flag.token": "token",
+        "browse.overview.show_images": "Mostrar imágenes de cartas",
+        "preview.title": "Imagen de la carta",
+        "preview.empty": "Selecciona una carta para verla.",
+        "preview.loading": "Cargando imagen…",
+        "preview.missing": "Sin imagen disponible.",
+        "preview.flip": "Girar carta",
         "browse.decks.quantity": "Cant.",
         "browse.decks.role": "Rol",
         "browse.inventory.copy": "Copia #",
@@ -518,28 +603,59 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.inventory.mixed": "{free} libres · {decks}",
         "browse.inventory.assigned": "Asignada a",
         "browse.inventory.free": "Libre",
-        "browse.scryfall.sync": "Descargar pack bulk oracle-cards",
-        "browse.scryfall.legality_refresh": "Actualizar legalidades Commander (colección)",
-        "browse.scryfall.legality_starting": "Actualizando legalidades Commander…",
-        "browse.scryfall.legality_done": (
-            "Legalidades Commander actualizadas para {count:,} cartas de la colección."
+        "browse.scryfall.sync_download": "Descargar pack bulk oracle-cards",
+        "browse.scryfall.sync_update": "Actualizar pack bulk oracle-cards",
+        "browse.scryfall.sync_current": "oracle-cards al día",
+        "browse.scryfall.sync_resync": "Re-sincronizar pack oracle-cards",
+        "browse.scryfall.sync_unique": "Usar unique-artwork (mejor arte)",
+        "browse.scryfall.images_collection": "Descargar imágenes (colección)",
+        "browse.scryfall.images_cached": "Descargar imágenes (caché completo)",
+        "browse.scryfall.card_data_refresh": "Actualizar datos de cartas (colección)",
+        "browse.scryfall.card_data_starting": "Actualizando datos de cartas…",
+        "browse.scryfall.card_data_done": (
+            "Legalidades Commander e imágenes actualizadas para "
+            "{count:,} cartas de la colección."
         ),
         "browse.scryfall.starting": "Iniciando sincronización con Scryfall…",
-        "browse.scryfall.done": "Se importaron {count:,} cartas oracle.",
+        "browse.scryfall.done": "Se importaron {count:,} cartas desde {pack}.",
+        "browse.scryfall.images_starting": "Iniciando descarga de imágenes…",
+        "browse.scryfall.images_done": (
+            "Imágenes: {downloaded:,} descargadas, {skipped:,} ya locales."
+        ),
         "browse.scryfall.never": "Nunca",
+        "browse.scryfall.none": "Ninguno",
+        "browse.scryfall.update_yes": "Sí — hay pack más nuevo en Scryfall",
+        "browse.scryfall.update_no": "No",
+        "browse.scryfall.update_unknown": "Desconocido (sin red)",
         "browse.scryfall.status": (
             "Cartas en caché local: {cached}\n"
+            "Pack local: {pack}\n"
             "Bulk de Scryfall actualizado: {bulk_updated}\n"
             "Última sync local: {last_synced}\n"
-            "Cartas procesadas en la última sync: {imported}"
+            "Cartas procesadas en la última sync: {imported}\n"
+            "Actualización disponible: {update_available}\n"
+            "Imágenes de colección en disco: {images_collection}\n"
+            "Imágenes de caché en disco: {images_cached}"
         ),
         "browse.scryfall.info": (
             "Las búsquedas individuales por API se guardan en la caché local. "
-            "Descarga el pack bulk oracle-cards de Scryfall una vez para "
-            "importar y buscar cartas sin conexión. "
-            "Usa Actualizar legalidades Commander para refrescar el estado de "
-            "formato de las cartas que tienes o están en listados (más rápido "
-            "que un sync bulk completo)."
+            "Descarga oracle-cards una vez para resolver nombres sin conexión, o "
+            "unique-artwork para mejor arte por defecto. "
+            "La descarga de imágenes guarda JPEGs normal de Scryfall en "
+            "data/images/ (colección o caché completo). "
+            "Actualizar legalidades Commander refresca el estado de formato de "
+            "las cartas que tienes o están en listados (más rápido que un sync "
+            "bulk completo)."
+        ),
+        "browse.scryfall.confirm_unique_title": "¿Usar unique-artwork?",
+        "browse.scryfall.confirm_unique_body": (
+            "Esto descarga el pack unique-artwork (~250 MB) y actualiza las "
+            "URLs de arte locales. ¿Continuar?"
+        ),
+        "browse.scryfall.confirm_images_title": "¿Descargar imágenes del caché completo?",
+        "browse.scryfall.confirm_images_body": (
+            "Puede descargar decenas de miles de imágenes y tardar mucho. "
+            "¿Continuar?"
         ),
     },
 }

@@ -16,6 +16,8 @@ class Card(Base):
     color_identity: Mapped[str | None] = mapped_column(String(16))
     cmc: Mapped[float | None] = mapped_column()
     image_uri: Mapped[str | None] = mapped_column(String(512))
+    # Back face of double-faced cards; None for single-faced cards.
+    image_uri_back: Mapped[str | None] = mapped_column(String(512))
     # Scryfall legalities.commander: legal | not_legal | banned | restricted
     commander_legality: Mapped[str | None] = mapped_column(String(16))
     is_basic_land: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

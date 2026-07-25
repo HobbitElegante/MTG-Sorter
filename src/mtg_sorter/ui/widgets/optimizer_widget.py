@@ -118,9 +118,15 @@ class OptimizerWidget(QWidget):
 
         self._missing_group = QGroupBox()
         missing_layout = QVBoxLayout(self._missing_group)
-        self._missing_list = QListWidget()
-        missing_layout.addWidget(self._missing_list)
-        layout.addWidget(self._missing_group)
+        self._missing_tree = QTreeWidget()
+        self._missing_tree.setHeaderHidden(True)
+        self._missing_tree.setRootIsDecorated(True)
+        self._missing_tree.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        missing_layout.addWidget(self._missing_tree, stretch=1)
+        layout.addWidget(self._missing_group, stretch=1)
         self._missing_group.setVisible(False)
 
         self._set_section_titles(0, 0, 0)
@@ -239,7 +245,7 @@ class OptimizerWidget(QWidget):
         self._inventory_list.clear()
         self._solution_tree.clear()
         self._solution_combo.clear()
-        self._missing_list.clear()
+        self._missing_tree.clear()
         self._summary.setText("")
         self._current_plan = None
         self._set_section_titles(0, 0, 0)
@@ -277,7 +283,7 @@ class OptimizerWidget(QWidget):
         self._inventory_list.clear()
         self._solution_tree.clear()
         self._solution_combo.clear()
-        self._missing_list.clear()
+        self._missing_tree.clear()
         self._apply_section_titles_from_plan()
 
         try:
@@ -310,11 +316,7 @@ class OptimizerWidget(QWidget):
             self._solution_group.setVisible(False)
             self._set_plan_actions_visible(False)
             self._missing_group.setVisible(True)
-            for card_id, qty in sorted(
-                plan.still_missing.items(),
-                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
-            ):
-                self._missing_list.addItem(self._card_qty_label(card_id, qty))
+            self._populate_missing_tree(plan)
             return
 
         self._missing_group.setVisible(False)
@@ -344,6 +346,49 @@ class OptimizerWidget(QWidget):
         self._solution_combo.setVisible(len(result.solutions) > 1)
         self._solution_combo.currentIndexChanged.connect(self._show_selected_solution)
         self._show_selected_solution()
+
+    def _populate_missing_tree(self, plan: AssemblyPlan) -> None:
+        """Group unmet cards by armed deck; leftover under Need to find."""
+        self._missing_tree.clear()
+        by_deck, need_to_find = plan.missing_by_source()
+
+        for deck_id in sorted(
+            by_deck.keys(),
+            key=lambda item: plan.deck_names.get(item, item).lower(),
+        ):
+            deck_name = plan.deck_names.get(deck_id, deck_id)
+            parent = QTreeWidgetItem([deck_name])
+            self._missing_tree.addTopLevelItem(parent)
+            cards = by_deck[deck_id]
+            for card_id, qty in sorted(
+                cards.items(),
+                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+            ):
+                parent.addChild(QTreeWidgetItem([self._card_qty_label(card_id, qty)]))
+            parent.setExpanded(True)
+
+        if need_to_find:
+            find_parent = QTreeWidgetItem(
+                [self._translator.t("optimize.missing.need_to_find")]
+            )
+            self._missing_tree.addTopLevelItem(find_parent)
+            for card_id, qty in sorted(
+                need_to_find.items(),
+                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+            ):
+                find_parent.addChild(
+                    QTreeWidgetItem([self._card_qty_label(card_id, qty)])
+                )
+            find_parent.setExpanded(True)
+
+        if not by_deck and not need_to_find:
+            for card_id, qty in sorted(
+                plan.still_missing.items(),
+                key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+            ):
+                self._missing_tree.addTopLevelItem(
+                    QTreeWidgetItem([self._card_qty_label(card_id, qty)])
+                )
 
     def _show_selected_solution(self) -> None:
         plan = self._current_plan

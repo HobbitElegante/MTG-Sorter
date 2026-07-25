@@ -20,28 +20,55 @@ from mtg_sorter.services.scryfall_service import (
 
 
 class FakeScryfallClient:
-    def __init__(self, payloads: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        payloads: list[dict] | None = None,
+        *,
+        bulk_entries: list[dict] | None = None,
+        payloads_by_type: dict[str, list[dict]] | None = None,
+    ) -> None:
         self.payloads = payloads or []
+        self.payloads_by_type = payloads_by_type or {}
         self.fuzzy_calls: list[str] = []
+        self.downloaded_urls: list[str] = []
+        self.bulk_entries = bulk_entries or [
+            {
+                "type": "oracle_cards",
+                "jsonl_download_uri": "https://example.test/oracle.jsonl.gz",
+                "download_uri": "https://example.test/oracle.json",
+                "updated_at": "2026-07-20T21:03:00+00:00",
+            },
+            {
+                "type": "unique_artwork",
+                "jsonl_download_uri": "https://example.test/unique.jsonl.gz",
+                "download_uri": "https://example.test/unique.json",
+                "updated_at": "2026-07-20T21:04:00+00:00",
+            },
+        ]
 
     def fetch_card_fuzzy(self, name: str) -> dict:
         self.fuzzy_calls.append(name)
         raise RuntimeError("offline")
 
     def fetch_bulk_data(self) -> list[dict]:
-        return [
-            {
-                "type": "oracle_cards",
-                "jsonl_download_uri": "https://example.test/oracle.jsonl.gz",
-                "download_uri": "https://example.test/oracle.json",
-                "updated_at": "2026-07-20T21:03:00+00:00",
-            }
-        ]
+        return self.bulk_entries
 
-    def download_bulk_file(self, download_uri: str, destination: Path) -> None:
-        lines = [json.dumps(payload) for payload in self.payloads]
+    def download_file(self, url: str, destination: Path) -> None:
+        self.downloaded_urls.append(url)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if url.endswith(".jpg") or "card_images" in url:
+            destination.write_bytes(b"fake-jpeg")
+            return
+        pack_type = "oracle_cards"
+        if "unique" in url:
+            pack_type = "unique_artwork"
+        payloads = self.payloads_by_type.get(pack_type, self.payloads)
+        lines = [json.dumps(payload) for payload in payloads]
         with gzip.open(destination, "wt", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
+
+    def download_bulk_file(self, download_uri: str, destination: Path) -> None:
+        self.download_file(download_uri, destination)
 
     def close(self) -> None:
         return None
@@ -213,6 +240,119 @@ def test_bulk_sync_imports_oracle_cards(session: Session) -> None:
     assert card is not None
     assert card.name == "Arcane Signet"
     assert session.get(AppSetting, "scryfall_bulk_oracle_synced_at") is not None
+    assert session.get(AppSetting, "scryfall_bulk_pack_type").value == "oracle_cards"
+
+
+def test_card_from_scryfall_reads_both_faces_of_a_dfc() -> None:
+    card = card_from_scryfall(
+        {
+            "oracle_id": "dfc-1",
+            "name": "Delver of Secrets // Insectile Aberration",
+            "type_line": "Creature — Human Wizard",
+            "cmc": 1.0,
+            "card_faces": [
+                {
+                    "name": "Delver of Secrets",
+                    "image_uris": {"normal": "https://example.test/front.jpg"},
+                },
+                {
+                    "name": "Insectile Aberration",
+                    "image_uris": {"normal": "https://example.test/back.jpg"},
+                },
+            ],
+        }
+    )
+
+    assert card.image_uri == "https://example.test/front.jpg"
+    assert card.image_uri_back == "https://example.test/back.jpg"
+
+
+def test_card_from_scryfall_leaves_back_empty_for_split_cards() -> None:
+    card = card_from_scryfall(
+        {
+            "oracle_id": "split-1",
+            "name": "Fire // Ice",
+            "type_line": "Instant // Instant",
+            "cmc": 2.0,
+            "image_uris": {"normal": "https://example.test/fire-ice.jpg"},
+            "card_faces": [{"name": "Fire"}, {"name": "Ice"}],
+        }
+    )
+
+    assert card.image_uri == "https://example.test/fire-ice.jpg"
+    assert card.image_uri_back is None
+
+
+def test_bulk_sync_unique_artwork_collapses_oracle_id(session: Session) -> None:
+    oracle_id = "11111111-1111-1111-1111-111111111111"
+    payloads = [
+        {
+            "oracle_id": oracle_id,
+            "name": "Sol Ring",
+            "type_line": "Artifact",
+            "cmc": 1.0,
+            "colors": [],
+            "color_identity": [],
+            "image_uris": {"normal": "https://example.test/art-a.jpg"},
+        },
+        {
+            "oracle_id": oracle_id,
+            "name": "Sol Ring",
+            "type_line": "Artifact",
+            "cmc": 1.0,
+            "colors": [],
+            "color_identity": [],
+            "image_uris": {"normal": "https://example.test/art-b.jpg"},
+        },
+    ]
+    client = FakeScryfallClient(
+        payloads_by_type={"unique_artwork": payloads, "oracle_cards": []}
+    )
+    service = ScryfallBulkService(session, client)
+
+    result = service.sync_bulk("unique_artwork")
+
+    assert result.imported_cards == 2
+    assert result.pack_type == "unique_artwork"
+    card = session.get(Card, oracle_id)
+    assert card is not None
+    assert card.image_uri == "https://example.test/art-b.jpg"
+    assert session.get(AppSetting, "scryfall_bulk_pack_type").value == "unique_artwork"
+
+
+def test_bulk_update_available_when_remote_newer(session: Session) -> None:
+    client = FakeScryfallClient(
+        payloads=[
+            {
+                "oracle_id": "11111111-1111-1111-1111-111111111111",
+                "name": "Sol Ring",
+                "type_line": "Artifact",
+                "cmc": 1.0,
+                "colors": [],
+                "color_identity": [],
+            }
+        ]
+    )
+    service = ScryfallBulkService(session, client)
+    service.sync_oracle_cards()
+
+    client.bulk_entries = [
+        {
+            "type": "oracle_cards",
+            "jsonl_download_uri": "https://example.test/oracle.jsonl.gz",
+            "updated_at": "2026-07-24T12:00:00+00:00",
+        },
+        {
+            "type": "unique_artwork",
+            "jsonl_download_uri": "https://example.test/unique.jsonl.gz",
+            "updated_at": "2026-07-24T12:00:00+00:00",
+        },
+    ]
+    status = service.check_remote_status()
+
+    assert status.update_available is True
+    assert status.remote_updated_at == "2026-07-24T12:00:00+00:00"
+    assert status.pack_type == "oracle_cards"
 
 
 def test_iter_bulk_card_payloads_reads_json_array(tmp_path: Path) -> None:

@@ -493,6 +493,36 @@ def test_set_secondary_command_zone_partner(session: Session) -> None:
     assert service.secondary_command_zone(deck.id) is None
 
 
+def test_command_zone_cards_lists_commander_first(session: Session) -> None:
+    commander = Card(
+        oracle_id="cmd", name="Ishai", is_basic_land=False, is_token=False
+    )
+    partner = Card(
+        oracle_id="prt", name="Rograkh", is_basic_land=False, is_token=False
+    )
+    filler = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    deck = Deck(name="Partners", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add_all([commander, partner, filler, deck])
+    session.flush()
+    session.add(
+        DeckCard(
+            deck_id=deck.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+        )
+    )
+    session.flush()
+
+    service = DeckService(session)
+    assert service.command_zone_cards(deck.id) == []
+
+    service.set_commander(deck.id, "cmd")
+    service.set_secondary_command_zone(deck.id, DeckCardRole.PARTNER, "prt")
+
+    assert service.command_zone_cards(deck.id) == [
+        ("cmd", "Ishai"),
+        ("prt", "Rograkh"),
+    ]
+
+
 def test_list_decks_filter_and_move(session: Session) -> None:
     a = Deck(name="Alpha", status=DeckStatus.ARMED, sort_order=0)
     b = Deck(name="Bravo", status=DeckStatus.DISMANTLED, sort_order=1)

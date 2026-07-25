@@ -26,9 +26,15 @@ from PySide6.QtWidgets import (
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services import DeckService, ImportService, ScryfallService
+from mtg_sorter.services import (
+    DeckService,
+    ImportService,
+    ScryfallService,
+    SettingsService,
+)
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
 from mtg_sorter.ui.inventory_display import format_commander_legality_tooltip
+from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, build_preview_splitter
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
     CommandZoneFields,
@@ -135,8 +141,14 @@ class DecksWidget(QWidget):
         super().__init__(parent)
         self._translator = translator
         self._status_filter: DeckStatus | None = None
+        with get_session() as session:
+            self._show_card_images = SettingsService(session).get_show_card_images()
         self._build_ui()
         self.refresh()
+
+    def set_show_card_images(self, enabled: bool) -> None:
+        self._show_card_images = enabled
+        self._command_zone_previews.setVisible(enabled)
 
     def retranslate(self) -> None:
         self._decks_group.setTitle(self._translator.t("decks.list.title"))
@@ -160,6 +172,8 @@ class DecksWidget(QWidget):
         self._move_down_button.setText(self._translator.t("decks.move_down"))
         self._search.setPlaceholderText(self._translator.t("decks.search"))
         self._filter_label.setText(self._translator.t("decks.filter.label"))
+        self._commander_preview.retranslate()
+        self._secondary_preview.retranslate()
         self._retranslate_filter()
         self.refresh()
 
@@ -209,11 +223,31 @@ class DecksWidget(QWidget):
         self._deck_list = QListWidget()
         self._deck_list.setItemDelegate(DeckListItemDelegate(self._deck_list))
         self._deck_list.currentItemChanged.connect(self._on_selection_changed)
-        decks_layout.addWidget(self._deck_list, 1)
 
         self._details = QLabel("")
         self._details.setWordWrap(True)
-        decks_layout.addWidget(self._details)
+
+        list_column = QWidget()
+        list_layout = QVBoxLayout(list_column)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self._deck_list, 1)
+        list_layout.addWidget(self._details)
+
+        self._commander_preview = CardPreviewPanel(self._translator)
+        self._secondary_preview = CardPreviewPanel(
+            self._translator, show_title=False
+        )
+        self._secondary_preview.setVisible(False)
+        self._command_zone_previews = QWidget()
+        zone_layout = QVBoxLayout(self._command_zone_previews)
+        zone_layout.setContentsMargins(0, 0, 0, 0)
+        zone_layout.addWidget(self._commander_preview, 1)
+        zone_layout.addWidget(self._secondary_preview, 1)
+        self._command_zone_previews.setVisible(self._show_card_images)
+
+        decks_layout.addWidget(
+            build_preview_splitter(list_column, self._command_zone_previews), 1
+        )
 
         self._deck_actions = QWidget()
         actions_layout = QHBoxLayout(self._deck_actions)
@@ -407,12 +441,25 @@ class DecksWidget(QWidget):
         self._armed_button.setVisible(True)
         self._dismantled_button.setVisible(False)
 
+    def _update_command_zone_previews(self, cards: list[tuple[str, str]]) -> None:
+        if cards:
+            self._commander_preview.set_card(cards[0][0], cards[0][1])
+        else:
+            self._commander_preview.clear()
+        if len(cards) > 1:
+            self._secondary_preview.set_card(cards[1][0], cards[1][1])
+            self._secondary_preview.setVisible(True)
+        else:
+            self._secondary_preview.clear()
+            self._secondary_preview.setVisible(False)
+
     def _on_selection_changed(self) -> None:
         deck_id = self._selected_deck_id()
         self._update_move_buttons()
         if deck_id is None:
             self._details.setText("")
             self._deck_actions.setVisible(False)
+            self._update_command_zone_previews([])
             return
 
         self._deck_actions.setVisible(True)
@@ -421,6 +468,7 @@ class DecksWidget(QWidget):
             deck = service.get_deck(deck_id)
             if deck is None:
                 return
+            self._update_command_zone_previews(service.command_zone_cards(deck_id))
             self._update_status_buttons(deck.status)
             card_count = sum(card.quantity for card in deck.cards)
             commander = service.commander_name(deck_id)

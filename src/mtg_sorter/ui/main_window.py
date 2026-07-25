@@ -40,15 +40,24 @@ class MainWindow(QMainWindow):
         for widget, key in zip(self._tab_widgets, self._tab_keys, strict=True):
             self._tabs.addTab(widget, self._translator.t(key))
 
-        self._inventory.changed.connect(self._optimizer.refresh_decks)
+        self._inventory.changed.connect(self._on_inventory_changed)
         self._decks.changed.connect(self._on_collection_changed)
         self._optimizer.changed.connect(self._on_optimizer_applied)
         self._browse.changed.connect(self._refresh_from_browse)
         self._browse.locale_changed.connect(self.set_locale)
+        self._browse.show_images_changed.connect(self._on_show_images_changed)
+
+    def _on_show_images_changed(self, enabled: bool) -> None:
+        self._inventory.set_show_card_images(enabled)
+        self._decks.set_show_card_images(enabled)
 
     def _refresh_from_browse(self) -> None:
         self._inventory.refresh()
         self._decks.refresh()
+        self._optimizer.refresh_decks()
+
+    def _on_inventory_changed(self) -> None:
+        self._browse.refresh_collection_stats()
         self._optimizer.refresh_decks()
 
     def _on_collection_changed(self) -> None:

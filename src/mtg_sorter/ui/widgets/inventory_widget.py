@@ -28,9 +28,15 @@ from mtg_sorter.services import (
     ImportService,
     InventoryService,
     ScryfallService,
+    SettingsService,
 )
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
 from mtg_sorter.ui.inventory_display import format_color_identity, format_inventory_decks
+from mtg_sorter.ui.widgets.card_preview import (
+    CardPreviewPanel,
+    build_preview_splitter,
+    card_images_enabled,
+)
 from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
@@ -51,7 +57,8 @@ class AddInventoryCardDialog(QDialog):
         self._selected: CardSummary | None = None
         self._quantity = 0
         self.setWindowTitle(self._translator.t("inventory.add_dialog.title"))
-        self.resize(560, 480)
+        self._preview: CardPreviewPanel | None = None
+        self.resize(880 if card_images_enabled() else 560, 520)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -66,7 +73,12 @@ class AddInventoryCardDialog(QDialog):
         layout.addWidget(self._search)
 
         self._results_list = QListWidget()
-        layout.addWidget(self._results_list)
+        self._results_list.currentRowChanged.connect(self._on_result_selected)
+        if card_images_enabled():
+            self._preview = CardPreviewPanel(self._translator)
+            layout.addWidget(build_preview_splitter(self._results_list, self._preview))
+        else:
+            layout.addWidget(self._results_list)
 
         form = QFormLayout()
         self._qty = QuantityStepper(99)
@@ -104,6 +116,15 @@ class AddInventoryCardDialog(QDialog):
         if row < 0 or row >= len(self._results):
             return None
         return self._results[row]
+
+    def _on_result_selected(self) -> None:
+        if self._preview is None:
+            return
+        card = self._selected_card()
+        if card is None:
+            self._preview.clear()
+        else:
+            self._preview.set_card(card.oracle_id, card.name)
 
     def _accept(self) -> None:
         card = self._selected_card()
@@ -189,8 +210,14 @@ class InventoryWidget(QWidget):
         self._visible_rows: list[InventorySummaryRow] = []
         self._sort_column = COL_NAME
         self._sort_ascending = True
+        with get_session() as session:
+            self._show_card_images = SettingsService(session).get_show_card_images()
         self._build_ui()
         self.refresh()
+
+    def set_show_card_images(self, enabled: bool) -> None:
+        self._show_card_images = enabled
+        self._preview.setVisible(enabled)
 
     def retranslate(self) -> None:
         self._search.setPlaceholderText(
@@ -207,6 +234,7 @@ class InventoryWidget(QWidget):
         self._submit_list_button.setText(self._translator.t("decks.submit_import"))
         self._cancel_list_button.setText(self._translator.t("decks.cancel_import"))
         self._table.setHorizontalHeaderLabels(self._header_labels())
+        self._preview.retranslate()
         self._populate_table()
 
     def _header_labels(self) -> list[str]:
@@ -268,8 +296,11 @@ class InventoryWidget(QWidget):
         header.sectionClicked.connect(self._on_header_clicked)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._table.itemSelectionChanged.connect(self._sync_edit_button)
-        collection.addWidget(self._table)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
+
+        self._preview = CardPreviewPanel(self._translator)
+        self._preview.setVisible(self._show_card_images)
+        collection.addWidget(build_preview_splitter(self._table, self._preview))
 
         self._main_layout.addWidget(self._collection_panel, 1)
 
@@ -392,7 +423,7 @@ class InventoryWidget(QWidget):
             self._table.setItem(index, COL_FREE, free_item)
             self._table.setItem(index, COL_ASSIGNED, assigned_item)
             self._table.setItem(index, COL_DECKS, decks_item)
-        self._sync_edit_button()
+        self._on_selection_changed()
 
     def _selected_row(self) -> InventorySummaryRow | None:
         selected = self._table.selectionModel().selectedRows()
@@ -403,8 +434,13 @@ class InventoryWidget(QWidget):
             return None
         return self._visible_rows[index]
 
-    def _sync_edit_button(self) -> None:
-        self._edit_button.setVisible(self._selected_row() is not None)
+    def _on_selection_changed(self) -> None:
+        row = self._selected_row()
+        self._edit_button.setVisible(row is not None)
+        if row is None:
+            self._preview.clear()
+        else:
+            self._preview.set_card(row.oracle_id, row.card_name)
 
     def _add_card(self) -> None:
         dialog = AddInventoryCardDialog(self._translator, self)

@@ -11,7 +11,7 @@ class ScryfallClient:
     def __init__(self) -> None:
         self._client = httpx.Client(
             base_url=SCRYFALL_API_BASE,
-            headers={"User-Agent": "MTG-Sorter/0.3"},
+            headers={"User-Agent": "MTG-Sorter/0.5"},
             timeout=30.0,
         )
         self._last_request_at = 0.0
@@ -56,13 +56,18 @@ class ScryfallClient:
             raise ValueError("Unexpected Scryfall bulk-data response shape")
         return data
 
-    def download_bulk_file(self, download_uri: str, destination: Path) -> None:
+    def download_file(self, url: str, destination: Path) -> None:
+        """Download any URL (API or absolute CDN) to disk with rate limiting."""
+        self._throttle()
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with self._client.stream("GET", download_uri, follow_redirects=True) as response:
+        with self._client.stream("GET", url, follow_redirects=True) as response:
             response.raise_for_status()
             with destination.open("wb") as handle:
                 for chunk in response.iter_bytes():
                     handle.write(chunk)
+
+    def download_bulk_file(self, download_uri: str, destination: Path) -> None:
+        self.download_file(download_uri, destination)
 
     def close(self) -> None:
         self._client.close()

@@ -2,9 +2,10 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.3.21)
+## Features (v0.5.0)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
+- **Card images in the UI:** preview panel beside Browse → Cards, Inventory, the deck list (commander plus partner/companion/background), Edit list, and the card pickers. Images come from the local cache and are downloaded on demand when missing; double-faced cards get a **Flip card** button. Toggle with **Browse → Overview → Show card images** (persisted); drag the splitter to resize
 - **Inventory tab:** searchable table with columns Name · Colors · Total · Free · Assigned · In decks; click headers to sort (text A–Z, numbers high→low first); Name column stretched; add/edit copy counts (cannot drop below assigned copies)
 - **Add list to collection:** full-tab paste/load (Moxfield / Archidekt / Arena / MTGO `.dek` / Moxfield URL) → review identified cards (qty from 1, remove/replace) with unresolved lines on the right (edit + recheck, or remove); confirm adds free copies
 - **Deck import:** auto-detect format — Moxfield MTGO text, Archidekt, Arena (`Commander`/`Deck` sections), MTGO `.dek` XML, or paste a public Moxfield deck URL (fetched, then review); armed/dismantled flow with −/+ quantity steppers; strips set codes including The List (`SOI-51`, `115a`, …)
@@ -16,7 +17,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
-- **Commander legality warnings (advisory):** Scryfall `legalities.commander` is cached locally; decks with banned / not legal / restricted cards show ⚠ left of Armed/Dismantled (tooltip lists them). Edit list shows ⚠ flush-right in the Name column. Never blocks import or arming. **Browse → Scryfall → Refresh Commander legalities** updates owned/list cards without a full bulk download.
+- **Commander legality warnings (advisory):** Scryfall `legalities.commander` is cached locally; decks with banned / not legal / restricted cards show ⚠ left of Armed/Dismantled (tooltip lists them). Edit list shows ⚠ flush-right in the Name column. Never blocks import or arming. **Browse → Scryfall → Refresh card data** updates legalities and image links for owned/list cards without a full bulk download.
 - Unlimited basics and tokens (never block reassembly; flagged in Browse → Cards)
 - Card lookup prefers the playable card when a token shares the same name (e.g. Darkstar Augur)
 - ILP optimizer to minimize the number of armed decks to dismantle (readable card/deck names)
@@ -24,10 +25,12 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Optimize section titles show counts (free coverage, decks to dismantle, still missing)
 - Already-armed target decks skip optimization with a clear message
 - **Optimize plan UX:** large centered status (armed / no path / N decks); expanded **Decks to dismantle** tree with per-deck cards; Confirm / Cancel to apply dismantle+arm; **Cards covered by free inventory** also lists basic lands to pull from the unlimited pool (tokens still omitted)
+- **Still missing (infeasible):** tree grouped by armed deck that holds the card; remainder under **Need to find** / **Faltan por encontrar**
 - Bilingual UI (English default, Spanish in Browse → Overview; locale persisted)
-- **Browse tab:** overview, card search (type to search — does not dump the full ~36k cache), availability (same columns as Inventory minus Colors), Scryfall bulk sync + **Refresh Commander legalities (collection)**
+- **Browse tab:** overview (language + show-images toggle), card search (type to search — does not dump the full ~36k cache), availability (same columns as Inventory minus Colors), **History** (append-only activity log: inventory + decks; filter All / Inventory / Decks), Scryfall bulk sync (oracle-cards / unique-artwork) + local image download + **Refresh card data (collection)**
 - Lightweight UI refresh after collection changes (avoids rebuilding the full card catalog)
-- Offline card resolution via local cache + optional Scryfall `oracle-cards` bulk download
+- Offline card resolution via local cache + Scryfall bulk packs (`oracle_cards` / optional `unique_artwork`)
+- **Local card images:** Browse → Scryfall can download Scryfall `normal` JPEGs for the collection or full cache (`data/images/`); back faces are saved as `{oracle_id}_back.jpg`
 - Art Series cards filtered from bulk import and Browse catalog
 
 ## Requirements
@@ -62,7 +65,7 @@ Or:
 python -m mtg_sorter
 ```
 
-The SQLite database is created at `data/mtg_sorter.db` (gitignored).
+The SQLite database is created at `data/mtg_sorter.db` (gitignored). Optional card images go under `data/images/` (also gitignored).
 
 ## Tests
 
@@ -70,14 +73,15 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored).
 uv run pytest
 ```
 
-89 tests passing.
+114 tests passing.
 
 ## First-time setup
 
 1. Run the app.
 2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
-3. Import decks from the **Decks** tab (**Import new list**).
-4. Optional: **Browse → Overview** → switch language to Spanish (persisted).
+3. Optional: **Use unique-artwork** for better default art; **Download images (collection)** for local JPEGs of owned/list cards.
+4. Import decks from the **Decks** tab (**Import new list**).
+5. Optional: **Browse → Overview** → switch language to Spanish, or uncheck **Show card images** (both persisted).
 
 ## Importing a deck
 
@@ -111,6 +115,7 @@ Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL
 5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
 6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
 7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
+8. The panel on the right shows the selected card. Missing images are fetched from Scryfall in the background and cached; drag the splitter to resize it.
 
 ## Optimizer
 
@@ -119,40 +124,42 @@ Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL
 3. Open **Optimize**, pick a **dismantled** target deck (type to filter by deck or commander name), and run the plan.
 4. A large centered status shows the outcome (already armed, no viable path, inventory-only, or how many decks to dismantle).
 5. **Cards covered by free inventory** lists free copies used (compact), plus basic lands to take from the unlimited pool. **Decks to dismantle** is the main panel: tree of donor decks with the cards each contributes toward the target.
-6. **Still missing** appears only when the plan is infeasible.
+6. **Still missing** appears only when the plan is infeasible. Cards still held by armed decks are grouped under those deck names; anything not in free inventory or any armed deck is listed under **Need to find**.
 7. **Confirm plan** dismantles the chosen armed decks and arms the target; **Cancel** clears the plan without changing the database.
 8. If multiple optimal dismantle sets exist, choose one from the dropdown before confirming.
 
 ## Offline Scryfall cache
 
 1. Open **Browse → Scryfall**.
-2. Click **Download oracle-cards bulk pack** (one-time, ~170 MB) for offline name resolution.
-3. After sync, imports and lookups work offline for cached cards.
-4. Individual API lookups are also saved automatically when online.
-5. **Refresh Commander legalities (collection)** — updates format legality for cards you own or have on deck lists (batched Scryfall API; much faster than a full bulk re-download). Use this when banlists change or after upgrading so ⚠ warnings appear on decks.
-6. **Browse → Cards:** type a name to search; the UI does not load the entire cached catalog at once.
+2. Click **Download oracle-cards bulk pack** (one-time, ~170 MB) for offline name resolution. When Scryfall publishes newer data, the button becomes **Update**.
+3. Optional: **Use unique-artwork** (~250 MB) for better default card art (still one row per `oracle_id`).
+4. Optional: **Download images (collection)** or **Download images (full cache)** — saves Scryfall `normal` JPEGs under `data/images/{oracle_id}.jpg` (skips files already on disk). Bulk download only fetches front faces; back faces arrive on demand when you flip a card.
+5. After sync, imports and lookups work offline for cached cards.
+6. Individual API lookups are also saved automatically when online.
+7. **Refresh card data (collection)** — updates Commander legality and image links for cards you own or have on deck lists (batched Scryfall API; much faster than a full bulk re-download). Use this when banlists change, or after upgrading so ⚠ warnings and back-face images work.
+8. **Browse → Cards:** type a name to search; the UI does not load the entire cached catalog at once. Selecting a row shows the card image on the right.
 
 ## Project layout
 
 ```
 src/mtg_sorter/
   algorithms/   # ILP deck dismantle optimizer, card helpers (incl. legality)
-  api/          # Scryfall + Moxfield HTTP clients
+  api/          # Scryfall + Moxfield HTTP clients (bulk + CDN image download)
   database/     # SQLite session bootstrap (+ column migrates)
   i18n/         # EN/ES translations
-  models/       # SQLAlchemy models (Card.commander_legality, …)
-  services/     # Business logic (decklist_parser, import, legality refresh, …)
-  ui/           # PySide6 desktop UI (+ inventory_display helpers)
+  models/       # SQLAlchemy models (ActivityEvent, Card.commander_legality/image_uri_back, …)
+  services/     # Business logic (activity, bulk sync, card images, import, …)
+  ui/           # PySide6 desktop UI (+ inventory_display helpers, card_preview panel)
 tests/
   fixtures/     # Sample exports (kellan, arena, archidekt, mtgo .dek)
 ```
 
 ## Continuity
 
-See [`handoff.md`](handoff.md) for full project state (**v0.3.21**, session closed 2026-07-24).
+See [`handoff.md`](handoff.md) for full project state (**v0.5.0**, session closed 2026-07-24).
 
-**Done this session (v0.3.18 → v0.3.21):** The List / alphanumeric collectors; multi-format import (Archidekt, Arena, MTGO `.dek`, Moxfield URL); Commander format legality warnings (⚠, non-blocking) + collection legality refresh button.
+**Done (v0.5.0):** card image previews across Browse → Cards, Inventory, deck detail, Edit list and the card pickers; on-demand download with an LRU pixmap cache; persisted show/hide toggle and splitter width; `Card.image_uri_back` plus a **Flip card** button for double-faced cards.
 
-**Next / pending:** Browse **Historial** tab (designed, not built); game-rule Commander checks (color identity / Partner); tokens in Optimize; manual print conflicts; packaging; Alembic; repositories; advanced optimizer options.
+**Next recommended:** backlog — Commander game rules validation, tokens in Optimize, multi-format export, packaging, Alembic.
 
 Note: `handoff.md` is gitignored (local continuity); README is the tracked summary.
