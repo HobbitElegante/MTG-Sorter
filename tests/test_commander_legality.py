@@ -174,11 +174,16 @@ def test_deck_commander_rule_issues_from_cached_card_data(session: Session) -> N
     session.flush()
 
     issues = DeckService(session).commander_rule_issues(deck.id)
+    color_issues = [
+        issue
+        for issue in issues
+        if issue.kind.value == "color_identity"
+    ]
 
     # Basics are an unlimited shared pool, so the Forest is not flagged.
-    assert [issue.name for issue in issues] == ["Cultivate"]
-    assert issues[0].colors == "G"
-    assert issues[0].allowed == "WBR"
+    assert [issue.name for issue in color_issues] == ["Cultivate"]
+    assert color_issues[0].colors == "G"
+    assert color_issues[0].allowed == "WBR"
 
 
 def test_deck_commander_rule_issues_flag_illegal_partner(session: Session) -> None:
@@ -225,7 +230,11 @@ def test_deck_commander_rule_issues_flag_illegal_partner(session: Session) -> No
     )
     session.flush()
 
-    issues = DeckService(session).commander_rule_issues(deck.id)
+    issues = [
+        issue
+        for issue in DeckService(session).commander_rule_issues(deck.id)
+        if issue.kind.value == "pairing"
+    ]
 
     assert len(issues) == 1
     assert issues[0].name == "Plain Legend"

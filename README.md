@@ -19,11 +19,14 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Command zone: commander plus optional Partner / Companion / Background
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
 - Search, filter by status, and reorder decks
-- Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity of the 99, Partner / Background / Companion pairings)
+- Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity, Partner / Background / Companion pairings, singleton with printed exceptions, 100-card list size)
+- Lock / unlock a deck so Optimize will not dismantle it (🔒 in the list)
 
 ### Optimize
 
 - ILP plan: minimize how many **armed** decks to dismantle to assemble a target
+- **Assembly sequence:** add dismantled targets one by one; each step shows whether the plan is viable (or which cards are still missing), simulating earlier confirms
+- **Locked decks** (Decks tab, 🔒): Optimize will not dismantle them; cards they hold still appear under Still missing
 - Equally optimal plans are ordered so the one drawing the most cards from a single donor comes first; every plan stays selectable
 - Confirm / cancel to apply; searchable target picker; clear status when already armed or infeasible
 - Free inventory + unlimited basics count toward coverage; tokens are ignored (not stored on lists)
@@ -35,16 +38,14 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Browse: card search, availability, activity **History** (filter, load more, CSV, undo last)
 - UI in English or Spanish (persisted)
 
-## Download (friends)
+## Download
 
-Prebuilt binaries (when a version tag has been published):
-
-**https://github.com/HobbitElegante/MTG-Sorter/releases/latest**
+Prebuilt binaries: **https://github.com/HobbitElegante/MTG-Sorter/releases/latest**
 
 - Linux: `.AppImage` — `chmod +x` then run.
 - Windows: `.zip` — unzip and run `MTG-Sorter.exe`.
 
-Developers still use `uv run mtg-sorter` below.
+Local development setup is below.
 
 ## Requirements
 
@@ -86,23 +87,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-180 tests passing.
-
-## Building a package
-
-Local builds (optional; CI publishes assets on version tags):
-
-```bash
-# Linux AppImage (~300 MB)
-./scripts/build_linux.sh
-# → dist/MTG-Sorter-x86_64.AppImage
-
-# Windows (run on Windows or CI)
-.\scripts\build_windows.ps1
-# → dist\MTG-Sorter\MTG-Sorter.exe + dist\MTG-Sorter-windows-x64.zip
-```
-
-To **publish** a GitHub Release for friends: bump version → push `main` → `git tag vX.Y.Z` → `git push origin vX.Y.Z`. Details: [`packaging/README.md`](packaging/README.md). Extra: `uv sync --extra packaging`.
+187 tests passing.
 
 ## First-time setup
 
@@ -151,14 +136,13 @@ Tip: **Edit list** keeps the list size fixed (open slots only). To add or remove
 
 ## Optimizer
 
-1. Import decks and mark currently assembled ones as **Armed**.
+1. Import decks and mark currently assembled ones as **Armed**. Optionally **Lock** decks you never want Optimize to dismantle.
 2. For dismantled decks, register available copies during import or while editing.
-3. Open **Optimize**, pick a **dismantled** target deck (type to filter by deck or commander name), and run the plan.
-4. A large centered status shows the outcome (already armed, no viable path, inventory-only, or how many decks to dismantle).
-5. **Cards covered by free inventory** lists free copies used (compact), plus basic lands to take from the unlimited pool. **Decks to dismantle** is the main panel: tree of donor decks with the cards each contributes toward the target.
-6. **Still missing** appears only when the plan is infeasible. Cards still held by armed decks are grouped under those deck names; anything not in free inventory or any armed deck is listed under **Need to find**.
-7. **Confirm plan** dismantles the chosen armed decks and arms the target; **Cancel** clears the plan without changing the database.
-8. If multiple optimal dismantle sets exist, choose one from the dropdown before confirming.
+3. Open **Optimize**, search a dismantled deck, and click **Add to plan** (repeat to build a sequence).
+4. The sequence list shows whether each step is viable or still missing cards (later steps assume earlier ones were confirmed).
+5. Select a step to see free inventory, decks to dismantle, or Still missing / Need to find — same detail panels as a single plan.
+6. **Confirm plan** applies the selected viable step; **Cancel** clears the whole sequence.
+7. If multiple optimal dismantle sets exist for a step, choose one from the dropdown before confirming.
 
 ## Offline Scryfall cache
 
@@ -190,6 +174,6 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.7.0)
+## Latest (v0.7.0+)
 
-Three additions, all opt-in or advisory. Deck lists now get **Commander rule warnings** — cards outside the commander's color identity and illegal Partner / Background / Companion pairings — sharing the same non-blocking ⚠ as format legality. **Edition tracking** is a setting in Browse → Overview: off by default, it adds an Edition column, lets you assign a set code per physical copy, and offers a skippable prompt for the copies you moved after rebuilding a deck. **Optimize** now sorts equally optimal plans so the one taking the most cards from a single donor deck comes first, without hiding the alternatives. 180 tests.
+Commander rule warnings cover **singleton** (basics, “any number of cards named…”, and “up to N” caps like Seven Dwarves) and **list size** (100 cards; Companion outside). Decks can be **locked** (🔒) so Optimize will not dismantle them. Optimize builds an **assembly sequence**: add targets one by one, each with its own viability / missing-cards panel, simulating prior steps. The target picker looks like a committed selection (not free text) once a deck is chosen; clear resets the field. See also edition tracking and Optimize concentration tie-break from v0.7.0.

@@ -50,10 +50,11 @@ from mtg_sorter.ui.widgets.import_dialogs import (
 DECK_NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 DECK_STATUS_ROLE = Qt.ItemDataRole.UserRole + 2
 DECK_WARNING_ROLE = Qt.ItemDataRole.UserRole + 3
+DECK_LOCKED_ROLE = Qt.ItemDataRole.UserRole + 4
 
 
 class DeckListItemDelegate(QStyledItemDelegate):
-    """Paint deck name on the left; optional ⚠ then [Armed|Dismantled] flush right."""
+    """Paint deck name on the left; optional 🔒 / ⚠ then [Armed|Dismantled] right."""
 
     def paint(
         self,
@@ -87,12 +88,19 @@ class DeckListItemDelegate(QStyledItemDelegate):
         name = str(index.data(DECK_NAME_ROLE) or "")
         status = str(index.data(DECK_STATUS_ROLE) or "")
         warning = str(index.data(DECK_WARNING_ROLE) or "")
+        locked = str(index.data(DECK_LOCKED_ROLE) or "")
         metrics = option.fontMetrics
         padding = 8
         gap = 6
         status_width = metrics.horizontalAdvance(status)
         warning_width = metrics.horizontalAdvance(warning) if warning else 0
-        trailing = status_width + (gap + warning_width if warning else 0) + padding
+        locked_width = metrics.horizontalAdvance(locked) if locked else 0
+        icons_width = 0
+        if locked:
+            icons_width += locked_width
+        if warning:
+            icons_width += (gap if icons_width else 0) + warning_width
+        trailing = status_width + (gap + icons_width if icons_width else 0) + padding
         rect = option.rect.adjusted(padding, 0, -padding, 0)
         name_rect = QRect(
             rect.left(),
@@ -107,9 +115,11 @@ class DeckListItemDelegate(QStyledItemDelegate):
             status_width,
             rect.height(),
         )
+        icon_x = cursor_x
         if warning:
+            icon_x -= gap + warning_width
             warn_rect = QRect(
-                cursor_x - gap - warning_width,
+                icon_x,
                 rect.top(),
                 warning_width,
                 rect.height(),
@@ -118,6 +128,19 @@ class DeckListItemDelegate(QStyledItemDelegate):
                 warn_rect,
                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
                 warning,
+            )
+        if locked:
+            icon_x -= gap + locked_width
+            lock_rect = QRect(
+                icon_x,
+                rect.top(),
+                locked_width,
+                rect.height(),
+            )
+            painter.drawText(
+                lock_rect,
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                locked,
             )
 
         elided = metrics.elidedText(
@@ -175,6 +198,7 @@ class DecksWidget(QWidget):
         self._export_button.setText(self._translator.t("decks.export_list"))
         self._move_up_button.setText(self._translator.t("decks.move_up"))
         self._move_down_button.setText(self._translator.t("decks.move_down"))
+        self._lock_button.setText(self._translator.t("decks.lock"))
         self._search.setPlaceholderText(self._translator.t("decks.search"))
         self._filter_label.setText(self._translator.t("decks.filter.label"))
         self._commander_preview.retranslate()
@@ -289,17 +313,20 @@ class DecksWidget(QWidget):
             self._translator.t("decks.set_dismantled")
         )
         self._export_button = QPushButton(self._translator.t("decks.export_list"))
+        self._lock_button = QPushButton(self._translator.t("decks.lock"))
         self._armed_button.clicked.connect(lambda: self._set_status(DeckStatus.ARMED))
         self._dismantled_button.clicked.connect(
             lambda: self._set_status(DeckStatus.DISMANTLED)
         )
         self._export_button.clicked.connect(self._export_selected_deck)
+        self._lock_button.clicked.connect(self._toggle_lock_selected)
         actions_layout.addWidget(self._edit_button)
         actions_layout.addWidget(self._update_list_button)
         actions_layout.addWidget(self._edit_details_button)
         actions_layout.addWidget(self._export_button)
         actions_layout.addWidget(self._delete_button)
         actions_layout.addStretch()
+        actions_layout.addWidget(self._lock_button)
         actions_layout.addWidget(self._armed_button)
         actions_layout.addWidget(self._dismantled_button)
         decks_layout.addWidget(self._deck_actions)
@@ -435,19 +462,29 @@ class DecksWidget(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, deck.id)
                 item.setData(DECK_NAME_ROLE, name_label)
                 item.setData(DECK_STATUS_ROLE, status_label)
+                if deck.is_locked:
+                    item.setData(
+                        DECK_LOCKED_ROLE,
+                        self._translator.t("decks.locked.icon"),
+                    )
+                else:
+                    item.setData(DECK_LOCKED_ROLE, "")
+                tip_parts: list[str] = []
+                if deck.is_locked:
+                    tip_parts.append(self._translator.t("decks.locked.tooltip"))
                 if issues or rule_issues:
                     item.setData(
                         DECK_WARNING_ROLE,
                         self._translator.t("decks.legality.warning"),
                     )
-                    item.setToolTip(
+                    tip_parts.append(
                         format_deck_warning_tooltip(
                             issues, rule_issues, self._translator
                         )
                     )
                 else:
                     item.setData(DECK_WARNING_ROLE, "")
-                    item.setToolTip("")
+                item.setToolTip("\n\n".join(tip_parts))
                 self._deck_list.addItem(item)
                 if deck.id == selected_id:
                     self._deck_list.setCurrentItem(item)
@@ -480,6 +517,24 @@ class DecksWidget(QWidget):
         self._armed_button.setVisible(True)
         self._dismantled_button.setVisible(False)
 
+    def _update_lock_button(self, locked: bool) -> None:
+        self._lock_button.setText(
+            self._translator.t("decks.unlock" if locked else "decks.lock")
+        )
+
+    def _toggle_lock_selected(self) -> None:
+        deck_id = self._selected_deck_id()
+        if deck_id is None:
+            return
+        with get_session() as session:
+            service = DeckService(session)
+            deck = service.get_deck(deck_id)
+            if deck is None:
+                return
+            service.set_locked(deck, not deck.is_locked)
+        self.refresh()
+        self.changed.emit()
+
     def _update_command_zone_previews(self, cards: list[tuple[str, str]]) -> None:
         if cards:
             self._commander_preview.set_card(cards[0][0], cards[0][1])
@@ -509,6 +564,7 @@ class DecksWidget(QWidget):
                 return
             self._update_command_zone_previews(service.command_zone_cards(deck_id))
             self._update_status_buttons(deck.status)
+            self._update_lock_button(deck.is_locked)
             card_count = sum(card.quantity for card in deck.cards)
             commander = service.commander_name(deck_id)
             secondary = service.secondary_command_zone(deck_id)

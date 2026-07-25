@@ -2,6 +2,8 @@
 
 Build portable binaries with **PyInstaller** (`onedir`). Linux wraps the folder in an **AppImage**. Windows produces `dist/MTG-Sorter/MTG-Sorter.exe` and zips it for distribution.
 
+Published builds appear on the repository **Releases** page when a version tag is pushed.
+
 ## Requirements
 
 - Python 3.13+ and [uv](https://docs.astral.sh/uv/)
@@ -40,9 +42,7 @@ Output:
 
 ## Publishing a GitHub Release
 
-Friends download from: https://github.com/HobbitElegante/MTG-Sorter/releases/latest
-
-CI builds and publishes automatically when you **push a version tag**. You do not need to upload binaries by hand.
+CI builds and publishes automatically when you **push a version tag**. Binaries are listed on the release for that tag (and at `/releases/latest`).
 
 ### Checklist (each version)
 
@@ -59,8 +59,7 @@ CI builds and publishes automatically when you **push a version tag**. You do no
    ```
 5. Open the repo **Actions** tab — wait for the **Release** workflow (tests + Linux AppImage + Windows zip). Often ~10–20 minutes.
 6. Open **Releases** — `v0.7.1` should list the AppImage and the Windows zip.
-7. Optional: edit the release notes for your friends.
-8. Share: https://github.com/HobbitElegante/MTG-Sorter/releases/latest
+7. Optional: edit the release notes.
 
 ### If the workflow fails
 

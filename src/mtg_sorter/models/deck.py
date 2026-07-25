@@ -1,4 +1,4 @@
-from sqlalchemy import Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mtg_sorter.models.base import Base
@@ -16,6 +16,7 @@ class Deck(Base):
         nullable=False,
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     cards: Mapped[list["DeckCard"]] = relationship(
         back_populates="deck",

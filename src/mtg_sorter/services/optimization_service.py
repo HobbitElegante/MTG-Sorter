@@ -103,6 +103,8 @@ class AssemblyPlan:
     card_names: dict[str, str]
     deck_names: dict[str, str]
     already_armed: bool = False
+    # Armed decks including locked — used only to explain “still missing”.
+    visibility_supplies: dict[str, dict[str, int]] | None = None
 
     def cards_taken_from_solution(
         self, solution: frozenset[str]
@@ -122,19 +124,53 @@ class AssemblyPlan:
         Returns ``(by_deck, need_to_find)`` where ``by_deck`` maps armed deck
         ids to cards they could cover from ``still_missing``, and
         ``need_to_find`` is the remainder not present in free inventory or
-        any armed deck.
+        any armed deck. Locked decks appear here even though they are not
+        dismantle candidates.
         """
         if not self.still_missing:
             return {}, {}
-        all_armed = frozenset(self.deck_supplies.keys())
+        supplies = self.visibility_supplies or self.deck_supplies
+        all_armed = frozenset(supplies.keys())
         by_deck = allocate_solution_cards(
             self.still_missing,
-            self.deck_supplies,
+            supplies,
             self.deck_names,
             all_armed,
         )
         need_to_find = remaining_after_allocation(self.still_missing, by_deck)
         return by_deck, need_to_find
+
+
+def simulate_apply_plan(
+    free: dict[str, int],
+    donor_supplies: dict[int, dict[str, int]],
+    visibility_supplies: dict[int, dict[str, int]],
+    target_deck_id: int,
+    requirements: dict[str, int],
+    solution: frozenset[str],
+) -> tuple[dict[str, int], dict[int, dict[str, int]], dict[int, dict[str, int]]]:
+    """Advance count-level inventory as if Confirm had run for one step."""
+    free = dict(free)
+    donors = {deck_id: dict(cards) for deck_id, cards in donor_supplies.items()}
+    visible = {
+        deck_id: dict(cards) for deck_id, cards in visibility_supplies.items()
+    }
+    for deck_key in solution:
+        deck_id = int(deck_key)
+        supply = donors.pop(deck_id, {})
+        visible.pop(deck_id, None)
+        for card_id, qty in supply.items():
+            free[card_id] = free.get(card_id, 0) + qty
+    for card_id, qty in requirements.items():
+        remaining = free.get(card_id, 0) - qty
+        if remaining > 0:
+            free[card_id] = remaining
+        else:
+            free.pop(card_id, None)
+    req = dict(requirements)
+    donors[target_deck_id] = req
+    visible[target_deck_id] = dict(req)
+    return free, donors, visible
 
 
 class OptimizationService:
@@ -146,6 +182,49 @@ class OptimizationService:
         self._copies = CopyRepository(session)
 
     def plan_assembly(self, target_deck_id: int) -> AssemblyPlan:
+        free = self._inventory.free_counts()
+        donors = self._decks.armed_deck_supplies(
+            exclude_deck_id=target_deck_id, include_locked=False
+        )
+        visible = self._decks.armed_deck_supplies(
+            exclude_deck_id=target_deck_id, include_locked=True
+        )
+        return self._plan_from_state(target_deck_id, free, donors, visible)
+
+    def plan_assembly_sequence(
+        self,
+        target_deck_ids: list[int],
+        chosen_solutions: dict[int, frozenset[str]] | None = None,
+    ) -> list[AssemblyPlan]:
+        """Plan each target in order, simulating prior successful applies.
+
+        Infeasible or already-armed steps do not change the simulated state, so
+        later targets still show what is missing from the same inventory.
+        """
+        chosen = chosen_solutions or {}
+        free = self._inventory.free_counts()
+        donors = self._decks.armed_deck_supplies(include_locked=False)
+        visible = self._decks.armed_deck_supplies(include_locked=True)
+        plans: list[AssemblyPlan] = []
+        for target_id in target_deck_ids:
+            plan = self._plan_from_state(target_id, free, donors, visible)
+            plans.append(plan)
+            if plan.already_armed or plan.still_missing or not plan.result.solutions:
+                continue
+            solution = chosen.get(target_id, plan.result.solutions[0])
+            requirements = self._decks.deck_requirements(target_id)
+            free, donors, visible = simulate_apply_plan(
+                free, donors, visible, target_id, requirements, solution
+            )
+        return plans
+
+    def _plan_from_state(
+        self,
+        target_deck_id: int,
+        free: dict[str, int],
+        donor_supplies: dict[int, dict[str, int]],
+        visibility_supplies: dict[int, dict[str, int]],
+    ) -> AssemblyPlan:
         target = self._decks.get_deck(target_deck_id)
         if target is None:
             raise ValueError(f"Deck {target_deck_id} not found")
@@ -170,8 +249,6 @@ class OptimizationService:
             )
 
         requirements = self._decks.deck_requirements(target_deck_id)
-        free = self._inventory.free_counts()
-
         needs: dict[str, int] = {}
         free_used: dict[str, int] = {}
         for card_id, required in requirements.items():
@@ -183,28 +260,36 @@ class OptimizationService:
             if remaining > 0:
                 needs[card_id] = remaining
 
-        # Basics are unlimited: always "take from the pool" and show in the
-        # free-inventory section so reassembly knows how many to pull.
         for card_id, qty in self._decks.deck_basic_lands(target_deck_id).items():
             if qty > 0:
                 free_used[card_id] = qty
 
-        armed = self._decks.armed_deck_supplies(exclude_deck_id=target_deck_id)
         supplies: dict[str, DeckSupply] = {}
         deck_names: dict[str, str] = {}
         deck_supplies: dict[str, dict[str, int]] = {}
-        for deck_id, cards in armed.items():
-            deck = self._decks.get_deck(deck_id)
-            if deck is None:
+        for deck_id, cards in donor_supplies.items():
+            if deck_id == target_deck_id:
                 continue
+            deck = self._decks.get_deck(deck_id)
+            name = deck.name if deck is not None else str(deck_id)
             deck_key = str(deck_id)
             supplies[deck_key] = DeckSupply(
                 deck_id=deck_key,
-                deck_name=deck.name,
+                deck_name=name,
                 cards=cards,
             )
-            deck_names[deck_key] = deck.name
+            deck_names[deck_key] = name
             deck_supplies[deck_key] = dict(cards)
+
+        visibility: dict[str, dict[str, int]] = {}
+        for deck_id, cards in visibility_supplies.items():
+            if deck_id == target_deck_id:
+                continue
+            deck = self._decks.get_deck(deck_id)
+            name = deck.name if deck is not None else str(deck_id)
+            deck_key = str(deck_id)
+            deck_names[deck_key] = name
+            visibility[deck_key] = dict(cards)
 
         result = find_all_optimal_solutions(needs, supplies)
         result = replace(
@@ -224,6 +309,8 @@ class OptimizationService:
         card_ids = set(free_used) | set(result.unmet_needs) | set(needs)
         for cards in deck_supplies.values():
             card_ids.update(cards)
+        for cards in visibility.values():
+            card_ids.update(cards)
         card_names = self._card_names(card_ids)
 
         return AssemblyPlan(
@@ -237,6 +324,7 @@ class OptimizationService:
             solution_labels=labels,
             card_names=card_names,
             deck_names=deck_names,
+            visibility_supplies=visibility,
         )
 
     def apply_assembly_plan(
@@ -265,6 +353,8 @@ class OptimizationService:
             deck = self._decks.get_deck(deck_id)
             if deck is None:
                 raise ValueError(f"Deck {deck_id} not found")
+            if deck.is_locked:
+                raise ValueError(f"Deck {deck.name} is locked")
             if deck.status != DeckStatus.ARMED:
                 raise ValueError(f"Deck {deck.name} is not armed")
             donor_names.append(deck.name)

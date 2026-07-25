@@ -2,8 +2,10 @@
 
 Scryfall format legality lives in :mod:`card_utils`; this module covers the
 rules a legal-in-format card can still break inside a specific deck: color
-identity of the 99 and whether the second command-zone card is a legal
-partner/background/companion for the commander.
+identity of the 99, whether the second command-zone card is a legal
+partner/background/companion, singleton copies (basics, “any number of cards
+named …”, and “up to N cards named …” with a quantity cap), and the 100-card
+list size (Companion sits outside that total).
 
 Everything here is pure: callers pass rows already read from the local cache.
 """
@@ -37,6 +39,11 @@ class CommanderRuleKind(StrEnum):
     COLOR_IDENTITY = "color_identity"
     PAIRING = "pairing"
     MISSING_DATA = "missing_data"
+    SINGLETON = "singleton"
+    DECK_SIZE = "deck_size"
+
+
+COMMANDER_DECK_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,8 @@ class CommanderCard:
     color_identity: str | None
     oracle_text: str | None
     type_line: str | None
+    quantity: int = 1
+    is_basic_land: bool = False
 
 
 @dataclass(frozen=True)
@@ -58,6 +67,7 @@ class CommanderRuleIssue:
     colors: str = ""
     allowed: str = ""
     commander: str = ""
+    quantity: int = 0
 
 
 # Oracle text keeps reminder text, so anchor on the start of a line and stop
@@ -69,6 +79,28 @@ _CHOOSE_BACKGROUND_RE = re.compile(r"^Choose a Background", re.MULTILINE | re.IG
 _FRIENDS_FOREVER_RE = re.compile(r"^Friends forever", re.MULTILINE | re.IGNORECASE)
 _DOCTORS_COMPANION_RE = re.compile(r"^Doctor's companion", re.MULTILINE | re.IGNORECASE)
 _COMPANION_RE = re.compile(r"^Companion\s*[—-]", re.MULTILINE)
+_ANY_NUMBER_NAMED_RE = re.compile(
+    r"A deck can have any number of cards named",
+    re.IGNORECASE,
+)
+_UP_TO_NAMED_RE = re.compile(
+    r"A deck can have up to ([a-z0-9]+) cards? named",
+    re.IGNORECASE,
+)
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
 
 
 def partner_abilities(oracle_text: str | None) -> frozenset[PartnerAbility]:
@@ -193,6 +225,39 @@ def is_legal_pairing(commander: CommanderCard, secondary: CommanderCard) -> bool
     return False
 
 
+def deck_list_size(cards: list[CommanderCard]) -> int:
+    """Cards that count toward the 100: everything except Companion (outside)."""
+    return sum(
+        max(0, card.quantity)
+        for card in cards
+        if card.role != ROLE_COMPANION
+    )
+
+
+def allows_any_number_named(oracle_text: str | None) -> bool:
+    """True for Relentless Rats–style unlimited copies."""
+    return singleton_max_copies(oracle_text) is None
+
+
+def singleton_max_copies(oracle_text: str | None) -> int | None:
+    """Maximum copies of this card name allowed by printed text.
+
+    Returns ``1`` for a normal singleton card, ``None`` when the card allows
+    any number of copies, or ``N`` for “up to N cards named …” (Seven Dwarves).
+    """
+    if not oracle_text:
+        return 1
+    if _ANY_NUMBER_NAMED_RE.search(oracle_text):
+        return None
+    match = _UP_TO_NAMED_RE.search(oracle_text)
+    if match is None:
+        return 1
+    token = match.group(1).casefold()
+    if token.isdigit():
+        return max(1, int(token))
+    return _NUMBER_WORDS.get(token, 1)
+
+
 def evaluate_deck(cards: list[CommanderCard]) -> list[CommanderRuleIssue]:
     """Advisory rule issues for one deck list.
 
@@ -207,6 +272,48 @@ def evaluate_deck(cards: list[CommanderCard]) -> list[CommanderRuleIssue]:
         return []
 
     issues: list[CommanderRuleIssue] = []
+
+    size = deck_list_size(cards)
+    if size != COMMANDER_DECK_SIZE:
+        issues.append(
+            CommanderRuleIssue(
+                kind=CommanderRuleKind.DECK_SIZE,
+                name=str(size),
+                allowed=str(COMMANDER_DECK_SIZE),
+                quantity=size,
+            )
+        )
+
+    qty_by_oracle: dict[str, tuple[str, int, int | None]] = {}
+    for card in cards:
+        if card.is_basic_land or card.role == ROLE_COMPANION:
+            continue
+        cap = singleton_max_copies(card.oracle_text)
+        prev = qty_by_oracle.get(card.oracle_id)
+        if prev is None:
+            qty_by_oracle[card.oracle_id] = (card.name, card.quantity, cap)
+        else:
+            prev_name, prev_qty, prev_cap = prev
+            if prev_cap is None or cap is None:
+                merged_cap: int | None = None
+            else:
+                merged_cap = max(prev_cap, cap)
+            qty_by_oracle[card.oracle_id] = (
+                prev_name,
+                prev_qty + card.quantity,
+                merged_cap,
+            )
+    for name, qty, cap in qty_by_oracle.values():
+        if cap is None or qty <= cap:
+            continue
+        issues.append(
+            CommanderRuleIssue(
+                kind=CommanderRuleKind.SINGLETON,
+                name=name,
+                quantity=qty,
+                allowed=str(cap),
+            )
+        )
 
     secondary = next(
         (
@@ -229,6 +336,8 @@ def evaluate_deck(cards: list[CommanderCard]) -> list[CommanderRuleIssue]:
     allowed_label = format_identity(allowed)
     for card in cards:
         if card.role in (ROLE_COMMANDER, ROLE_PARTNER, ROLE_BACKGROUND):
+            continue
+        if card.is_basic_land:
             continue
         if card.color_identity is None:
             issues.append(

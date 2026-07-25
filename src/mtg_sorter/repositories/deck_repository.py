@@ -51,10 +51,17 @@ class DeckRepository:
             self._session.scalar(select(func.count()).select_from(DeckCard)) or 0
         )
 
-    def list_armed(self, *, exclude_deck_id: int | None = None) -> list[Deck]:
+    def list_armed(
+        self,
+        *,
+        exclude_deck_id: int | None = None,
+        include_locked: bool = True,
+    ) -> list[Deck]:
         query = select(Deck).where(Deck.status == DeckStatus.ARMED)
         if exclude_deck_id is not None:
             query = query.where(Deck.id != exclude_deck_id)
+        if not include_locked:
+            query = query.where(Deck.is_locked.is_(False))
         return list(self._session.scalars(query).all())
 
     def role_card_name(self, deck_id: int, role: DeckCardRole) -> str | None:
@@ -219,32 +226,50 @@ class DeckRepository:
 
     def commander_rule_rows(
         self, deck_id: int
-    ) -> list[tuple[str, str, str, str | None, str | None, str | None]]:
-        """Fields needed to check color identity and command-zone pairings.
+    ) -> list[tuple[str, str, str, int, str | None, str | None, str | None, bool]]:
+        """Fields needed for Commander game-rule checks.
 
-        Basics are excluded: the app treats them as an unlimited shared pool,
-        so flagging them would be noise the user cannot act on.
+        Includes basics (they count toward deck size) and per-row quantity.
+        Color-identity / singleton logic skips basics in :func:`evaluate_deck`.
         """
         rows = self._session.execute(
             select(
                 Card.oracle_id,
                 Card.name,
                 DeckCard.role,
+                DeckCard.quantity,
                 Card.color_identity,
                 Card.oracle_text,
                 Card.type_line,
+                Card.is_basic_land,
             )
             .join(DeckCard, DeckCard.card_id == Card.oracle_id)
             .where(
                 DeckCard.deck_id == deck_id,
                 DeckCard.role != DeckCardRole.TOKEN,
-                Card.is_basic_land.is_(False),
             )
-            .distinct()
         ).all()
         return [
-            (oracle_id, name, str(role), color_identity, oracle_text, type_line)
-            for oracle_id, name, role, color_identity, oracle_text, type_line in rows
+            (
+                oracle_id,
+                name,
+                str(role),
+                int(quantity),
+                color_identity,
+                oracle_text,
+                type_line,
+                bool(is_basic_land),
+            )
+            for (
+                oracle_id,
+                name,
+                role,
+                quantity,
+                color_identity,
+                oracle_text,
+                type_line,
+                is_basic_land,
+            ) in rows
         ]
 
     def deck_names_for_card(self, oracle_id: str) -> tuple[str, ...]:

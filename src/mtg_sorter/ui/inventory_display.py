@@ -102,6 +102,21 @@ def format_commander_rules_tooltip(
                     commander=issue.commander,
                 )
             )
+        elif issue.kind is CommanderRuleKind.SINGLETON:
+            lines.append(
+                translator.t("decks.rules.singleton").format(
+                    name=issue.name,
+                    qty=issue.quantity,
+                    limit=issue.allowed or "1",
+                )
+            )
+        elif issue.kind is CommanderRuleKind.DECK_SIZE:
+            lines.append(
+                translator.t("decks.rules.deck_size").format(
+                    count=issue.name,
+                    expected=issue.allowed or "100",
+                )
+            )
         else:
             lines.append(
                 translator.t("decks.rules.missing_data").format(name=issue.name)

@@ -131,3 +131,4 @@ def test_legacy_database_receives_migrations_past_the_baseline(legacy_engine) ->
 
     assert _script_head() != BASELINE_REVISION
     assert "card_prints" in set(inspect(legacy_engine).get_table_names())
+    assert "is_locked" in _deck_columns(legacy_engine)

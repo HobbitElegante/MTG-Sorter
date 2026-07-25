@@ -602,9 +602,23 @@ class DeckService:
         """Basic land quantities on the list (unlimited pool; not optimized)."""
         return self._decks.basic_land_requirements(deck_id)
 
-    def armed_deck_supplies(self, exclude_deck_id: int | None = None) -> dict[int, dict[str, int]]:
+    def set_locked(self, deck: Deck, locked: bool) -> Deck:
+        deck.is_locked = locked
+        self._session.flush()
+        return deck
+
+    def armed_deck_supplies(
+        self,
+        exclude_deck_id: int | None = None,
+        *,
+        include_locked: bool = False,
+    ) -> dict[int, dict[str, int]]:
+        """Supplies from armed decks. Locked decks are excluded by default."""
         supplies: dict[int, dict[str, int]] = {}
-        for deck in self._decks.list_armed(exclude_deck_id=exclude_deck_id):
+        for deck in self._decks.list_armed(
+            exclude_deck_id=exclude_deck_id,
+            include_locked=include_locked,
+        ):
             supplies[deck.id] = self.deck_requirements(deck.id)
         return supplies
 
@@ -639,11 +653,7 @@ class DeckService:
         return sorted(issues, key=lambda item: item.name.casefold())
 
     def commander_rule_issues(self, deck_id: int) -> list[CommanderRuleIssue]:
-        """Game-rule warnings for the list: color identity and pairings.
-
-        Advisory like the format legality check — it never blocks importing or
-        arming a deck.
-        """
+        """Game-rule warnings for the list (advisory; never blocks arming)."""
         cards = [
             CommanderCard(
                 oracle_id=oracle_id,
@@ -652,9 +662,18 @@ class DeckService:
                 color_identity=color_identity,
                 oracle_text=oracle_text,
                 type_line=type_line,
+                quantity=quantity,
+                is_basic_land=is_basic_land,
             )
-            for oracle_id, name, role, color_identity, oracle_text, type_line in (
-                self._decks.commander_rule_rows(deck_id)
-            )
+            for (
+                oracle_id,
+                name,
+                role,
+                quantity,
+                color_identity,
+                oracle_text,
+                type_line,
+                is_basic_land,
+            ) in self._decks.commander_rule_rows(deck_id)
         ]
         return evaluate_deck(cards)
