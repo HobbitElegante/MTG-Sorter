@@ -143,6 +143,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Card “{name}” was not found in the local card cache."
         ),
         "decks.edit_list": "Edit list",
+        "decks.update_list": "Update list",
+        "decks.update.title": "Update list — {name}",
+        "decks.update.submit": "Review update",
+        "decks.update.summary": "Cards in list: {before} → {after}",
+        "decks.update.added": "Cards to add ({count})",
+        "decks.update.removed": "Cards to remove ({count})",
+        "decks.update.unresolved": (
+            "Unrecognized lines ({count}) — they will be left out of the list"
+        ),
+        "decks.update.no_changes": "The list already matches; nothing to update.",
+        "decks.update.armed_warning": (
+            "This deck is armed: applying the update reassigns its physical copies, "
+            "creating copies for cards that are new to the list."
+        ),
+        "decks.update.apply": "Apply update",
         "decks.delete_list": "Delete list",
         "decks.delete.confirm.title": "Delete deck list",
         "decks.delete.confirm.question": (
@@ -473,6 +488,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "La carta “{name}” no está en la caché local de cartas."
         ),
         "decks.edit_list": "Editar listado",
+        "decks.update_list": "Actualizar listado",
+        "decks.update.title": "Actualizar listado — {name}",
+        "decks.update.submit": "Revisar actualización",
+        "decks.update.summary": "Cartas en el listado: {before} → {after}",
+        "decks.update.added": "Cartas a agregar ({count})",
+        "decks.update.removed": "Cartas a quitar ({count})",
+        "decks.update.unresolved": (
+            "Líneas no reconocidas ({count}) — quedarán fuera del listado"
+        ),
+        "decks.update.no_changes": "El listado ya coincide; no hay nada que actualizar.",
+        "decks.update.armed_warning": (
+            "Este mazo está armado: al aplicar la actualización se reasignan sus "
+            "copias físicas y se crean copias para las cartas nuevas del listado."
+        ),
+        "decks.update.apply": "Aplicar actualización",
         "decks.delete_list": "Eliminar listado",
         "decks.delete.confirm.title": "Eliminar listado",
         "decks.delete.confirm.question": (

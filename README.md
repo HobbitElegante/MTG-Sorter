@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.5.0)
+## Features (v0.5.1)
 
 - Local SQLite inventory of physical card copies (grouped by card: total / free / assigned)
 - **Card images in the UI:** preview panel beside Browse → Cards, Inventory, the deck list (commander plus partner/companion/background), Edit list, and the card pickers. Images come from the local cache and are downloaded on demand when missing; double-faced cards get a **Flip card** button. Toggle with **Browse → Overview → Show card images** (persisted); drag the splitter to resize
@@ -10,10 +10,11 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - **Add list to collection:** full-tab paste/load (Moxfield / Archidekt / Arena / MTGO `.dek` / Moxfield URL) → review identified cards (qty from 1, remove/replace) with unresolved lines on the right (edit + recheck, or remove); confirm adds free copies
 - **Deck import:** auto-detect format — Moxfield MTGO text, Archidekt, Arena (`Commander`/`Deck` sections), MTGO `.dek` XML, or paste a public Moxfield deck URL (fetched, then review); armed/dismantled flow with −/+ quantity steppers; strips set codes including The List (`SOI-51`, `115a`, …)
 - **Import new list** takes the full Decks tab (deck list hidden while importing); optional Partner / Companion / Background via `+` (same as edit details)
+- **Update list:** re-sync a deck from a new paste, file, or Moxfield URL — the deck's list is replaced after a review dialog showing cards to add / remove, the resulting card count, and any unrecognized lines. Unlike **Edit list**, it can grow or shrink the list, so it also fixes decks left incomplete by an earlier import
 - **Export list** to MTGO text (dialog + copy to clipboard)
 - Deck list storage with armed/dismantled status and automatic copy assignment
 - **Edit name / commander**, optional Partner / Companion / Background via `+`, filter All / Armed / Dismantled (compact), **search decks by name or commander**, reorder with Move up / Move down
-- Deck actions: Edit list · Edit name / commander · Export · Delete (left); Mark armed / dismantled (right)
+- Deck actions: Edit list · Update list · Edit name / commander · Export · Delete (left); Mark armed / dismantled (right)
 - Table-based deck list editing (adjust quantities, free copies, replace/add cards within list size)
 - Delete deck with optional removal of physical copies
 - Commander roles: commander, partner, companion, background
@@ -73,7 +74,7 @@ The SQLite database is created at `data/mtg_sorter.db` (gitignored). Optional ca
 uv run pytest
 ```
 
-114 tests passing.
+119 tests passing.
 
 ## First-time setup
 
@@ -100,6 +101,7 @@ Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL
 ## Editing, exporting, and deleting decks
 
 - **Edit list:** table of cards with list quantity, free inventory (−/+), replace, and add cards into open slots (list size preserved). Cards that are banned / not legal / restricted in Commander show ⚠ on the right of the Name column (tooltip; advisory only).
+- **Update list:** opens the full-tab panel bound to the selected deck (name locked, command zone prefilled). Paste a list, load a file, or paste a Moxfield URL, then **Review update** shows what will be added and removed plus the new card count; **Apply update** replaces the list. Use this when the deck changed on Moxfield or an old import came in incomplete — the card count can go up or down. Armed decks are re-armed automatically (copies are created for cards new to the list).
 - **Edit name / commander:** rename the deck; set or clear the commander; use **+** to add Partner, Companion, or Background (second card field). Cards must be in the local Scryfall cache.
 - **Export list:** opens a dialog with the MTGO-format list; copy to clipboard for Moxfield or other tools.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
@@ -156,9 +158,9 @@ tests/
 
 ## Continuity
 
-See [`handoff.md`](handoff.md) for full project state (**v0.5.0**, session closed 2026-07-24).
+See [`handoff.md`](handoff.md) for full project state (**v0.5.1**, session closed 2026-07-24).
 
-**Done (v0.5.0):** card image previews across Browse → Cards, Inventory, deck detail, Edit list and the card pickers; on-demand download with an LRU pixmap cache; persisted show/hide toggle and splitter width; `Card.image_uri_back` plus a **Flip card** button for double-faced cards.
+**Done (v0.5.1):** **Update list** wired into the Decks tab — `ImportService.preview_deck_list_update` diffs a deck against a new paste / file / Moxfield URL, and `replace_deck_list` applies it (now logged in History). Fixes decks that an older import left incomplete.
 
 **Next recommended:** backlog — Commander game rules validation, tokens in Optimize, multi-format export, packaging, Alembic.
 

@@ -243,6 +243,127 @@ def test_preview_inventory_list_empty_unresolved_when_all_resolve(
     assert preview.unresolved_lines == []
 
 
+def test_preview_deck_list_update_reports_added_removed_and_unresolved(
+    session: Session,
+) -> None:
+    _add_cards(session, [("sol", "Sol Ring"), ("terror", "Terror"), ("vihaan", "Vihaan")])
+    deck = _add_deck(session, "Vihaan", [("sol", 1), ("terror", 1)])
+
+    preview = ImportService(session, _StrictFakeScryfall(session)).preview_deck_list_update(
+        deck.id,
+        "\n".join(["1 Sol Ring", "1 Vihaan", "1 Nonexistent Card"]),
+    )
+
+    assert [(change.name, change.before, change.after) for change in preview.added] == [
+        ("Vihaan", 0, 1)
+    ]
+    assert [
+        (change.name, change.before, change.after) for change in preview.removed
+    ] == [("Terror", 1, 0)]
+    assert preview.total_before == 2
+    assert preview.total_after == 2
+    assert preview.unresolved_lines == ["1 Nonexistent Card"]
+    assert preview.has_changes
+
+
+def test_preview_deck_list_update_reports_quantity_changes(session: Session) -> None:
+    _add_cards(session, [("swamp", "Swamp")])
+    deck = _add_deck(session, "Vihaan", [("swamp", 6)])
+
+    preview = ImportService(session, _StrictFakeScryfall(session)).preview_deck_list_update(
+        deck.id, "7 Swamp"
+    )
+
+    assert [(change.before, change.after, change.delta) for change in preview.added] == [
+        (6, 7, 1)
+    ]
+    assert preview.removed == []
+
+
+def test_preview_deck_list_update_without_changes(session: Session) -> None:
+    _add_cards(session, [("sol", "Sol Ring")])
+    deck = _add_deck(session, "Vihaan", [("sol", 1)])
+
+    preview = ImportService(session, _StrictFakeScryfall(session)).preview_deck_list_update(
+        deck.id, "1 Sol Ring"
+    )
+
+    assert not preview.has_changes
+
+
+def test_replace_deck_list_swaps_cards_and_promotes_commander(session: Session) -> None:
+    _add_cards(session, [("sol", "Sol Ring"), ("terror", "Terror"), ("vihaan", "Vihaan")])
+    deck = _add_deck(session, "Vihaan", [("sol", 1), ("terror", 1)])
+
+    warnings = ImportService(session, _StrictFakeScryfall(session)).replace_deck_list(
+        deck.id,
+        "\n".join(["1 Sol Ring", "1 Vihaan"]),
+        commander_name="Vihaan",
+    )
+
+    assert warnings == []
+    rows = {
+        (row.card_id, row.role): row.quantity
+        for row in session.scalars(
+            select(DeckCard).where(DeckCard.deck_id == deck.id)
+        ).all()
+    }
+    assert rows == {
+        ("sol", DeckCardRole.MAIN): 1,
+        ("vihaan", DeckCardRole.COMMANDER): 1,
+    }
+
+
+def test_replace_deck_list_keeps_armed_deck_assigned(session: Session) -> None:
+    _add_cards(session, [("sol", "Sol Ring"), ("terror", "Terror")])
+    deck = _add_deck(session, "Vihaan", [("sol", 1)])
+    DeckService(session).set_status(deck, DeckStatus.ARMED)
+
+    ImportService(session, _StrictFakeScryfall(session)).replace_deck_list(
+        deck.id, "\n".join(["1 Sol Ring", "1 Terror"])
+    )
+
+    assert deck.status == DeckStatus.ARMED
+    assert session.scalar(select(func.count()).select_from(CardAssignment)) == 2
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(CardCopy)
+            .where(CardCopy.card_id == "terror")
+        )
+        == 1
+    )
+
+
+def _add_cards(session: Session, cards: list[tuple[str, str]]) -> None:
+    session.add_all(
+        [
+            Card(oracle_id=oracle_id, name=name, is_basic_land=False, is_token=False)
+            for oracle_id, name in cards
+        ]
+    )
+    session.flush()
+
+
+def _add_deck(session: Session, name: str, cards: list[tuple[str, int]]) -> Deck:
+    deck = Deck(name=name, status=DeckStatus.DISMANTLED)
+    session.add(deck)
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=deck.id,
+                card_id=oracle_id,
+                quantity=quantity,
+                role=DeckCardRole.MAIN,
+            )
+            for oracle_id, quantity in cards
+        ]
+    )
+    session.flush()
+    return deck
+
+
 class _FakeScryfall:
     def __init__(self, session: Session) -> None:
         self._session = session

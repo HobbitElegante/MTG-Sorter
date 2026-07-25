@@ -38,7 +38,12 @@ from mtg_sorter.services.deck_service import (
     DeckEditLine,
     DeckEditRow,
 )
-from mtg_sorter.services.import_service import InventoryListCard, TrackableDeckCard
+from mtg_sorter.services.import_service import (
+    DeckListChange,
+    DeckListUpdatePreview,
+    InventoryListCard,
+    TrackableDeckCard,
+)
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.ui.inventory_display import format_card_legality_tooltip
 from mtg_sorter.ui.widgets.card_preview import (
@@ -350,6 +355,110 @@ class ExportDeckDialog(QDialog):
         self._status.setText(self._translator.t("decks.export.copied"))
         self._text.selectAll()
         self._text.setFocus()
+
+
+class DeckListUpdateDialog(QDialog):
+    """Confirm replacing a deck list, showing what the update adds and removes."""
+
+    def __init__(
+        self,
+        translator: Translator,
+        deck_name: str,
+        preview: DeckListUpdatePreview,
+        *,
+        armed: bool,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._translator = translator
+        self.setWindowTitle(
+            translator.t("decks.update.title").format(name=deck_name)
+        )
+        self.resize(640, 520)
+
+        layout = QVBoxLayout(self)
+        summary = QLabel(
+            translator.t("decks.update.summary").format(
+                before=preview.total_before,
+                after=preview.total_after,
+            )
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        if armed:
+            armed_note = QLabel(translator.t("decks.update.armed_warning"))
+            armed_note.setWordWrap(True)
+            layout.addWidget(armed_note)
+
+        columns = QHBoxLayout()
+        columns.addWidget(
+            self._build_change_column(
+                translator.t("decks.update.added").format(
+                    count=len(preview.added)
+                ),
+                preview.added,
+            ),
+            1,
+        )
+        columns.addWidget(
+            self._build_change_column(
+                translator.t("decks.update.removed").format(
+                    count=len(preview.removed)
+                ),
+                preview.removed,
+            ),
+            1,
+        )
+        layout.addLayout(columns, 1)
+
+        if preview.unresolved_lines:
+            layout.addWidget(
+                QLabel(
+                    translator.t("decks.update.unresolved").format(
+                        count=len(preview.unresolved_lines)
+                    )
+                )
+            )
+            unresolved = QListWidget()
+            unresolved.addItems(preview.unresolved_lines)
+            unresolved.setMaximumHeight(96)
+            layout.addWidget(unresolved)
+
+        if not preview.has_changes:
+            layout.addWidget(QLabel(translator.t("decks.update.no_changes")))
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        apply_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        apply_button.setText(translator.t("decks.update.apply"))
+        apply_button.setEnabled(preview.has_changes)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _build_change_column(
+        self,
+        title: str,
+        changes: list[DeckListChange],
+    ) -> QWidget:
+        column = QWidget()
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(0, 0, 0, 0)
+        column_layout.addWidget(QLabel(title))
+        entries = QListWidget()
+        entries.addItems([self._format_change(change) for change in changes])
+        column_layout.addWidget(entries, 1)
+        return column
+
+    @staticmethod
+    def _format_change(change: DeckListChange) -> str:
+        if change.before == 0:
+            return f"+{change.after}  {change.name}"
+        if change.after == 0:
+            return f"−{change.before}  {change.name}"
+        return f"{change.name}: {change.before} → {change.after}"
 
 
 class QuantityStepper(QWidget):

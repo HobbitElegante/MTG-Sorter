@@ -40,6 +40,7 @@ from mtg_sorter.ui.widgets.import_dialogs import (
     CommandZoneFields,
     DeckDetailsDialog,
     DeckEditDialog,
+    DeckListUpdateDialog,
     DeleteDeckDialog,
     ExportDeckDialog,
     ImportStatusDialog,
@@ -141,6 +142,9 @@ class DecksWidget(QWidget):
         super().__init__(parent)
         self._translator = translator
         self._status_filter: DeckStatus | None = None
+        # Deck being re-synced from a paste/URL; None while importing a new deck.
+        self._update_deck_id: int | None = None
+        self._update_deck_name = ""
         with get_session() as session:
             self._show_card_images = SettingsService(session).get_show_card_images()
         self._build_ui()
@@ -152,11 +156,11 @@ class DecksWidget(QWidget):
 
     def retranslate(self) -> None:
         self._decks_group.setTitle(self._translator.t("decks.list.title"))
-        self._import_group.setTitle(self._translator.t("decks.import"))
         self._show_import_button.setText(self._translator.t("decks.show_import"))
         self._load_file_button.setText(self._translator.t("decks.load_file"))
-        self._submit_import_button.setText(self._translator.t("decks.submit_import"))
         self._cancel_import_button.setText(self._translator.t("decks.cancel_import"))
+        self._update_list_button.setText(self._translator.t("decks.update_list"))
+        self._retranslate_import_panel()
         self._name_input.setPlaceholderText(self._translator.t("decks.name"))
         self._import_text.setPlaceholderText(
             self._translator.t("decks.import.placeholder")
@@ -176,6 +180,21 @@ class DecksWidget(QWidget):
         self._secondary_preview.retranslate()
         self._retranslate_filter()
         self.refresh()
+
+    def _retranslate_import_panel(self) -> None:
+        """Import panel doubles as the update panel; labels follow the mode."""
+        if self._update_deck_id is None:
+            self._import_group.setTitle(self._translator.t("decks.import"))
+            self._submit_import_button.setText(
+                self._translator.t("decks.submit_import")
+            )
+            return
+        self._import_group.setTitle(
+            self._translator.t("decks.update.title").format(
+                name=self._update_deck_name
+            )
+        )
+        self._submit_import_button.setText(self._translator.t("decks.update.submit"))
 
     def _retranslate_filter(self) -> None:
         current = self._filter_combo.currentData()
@@ -258,6 +277,10 @@ class DecksWidget(QWidget):
         self._edit_details_button.clicked.connect(self._edit_selected_details)
         self._edit_button = QPushButton(self._translator.t("decks.edit_list"))
         self._edit_button.clicked.connect(self._edit_selected_deck)
+        self._update_list_button = QPushButton(
+            self._translator.t("decks.update_list")
+        )
+        self._update_list_button.clicked.connect(self._update_selected_deck_list)
         self._delete_button = QPushButton(self._translator.t("decks.delete_list"))
         self._delete_button.clicked.connect(self._delete_selected_deck)
         self._armed_button = QPushButton(self._translator.t("decks.set_armed"))
@@ -271,6 +294,7 @@ class DecksWidget(QWidget):
         )
         self._export_button.clicked.connect(self._export_selected_deck)
         actions_layout.addWidget(self._edit_button)
+        actions_layout.addWidget(self._update_list_button)
         actions_layout.addWidget(self._edit_details_button)
         actions_layout.addWidget(self._export_button)
         actions_layout.addWidget(self._delete_button)
@@ -285,7 +309,7 @@ class DecksWidget(QWidget):
 
         trigger_row = QHBoxLayout()
         self._show_import_button = QPushButton(self._translator.t("decks.show_import"))
-        self._show_import_button.clicked.connect(self._show_import_section)
+        self._show_import_button.clicked.connect(self._start_new_import)
         trigger_row.addWidget(self._show_import_button)
         trigger_row.addStretch()
         self._main_layout.addLayout(trigger_row)
@@ -343,15 +367,26 @@ class DecksWidget(QWidget):
         )
         return f"{index}. {name}", f"[{status_text}]"
 
+    def _start_new_import(self) -> None:
+        self._update_deck_id = None
+        self._update_deck_name = ""
+        self._name_input.setReadOnly(False)
+        self._retranslate_import_panel()
+        self._show_import_section()
+        self._name_input.setFocus()
+
     def _show_import_section(self) -> None:
         self._decks_group.setVisible(False)
         self._show_import_button.setVisible(False)
         self._import_group.setVisible(True)
         self._main_layout.setStretchFactor(self._decks_group, 0)
         self._main_layout.setStretchFactor(self._import_group, 1)
-        self._name_input.setFocus()
 
     def _hide_import_section(self) -> None:
+        self._update_deck_id = None
+        self._update_deck_name = ""
+        self._name_input.setReadOnly(False)
+        self._retranslate_import_panel()
         self._import_group.setVisible(False)
         self._decks_group.setVisible(True)
         self._show_import_button.setVisible(True)
@@ -654,6 +689,129 @@ class DecksWidget(QWidget):
         self.refresh()
         self.changed.emit()
 
+    def _update_selected_deck_list(self) -> None:
+        """Open the import panel bound to the selected deck (replace its list)."""
+        deck_id = self._selected_deck_id()
+        if deck_id is None:
+            return
+
+        with get_session() as session:
+            service = DeckService(session)
+            deck = service.get_deck(deck_id)
+            if deck is None:
+                return
+            deck_name = deck.name
+            commander = service.commander_name(deck_id)
+            secondary = service.secondary_command_zone(deck_id)
+
+        self._update_deck_id = deck_id
+        self._update_deck_name = deck_name
+        self._name_input.setText(deck_name)
+        self._name_input.setReadOnly(True)
+        self._command_zone.clear()
+        self._command_zone.set_commander_name(commander)
+        if secondary is not None:
+            self._command_zone.set_secondary(secondary[0], secondary[1])
+        self._import_text.clear()
+        self._retranslate_import_panel()
+        self._show_import_section()
+        self._import_text.setFocus()
+
+    def _apply_list_update(self, deck_id: int, text: str) -> None:
+        secondary_error = self._command_zone.validation_error()
+        if secondary_error is not None:
+            QMessageBox.warning(
+                self,
+                self._translator.t("common.error"),
+                secondary_error,
+            )
+            return
+
+        commander = self._command_zone.commander_name()
+        secondary_role = self._command_zone.secondary_role()
+        secondary_name = self._command_zone.secondary_name()
+
+        try:
+            with get_session() as session:
+                service = DeckService(session)
+                deck = service.get_deck(deck_id)
+                if deck is None:
+                    return
+                deck_name = deck.name
+                armed = deck.status == DeckStatus.ARMED
+                scryfall = ScryfallService(session)
+                try:
+                    preview = ImportService(
+                        session, scryfall
+                    ).preview_deck_list_update(deck_id, text)
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        dialog = DeckListUpdateDialog(
+            self._translator,
+            deck_name,
+            preview,
+            armed=armed,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            with get_session() as session:
+                scryfall = ScryfallService(session)
+                try:
+                    importer = ImportService(session, scryfall)
+                    # preview.text is the already-expanded list (URL fetched once).
+                    warnings = importer.replace_deck_list(
+                        deck_id,
+                        preview.text,
+                        commander_name=commander,
+                    )
+                    if secondary_role is not None and secondary_name is not None:
+                        secondary_card = scryfall.lookup_local(secondary_name)
+                        if secondary_card is None:
+                            raise ValueError(
+                                self._translator.t(
+                                    "decks.details_edit.commander_not_found"
+                                ).format(name=secondary_name)
+                            )
+                        DeckService(session).set_secondary_command_zone(
+                            deck_id, secondary_role, secondary_card.oracle_id
+                        )
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+
+        if warnings:
+            QMessageBox.warning(
+                self,
+                self._translator.t("common.error"),
+                "\n".join(
+                    f"{warning.line}: {warning.message}" for warning in warnings[:10]
+                ),
+            )
+
+        self._name_input.clear()
+        self._command_zone.clear()
+        self._import_text.clear()
+        self._hide_import_section()
+        self.refresh()
+        self.changed.emit()
+
     def _delete_selected_deck(self) -> None:
         deck_id = self._selected_deck_id()
         if deck_id is None:
@@ -677,66 +835,63 @@ class DecksWidget(QWidget):
         self.refresh()
         self.changed.emit()
 
+    def _expand_moxfield_url(self, text: str) -> None:
+        """Fetch a Moxfield deck into the form so the user can review it."""
+        try:
+            with get_session() as session:
+                scryfall = ScryfallService(session)
+                try:
+                    resolved = ImportService(session, scryfall).resolve_decklist_input(
+                        text
+                    )
+                finally:
+                    scryfall.close()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                self._translator.t("decks.import.url_failed").format(error=str(exc)),
+            )
+            return
+
+        self._import_text.setPlainText(resolved.text)
+        if resolved.deck_name and not self._name_input.text().strip():
+            self._name_input.setText(resolved.deck_name)
+        if resolved.commander_name and not self._command_zone.commander_name():
+            self._command_zone.set_commander_name(resolved.commander_name)
+        if (
+            resolved.secondary_role is not None
+            and resolved.secondary_name
+            and self._command_zone.secondary_role() is None
+        ):
+            self._command_zone.set_secondary(
+                resolved.secondary_role, resolved.secondary_name
+            )
+        QMessageBox.information(
+            self,
+            self._translator.t("decks.import"),
+            self._translator.t("decks.import.url_filled"),
+        )
+
     def _import_text_deck(self) -> None:
-        name = self._name_input.text().strip()
         text = self._import_text.toPlainText().strip()
-        commander = self._command_zone.commander_name()
-        secondary_role = self._command_zone.secondary_role()
-        secondary_name = self._command_zone.secondary_name()
         if not text:
             return
 
         # Expand Moxfield URL into the form so the user can review before arming.
         if detect_format(text) == DecklistFormat.MOXFIELD_URL:
-            try:
-                with get_session() as session:
-                    scryfall = ScryfallService(session)
-                    try:
-                        resolved = ImportService(
-                            session, scryfall
-                        ).resolve_decklist_input(text)
-                    finally:
-                        scryfall.close()
-            except Exception as exc:
-                QMessageBox.critical(
-                    self,
-                    self._translator.t("common.error"),
-                    self._translator.t("decks.import.url_failed").format(
-                        error=str(exc)
-                    ),
-                )
-                return
+            self._expand_moxfield_url(text)
+            return
 
-            self._import_text.setPlainText(resolved.text)
-            if resolved.deck_name and not name:
-                self._name_input.setText(resolved.deck_name)
-                name = resolved.deck_name
-            if resolved.commander_name and not commander:
-                self._command_zone.set_commander_name(resolved.commander_name)
-                commander = resolved.commander_name
-            if (
-                resolved.secondary_role is not None
-                and resolved.secondary_name
-                and secondary_role is None
-            ):
-                self._command_zone.set_secondary(
-                    resolved.secondary_role, resolved.secondary_name
-                )
-                secondary_role = resolved.secondary_role
-                secondary_name = resolved.secondary_name
-            QMessageBox.information(
-                self,
-                self._translator.t("decks.import"),
-                self._translator.t("decks.import.url_filled"),
-            )
+        if self._update_deck_id is not None:
+            self._apply_list_update(self._update_deck_id, text)
             return
 
         name = self._name_input.text().strip()
-        text = self._import_text.toPlainText().strip()
         commander = self._command_zone.commander_name()
         secondary_role = self._command_zone.secondary_role()
         secondary_name = self._command_zone.secondary_name()
-        if not name or not text:
+        if not name:
             return
 
         secondary_error = self._command_zone.validation_error()
@@ -872,7 +1027,7 @@ class DecksWidget(QWidget):
             return
         content = Path(path).read_text(encoding="utf-8")
         self._import_text.setPlainText(content)
-        if not self._name_input.text().strip():
+        if self._update_deck_id is None and not self._name_input.text().strip():
             self._name_input.setText(Path(path).stem)
 
     def _set_status(self, status: DeckStatus) -> None:
