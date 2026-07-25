@@ -12,9 +12,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # pytest-qt is installed via the dev extra and auto-loads Qt even though
-      # we have no GUI tests; offscreen + disabling the plugin avoids CI crashes.
       QT_QPA_PLATFORM: offscreen
+      # Do not auto-load pytest-qt (or any other entry-point plugins).
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -24,18 +24,24 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        # Install pytest alone — skip the pytest-qt extra so Qt is never
+        # auto-initialized on the headless runner (no GUI tests yet).
+        run: |
+          uv sync
+          uv pip install pytest
 
       - name: Run tests
-        # Entry point is "pytest-qt" (hyphen). "-p no:pytestqt" does NOT disable it
-        # and left Qt loading on the headless runner → pytest INTERNALERROR (exit 3).
-        run: uv run pytest -p no:pytest-qt -q --tb=short
+        run: uv run pytest -q --tb=short
 
   build-linux:
     needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install Qt runtime libs
+        # PyInstaller imports PySide6 while analyzing; ubuntu-latest lacks libEGL.
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libgl1 libdbus-1-3
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -45,6 +51,7 @@ jobs:
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          QT_QPA_PLATFORM: offscreen
         run: ./scripts/build_linux.sh
 
       - name: Upload AppImage artifact
