@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.8.1)
+## Features (v0.8.2)
 
 ### Collection
 
@@ -174,8 +174,8 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.8.1)
+## Latest (v0.8.2)
 
-**v0.8.1** fixes a startup crash on PySide6 (`QAction` constructor in the Optimize target picker). Prefer this build over **v0.8.0**, which does not launch. *(Main has further Optimize set-viability + Overview first-run tutorial ready for the next tagged release.)*
+**v0.8.2** is the recommended build. Prefer it over **v0.8.0** (does not launch) and **v0.8.1** (startup fix only).
 
-Commander rule warnings cover **singleton** (basics, “any number of cards named…”, and “up to N” caps like Seven Dwarves) and **list size** (100 cards; Companion outside). Decks can be **locked** (ɸ) so Optimize will not dismantle them. Optimize plans an **armed set**: add decks (including already-armed ones you want to keep) and see immediately whether that whole set can be armed at once; free-inventory and dismantle panels are grouped per target. Locked decks stay out of the donor pool permanently; armed decks in the plan are kept without locking them in Decks. Browse → Overview includes a first-run checklist. See also edition tracking and Optimize concentration tie-break from v0.7.0.
+Optimize plans an **armed set**: add decks you want armed at once (including already-armed ones to keep); viability is for the whole set, with free-inventory and dismantle panels grouped per target. Locked decks (ɸ) stay out of the donor pool permanently; armed decks in the plan are kept without locking them in Decks. Browse → Overview includes a first-run checklist. Commander rule warnings cover **singleton** and **list size**; see also edition tracking and Optimize concentration tie-break from v0.7.0.
