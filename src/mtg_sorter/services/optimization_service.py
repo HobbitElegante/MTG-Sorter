@@ -149,7 +149,12 @@ def simulate_apply_plan(
     requirements: dict[str, int],
     solution: frozenset[str],
 ) -> tuple[dict[str, int], dict[int, dict[str, int]], dict[int, dict[str, int]]]:
-    """Advance count-level inventory as if Confirm had run for one step."""
+    """Advance count-level inventory as if Confirm had run for one step.
+
+    The newly armed target is recorded in visibility (for missing explanations)
+    but is **not** added to the donor pool — the sequence keeps every planned
+    deck armed at once, so later steps must not dismantle prior targets.
+    """
     free = dict(free)
     donors = {deck_id: dict(cards) for deck_id, cards in donor_supplies.items()}
     visible = {
@@ -167,10 +172,32 @@ def simulate_apply_plan(
             free[card_id] = remaining
         else:
             free.pop(card_id, None)
-    req = dict(requirements)
-    donors[target_deck_id] = req
-    visible[target_deck_id] = dict(req)
+    visible[target_deck_id] = dict(requirements)
     return free, donors, visible
+
+
+def sequence_is_viable(plans: list[AssemblyPlan]) -> bool:
+    """True when every step is keep-armed or has a feasible dismantle plan."""
+    return all(
+        plan.already_armed
+        or (not plan.still_missing and bool(plan.result.solutions))
+        for plan in plans
+    )
+
+
+def unique_donors_for_sequence(
+    plans: list[AssemblyPlan],
+    chosen_solutions: dict[int, frozenset[str]] | None = None,
+) -> frozenset[str]:
+    """Union of chosen (or suggested) donor ids across viable assembly steps."""
+    chosen = chosen_solutions or {}
+    donors: set[str] = set()
+    for plan in plans:
+        if plan.already_armed or plan.still_missing or not plan.result.solutions:
+            continue
+        solution = chosen.get(plan.target_deck_id, plan.result.solutions[0])
+        donors.update(solution)
+    return frozenset(donors)
 
 
 class OptimizationService:
@@ -196,18 +223,26 @@ class OptimizationService:
         target_deck_ids: list[int],
         chosen_solutions: dict[int, frozenset[str]] | None = None,
     ) -> list[AssemblyPlan]:
-        """Plan each target in order, simulating prior successful applies.
+        """Plan each target in order for a simultaneous armed set.
 
-        Infeasible or already-armed steps do not change the simulated state, so
-        later targets still show what is missing from the same inventory.
+        Decks in ``target_deck_ids`` are keep-armed for the whole sequence: they
+        are never dismantle candidates. Already-armed entries are skipped (kept).
+        Successful steps update free inventory as if Confirm ran, without adding
+        the new target to the donor pool so later steps cannot dismantle it.
         """
         chosen = chosen_solutions or {}
+        keep_ids = set(target_deck_ids)
         free = self._inventory.free_counts()
         donors = self._decks.armed_deck_supplies(include_locked=False)
         visible = self._decks.armed_deck_supplies(include_locked=True)
         plans: list[AssemblyPlan] = []
         for target_id in target_deck_ids:
-            plan = self._plan_from_state(target_id, free, donors, visible)
+            step_donors = {
+                deck_id: cards
+                for deck_id, cards in donors.items()
+                if deck_id not in keep_ids
+            }
+            plan = self._plan_from_state(target_id, free, step_donors, visible)
             plans.append(plan)
             if plan.already_armed or plan.still_missing or not plan.result.solutions:
                 continue

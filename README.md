@@ -20,13 +20,14 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
 - Search, filter by status, and reorder decks
 - Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity, Partner / Background / Companion pairings, singleton with printed exceptions, 100-card list size)
-- Lock / unlock a deck so Optimize will not dismantle it (🔒 in the list)
+- Lock / unlock a deck so Optimize will not dismantle it (ɸ in the list)
 
 ### Optimize
 
 - ILP plan: minimize how many **armed** decks to dismantle to assemble a target
-- **Assembly sequence:** add dismantled targets one by one; each step shows whether the plan is viable (or which cards are still missing), simulating earlier confirms
-- **Locked decks** (Decks tab, 🔒): Optimize will not dismantle them; cards they hold still appear under Still missing
+- **Armed set:** add decks you want armed at the same time (including already-armed ones to keep); viability is for the whole set
+- **Locked decks** (Decks tab, ɸ): permanent — Optimize will not dismantle them; cards they hold still appear under Still missing
+- Armed decks in the plan are kept without locking them in Decks (session-only keep)
 - Equally optimal plans are ordered so the one drawing the most cards from a single donor comes first; every plan stays selectable
 - Confirm / cancel to apply; searchable target picker; clear status when already armed or infeasible
 - Free inventory + unlimited basics count toward coverage; tokens are ignored (not stored on lists)
@@ -136,13 +137,12 @@ Tip: **Edit list** keeps the list size fixed (open slots only). To add or remove
 
 ## Optimizer
 
-1. Import decks and mark currently assembled ones as **Armed**. Optionally **Lock** decks you never want Optimize to dismantle.
+1. Import decks and mark currently assembled ones as **Armed**. Optionally **Lock** (ɸ) decks you never want Optimize to dismantle.
 2. For dismantled decks, register available copies during import or while editing.
-3. Open **Optimize**, search a dismantled deck, and click **Add to plan** (repeat to build a sequence).
-4. The sequence list shows whether each step is viable or still missing cards (later steps assume earlier ones were confirmed).
-5. Select a step to see free inventory, decks to dismantle, or Still missing / Need to find — same detail panels as a single plan.
-6. **Confirm plan** applies the selected viable step; **Cancel** clears the whole sequence.
-7. If multiple optimal dismantle sets exist for a step, choose one from the dropdown before confirming.
+3. Open **Optimize**, search a deck (armed or dismantled), and click **Add to plan**. Repeat to build the set you want armed together — add already-armed decks to keep them without locking in Decks.
+4. With two or more decks, the summary shows whether the **whole set** can be armed at once (N unique donors, or infeasible). Inventory and dismantle panels are grouped per target (`For …` / `Para …`).
+5. **Confirm plan** applies every viable step in order; **Cancel** clears the set.
+6. If a step has multiple optimal dismantle sets, choose one from its dropdown before confirming.
 
 ## Offline Scryfall cache
 
@@ -176,6 +176,6 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 ## Latest (v0.8.1)
 
-**v0.8.1** fixes a startup crash on PySide6 (`QAction` constructor in the Optimize target picker). Prefer this build over **v0.8.0**, which does not launch.
+**v0.8.1** fixes a startup crash on PySide6 (`QAction` constructor in the Optimize target picker). Prefer this build over **v0.8.0**, which does not launch. *(Main has further Optimize set-viability + Overview first-run tutorial ready for the next tagged release.)*
 
-Commander rule warnings cover **singleton** (basics, “any number of cards named…”, and “up to N” caps like Seven Dwarves) and **list size** (100 cards; Companion outside). Decks can be **locked** (🔒) so Optimize will not dismantle them. Optimize builds an **assembly sequence**: add targets one by one, each with its own viability / missing-cards panel, simulating prior steps. The target picker looks like a committed selection (not free text) once a deck is chosen; clear resets the field. See also edition tracking and Optimize concentration tie-break from v0.7.0.
+Commander rule warnings cover **singleton** (basics, “any number of cards named…”, and “up to N” caps like Seven Dwarves) and **list size** (100 cards; Companion outside). Decks can be **locked** (ɸ) so Optimize will not dismantle them. Optimize plans an **armed set**: add decks (including already-armed ones you want to keep) and see immediately whether that whole set can be armed at once; free-inventory and dismantle panels are grouped per target. Locked decks stay out of the donor pool permanently; armed decks in the plan are kept without locking them in Decks. Browse → Overview includes a first-run checklist. See also edition tracking and Optimize concentration tie-break from v0.7.0.

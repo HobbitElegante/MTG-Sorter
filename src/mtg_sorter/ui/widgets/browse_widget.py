@@ -240,6 +240,10 @@ class BrowseWidget(QWidget):
         self._show_images_check.setText(
             self._translator.t("browse.overview.show_images")
         )
+        self._welcome_separator.setText(
+            self._translator.t("browse.overview.welcome_separator")
+        )
+        self._welcome_label.setText(self._translator.t("browse.overview.welcome"))
         self._track_editions_check.setText(
             self._translator.t("browse.overview.track_editions")
         )
@@ -334,6 +338,18 @@ class BrowseWidget(QWidget):
         self._show_images_check.setChecked(self._show_card_images)
         self._show_images_check.toggled.connect(self._on_show_images_toggled)
         layout.addWidget(self._show_images_check)
+
+        self._welcome_separator = QLabel(
+            self._translator.t("browse.overview.welcome_separator")
+        )
+        layout.addWidget(self._welcome_separator)
+
+        self._welcome_label = QLabel(self._translator.t("browse.overview.welcome"))
+        self._welcome_label.setWordWrap(True)
+        self._welcome_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self._welcome_label)
 
         self._sync_language_combo()
         layout.addStretch()

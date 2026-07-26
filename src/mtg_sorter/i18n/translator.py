@@ -112,7 +112,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.rules.colorless": "colorless",
         "decks.lock": "Lock deck",
         "decks.unlock": "Unlock deck",
-        "decks.locked.icon": "🔒",
+        "decks.locked.icon": "ɸ",
         "decks.locked.tooltip": "Locked — Optimize will not dismantle this deck",
         "decks.set_armed": "Mark armed",
         "decks.set_dismantled": "Mark dismantled",
@@ -235,21 +235,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.edit.over_target": "List total cannot exceed the original size.",
         "optimize.target": "Deck to assemble",
         "optimize.target.search": "Type deck or commander name…",
+        "optimize.target.armed_suffix": "(armed)",
         "optimize.add": "Add to plan",
-        "optimize.queue": "Assembly sequence",
-        "optimize.queue.remove": "Remove from sequence",
+        "optimize.queue": "Assembly set",
+        "optimize.queue.remove": "Remove from set",
         "optimize.queue.viable": "viable",
         "optimize.queue.missing": "missing cards",
         "optimize.queue.armed": "already armed",
+        "optimize.queue.kept": "kept armed",
         "optimize.run": "Find optimal dismantle plan",
         "optimize.no_solutions": "No feasible dismantle plan found.",
+        "optimize.no_solutions_set": "This set cannot all be armed at once.",
         "optimize.already_armed": "This deck is already armed — nothing to optimize.",
         "optimize.multiple": "Multiple optimal plans — choose one:",
         "optimize.solution.suggested": "suggested",
         "optimize.from_inventory": "Cards covered by free inventory",
         "optimize.decks_to_dismantle": "Decks to dismantle",
+        "optimize.section_for": "---------- For {deck} ----------",
         "optimize.summary.dismantle": "Dismantle {count} deck(s) to assemble this list",
         "optimize.summary.inventory_only": "Assemble from free inventory — no decks to dismantle",
+        "optimize.summary.dismantle_set": "Dismantle {count} deck(s) to arm this set",
+        "optimize.summary.inventory_only_set": "Arm this set from free inventory — no decks to dismantle",
         "optimize.missing": "Still missing",
         "optimize.missing.need_to_find": "Need to find",
         "optimize.unit.cards": "cards",
@@ -258,7 +264,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.cancel": "Cancel",
         "optimize.apply.confirm_title": "Apply assembly plan?",
         "optimize.apply.confirm_body": "This will dismantle:\n{decks}\n\nand arm:\n{target}",
+        "optimize.apply.confirm_body_set": "This will dismantle:\n{decks}\n\nand arm:\n{targets}",
         "optimize.apply.success": "Plan applied: donor decks dismantled and target armed.",
+        "optimize.apply.success_set": "Plan applied: donors dismantled and the set armed.",
         "optimize.card_qty": "{name} × {qty}",
         "menu.language": "Language",
         "config.language": "Language",
@@ -324,6 +332,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flag.basic": "basic",
         "browse.cards.flag.token": "token",
         "browse.overview.show_images": "Show card images",
+        "browse.overview.welcome_separator": "-----",
+        "browse.overview.welcome": (
+            "Welcome!\n"
+            "If this is your first time here, we recommend these steps:\n"
+            "1. Download the Scryfall bulk pack so you can search and resolve cards offline\n"
+            "2. Import into Inventory the list of free cards in your personal bulk\n"
+            "3. Import into Decks the lists for your armed and dismantled decks "
+            "(this also adds copies to your inventory)\n"
+            "4. Download images for the cards in your collection\n"
+            "5. Use the Optimize tool to see whether you need more copies in your bulk"
+        ),
         "browse.overview.track_editions": "Track card editions",
         "browse.overview.track_editions_hint": (
             "Adds an Edition column to Inventory and asks for set codes after "
@@ -508,7 +527,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.rules.colorless": "incolora",
         "decks.lock": "Bloquear mazo",
         "decks.unlock": "Desbloquear mazo",
-        "decks.locked.icon": "🔒",
+        "decks.locked.icon": "ɸ",
         "decks.locked.tooltip": "Bloqueado — Optimize no desarmará este mazo",
         "decks.set_armed": "Marcar armado",
         "decks.set_dismantled": "Marcar desarmado",
@@ -633,21 +652,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.edit.over_target": "El total del listado no puede superar el tamaño original.",
         "optimize.target": "Mazo a armar",
         "optimize.target.search": "Escribe nombre de mazo o commander…",
+        "optimize.target.armed_suffix": "(armado)",
         "optimize.add": "Agregar al plan",
-        "optimize.queue": "Secuencia de armado",
-        "optimize.queue.remove": "Quitar de la secuencia",
+        "optimize.queue": "Conjunto a armar",
+        "optimize.queue.remove": "Quitar del conjunto",
         "optimize.queue.viable": "viable",
         "optimize.queue.missing": "faltan cartas",
         "optimize.queue.armed": "ya armado",
+        "optimize.queue.kept": "se mantiene armado",
         "optimize.run": "Calcular plan óptimo",
         "optimize.no_solutions": "No hay plan viable de desmontaje.",
+        "optimize.no_solutions_set": "No es viable tener este conjunto todo armado a la vez.",
         "optimize.already_armed": "Este mazo ya está armado — no hay nada que optimizar.",
         "optimize.multiple": "Hay varios planes óptimos — elige uno:",
         "optimize.solution.suggested": "sugerida",
         "optimize.from_inventory": "Cartas cubiertas por inventario libre",
         "optimize.decks_to_dismantle": "Mazos a desarmar",
+        "optimize.section_for": "---------- Para {deck} ----------",
         "optimize.summary.dismantle": "Desarmar {count} mazo(s) para armar este listado",
         "optimize.summary.inventory_only": "Armar desde inventario libre — no hace falta desarmar mazos",
+        "optimize.summary.dismantle_set": "Desarmar {count} mazo(s) para armar este conjunto",
+        "optimize.summary.inventory_only_set": "Armar este conjunto desde inventario libre — no hace falta desarmar mazos",
         "optimize.missing": "Aún faltan",
         "optimize.missing.need_to_find": "Faltan por encontrar",
         "optimize.unit.cards": "cartas",
@@ -656,7 +681,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.cancel": "Cancelar",
         "optimize.apply.confirm_title": "¿Aplicar el plan de armado?",
         "optimize.apply.confirm_body": "Se desarmarán:\n{decks}\n\ny se armará:\n{target}",
+        "optimize.apply.confirm_body_set": "Se desarmarán:\n{decks}\n\ny se armarán:\n{targets}",
         "optimize.apply.success": "Plan aplicado: mazos donantes desarmados y objetivo armado.",
+        "optimize.apply.success_set": "Plan aplicado: donantes desarmados y el conjunto armado.",
         "optimize.card_qty": "{name} × {qty}",
         "menu.language": "Idioma",
         "config.language": "Idioma",
@@ -722,6 +749,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.cards.flag.basic": "básica",
         "browse.cards.flag.token": "token",
         "browse.overview.show_images": "Mostrar imágenes de cartas",
+        "browse.overview.welcome_separator": "-----",
+        "browse.overview.welcome": (
+            "¡Bienvenido!\n"
+            "Si es tu primera vez en este programa te recomendamos seguir "
+            "el siguiente listado de pasos:\n"
+            "1. Descarga el bulk de Scryfall para buscarlas y leerlas offline\n"
+            "2. Importa en Inventario el listado de cartas libres que tengas "
+            "en tu bulk personal\n"
+            "3. Importa en Mazos el listado de cartas que tienes entre tus mazos "
+            "armados y desarmados, agregándolos así a tu inventario\n"
+            "4. Descarga las imágenes de las cartas dentro de tu colección\n"
+            "5. Disfruta de la herramienta de optimización de Inventario para "
+            "descubrir si te faltan copias en tu bulk"
+        ),
         "browse.overview.track_editions": "Registrar ediciones de las cartas",
         "browse.overview.track_editions_hint": (
             "Agrega la columna Edición en Inventario y pide los códigos de set "

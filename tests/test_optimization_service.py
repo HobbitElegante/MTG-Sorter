@@ -455,3 +455,122 @@ def test_plan_assembly_sequence_simulates_prior_steps(session: Session) -> None:
     assert plans[0].result.minimum_decks_to_dismantle == 1
     assert not plans[1].still_missing
     assert plans[1].result.minimum_decks_to_dismantle == 0
+
+
+def test_armed_deck_in_sequence_is_not_a_donor(session: Session) -> None:
+    from mtg_sorter.models import CardAssignment
+    from mtg_sorter.services.optimization_service import sequence_is_viable
+
+    sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    kept = Deck(name="Kept Armed", status=DeckStatus.ARMED)
+    target = Deck(name="Needs Sol", status=DeckStatus.DISMANTLED)
+    session.add_all([sol, kept, target])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=kept.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+            ),
+            DeckCard(
+                deck_id=target.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+            ),
+        ]
+    )
+    copy = CardCopy(card_id="sol")
+    session.add(copy)
+    session.flush()
+    session.add(CardAssignment(card_copy_id=copy.id, deck_id=kept.id))
+    session.flush()
+
+    plans = OptimizationService(session).plan_assembly_sequence([kept.id, target.id])
+
+    assert plans[0].already_armed
+    assert plans[1].still_missing == {"sol": 1}
+    assert str(kept.id) not in plans[1].deck_supplies
+    by_deck, _ = plans[1].missing_by_source()
+    assert str(kept.id) in by_deck
+    assert not sequence_is_viable(plans)
+
+
+def test_prior_target_is_not_donor_for_later_step(session: Session) -> None:
+    from mtg_sorter.models import CardAssignment
+    from mtg_sorter.services.optimization_service import (
+        sequence_is_viable,
+        unique_donors_for_sequence,
+    )
+
+    a = Card(oracle_id="a", name="Card A", is_basic_land=False, is_token=False)
+    b = Card(oracle_id="b", name="Card B", is_basic_land=False, is_token=False)
+    t1 = Deck(name="First", status=DeckStatus.DISMANTLED)
+    t2 = Deck(name="Second", status=DeckStatus.DISMANTLED)
+    donor = Deck(name="Donor", status=DeckStatus.ARMED)
+    session.add_all([a, b, t1, t2, donor])
+    session.flush()
+    # t1 needs A (on donor); t2 needs A as well — only one copy on donor.
+    # After t1 arms, that copy is consumed; t1 must not be dismantled for t2.
+    session.add_all(
+        [
+            DeckCard(deck_id=t1.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=t2.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=donor.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=donor.id, card_id="b", quantity=1, role=DeckCardRole.MAIN),
+        ]
+    )
+    copies = [CardCopy(card_id="a"), CardCopy(card_id="b")]
+    session.add_all(copies)
+    session.flush()
+    session.add_all(
+        [
+            CardAssignment(card_copy_id=copies[0].id, deck_id=donor.id),
+            CardAssignment(card_copy_id=copies[1].id, deck_id=donor.id),
+        ]
+    )
+    session.flush()
+
+    plans = OptimizationService(session).plan_assembly_sequence([t1.id, t2.id])
+
+    assert not plans[0].still_missing
+    assert str(t1.id) not in plans[1].deck_supplies
+    assert plans[1].still_missing == {"a": 1}
+    assert not sequence_is_viable(plans)
+    assert unique_donors_for_sequence(plans) == frozenset({str(donor.id)})
+
+
+def test_unique_donors_counts_union_across_viable_steps(session: Session) -> None:
+    from mtg_sorter.models import CardAssignment
+    from mtg_sorter.services.optimization_service import (
+        sequence_is_viable,
+        unique_donors_for_sequence,
+    )
+
+    a = Card(oracle_id="a", name="Card A", is_basic_land=False, is_token=False)
+    b = Card(oracle_id="b", name="Card B", is_basic_land=False, is_token=False)
+    t1 = Deck(name="First", status=DeckStatus.DISMANTLED)
+    t2 = Deck(name="Second", status=DeckStatus.DISMANTLED)
+    d1 = Deck(name="Donor A", status=DeckStatus.ARMED)
+    d2 = Deck(name="Donor B", status=DeckStatus.ARMED)
+    session.add_all([a, b, t1, t2, d1, d2])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(deck_id=t1.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=t2.id, card_id="b", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=d1.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=d2.id, card_id="b", quantity=1, role=DeckCardRole.MAIN),
+        ]
+    )
+    copies = [CardCopy(card_id="a"), CardCopy(card_id="b")]
+    session.add_all(copies)
+    session.flush()
+    session.add_all(
+        [
+            CardAssignment(card_copy_id=copies[0].id, deck_id=d1.id),
+            CardAssignment(card_copy_id=copies[1].id, deck_id=d2.id),
+        ]
+    )
+    session.flush()
+
+    plans = OptimizationService(session).plan_assembly_sequence([t1.id, t2.id])
+
+    assert sequence_is_viable(plans)
+    assert unique_donors_for_sequence(plans) == frozenset({str(d1.id), str(d2.id)})

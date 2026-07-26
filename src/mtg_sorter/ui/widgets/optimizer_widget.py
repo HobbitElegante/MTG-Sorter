@@ -25,7 +25,12 @@ from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckStatus
 from mtg_sorter.services import DeckService, InventoryService, OptimizationService
-from mtg_sorter.services.optimization_service import AssemblyPlan, MovedCopy
+from mtg_sorter.services.optimization_service import (
+    AssemblyPlan,
+    MovedCopy,
+    sequence_is_viable,
+    unique_donors_for_sequence,
+)
 from mtg_sorter.services.settings_service import SettingsService
 from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable
 
@@ -117,7 +122,7 @@ class OptimizerWidget(QWidget):
             )
         self._apply_section_titles_from_plan()
         self._refresh_queue_list()
-        if self._current_plan is not None:
+        if self._plans:
             self._refresh_plan_display()
         else:
             self.refresh_decks()
@@ -197,6 +202,11 @@ class OptimizerWidget(QWidget):
         self._solution_combo = QComboBox()
         self._solution_combo.currentIndexChanged.connect(self._on_solution_changed)
         solution_layout.addWidget(self._solution_combo)
+        self._step_combos_host = QWidget()
+        self._step_combos_layout = QVBoxLayout(self._step_combos_host)
+        self._step_combos_layout.setContentsMargins(0, 0, 0, 0)
+        solution_layout.addWidget(self._step_combos_host)
+        self._step_combos_host.setVisible(False)
         self._solution_tree = QTreeWidget()
         self._solution_tree.setHeaderHidden(True)
         self._solution_tree.setRootIsDecorated(True)
@@ -215,6 +225,7 @@ class OptimizerWidget(QWidget):
         solution_layout.addLayout(buttons)
         layout.addWidget(self._solution_group, stretch=1)
         self._set_plan_actions_visible(False)
+        self._step_solution_combos: dict[int, QComboBox] = {}
 
         self._missing_group = QGroupBox()
         missing_layout = QVBoxLayout(self._missing_group)
@@ -270,21 +281,33 @@ class OptimizerWidget(QWidget):
         )
 
     def _apply_section_titles_from_plan(self) -> None:
-        plan = self._current_plan
-        if plan is None:
+        if not self._plans:
             self._set_section_titles(0, 0, 0)
             return
-        inventory_cards = sum(plan.free_inventory_used.values())
-        missing_cards = sum(plan.still_missing.values())
+        if len(self._plans) == 1:
+            plan = self._plans[0]
+            inventory_cards = sum(plan.free_inventory_used.values())
+            missing_cards = sum(plan.still_missing.values())
+            decks = 0
+            if not plan.still_missing and plan.result.solutions:
+                decks = plan.result.minimum_decks_to_dismantle
+            self._set_section_titles(inventory_cards, decks, missing_cards)
+            return
+        inventory_cards = sum(
+            sum(plan.free_inventory_used.values()) for plan in self._plans
+        )
+        missing_cards = sum(sum(plan.still_missing.values()) for plan in self._plans)
         decks = 0
-        if not plan.still_missing and plan.result.solutions:
-            decks = plan.result.minimum_decks_to_dismantle
+        if sequence_is_viable(self._plans):
+            decks = len(unique_donors_for_sequence(self._plans, self._chosen_solutions))
         self._set_section_titles(inventory_cards, decks, missing_cards)
 
-    def _card_qty_label(self, card_id: str, qty: int) -> str:
-        plan = self._current_plan
-        name = plan.card_names.get(card_id, card_id) if plan else card_id
+    def _card_qty_label(self, plan: AssemblyPlan, card_id: str, qty: int) -> str:
+        name = plan.card_names.get(card_id, card_id)
         return self._translator.t("optimize.card_qty").format(name=name, qty=qty)
+
+    def _section_header(self, deck_name: str) -> str:
+        return self._translator.t("optimize.section_for").format(deck=deck_name)
 
     @staticmethod
     def _deck_label(name: str, commander: str | None) -> str:
@@ -292,6 +315,14 @@ class OptimizerWidget(QWidget):
             return f"{name} — {commander}"
         return name
 
+    def _picker_label(
+        self, name: str, commander: str | None, armed: bool
+    ) -> str:
+        label = self._deck_label(name, commander)
+        if armed:
+            suffix = self._translator.t("optimize.target.armed_suffix")
+            return f"{label} {suffix}"
+        return label
     def _set_combo_committed(self, committed: bool) -> None:
         self._selection_committed = committed
         line_edit = self._deck_combo.lineEdit()
@@ -327,10 +358,10 @@ class OptimizerWidget(QWidget):
         with get_session() as session:
             service = DeckService(session)
             for deck in service.list_decks():
-                if deck.status == DeckStatus.ARMED:
-                    continue
                 commander = service.commander_name(deck.id)
-                label = self._deck_label(deck.name, commander)
+                label = self._picker_label(
+                    deck.name, commander, deck.status == DeckStatus.ARMED
+                )
                 self._deck_combo.addItem(label, deck.id)
         completer = self._deck_combo.completer()
         if completer is not None:
@@ -396,6 +427,7 @@ class OptimizerWidget(QWidget):
         self._solution_combo.blockSignals(True)
         self._solution_combo.clear()
         self._solution_combo.blockSignals(False)
+        self._clear_step_combos()
         self._missing_tree.clear()
         self._summary.setText("")
         self._current_plan = None
@@ -404,6 +436,16 @@ class OptimizerWidget(QWidget):
         self._set_plan_actions_visible(False)
         self._inventory_group.setVisible(True)
         self._solution_group.setVisible(True)
+        self._solution_combo.setVisible(True)
+        self._step_combos_host.setVisible(False)
+
+    def _clear_step_combos(self) -> None:
+        while self._step_combos_layout.count():
+            item = self._step_combos_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._step_solution_combos.clear()
 
     def _clear_queue(self) -> None:
         self._queue.clear()
@@ -465,7 +507,7 @@ class OptimizerWidget(QWidget):
 
     def _queue_status_label(self, plan: AssemblyPlan) -> str:
         if plan.already_armed:
-            return self._translator.t("optimize.queue.armed")
+            return self._translator.t("optimize.queue.kept")
         if plan.still_missing or not plan.result.solutions:
             return self._translator.t("optimize.queue.missing")
         return self._translator.t("optimize.queue.viable")
@@ -478,7 +520,14 @@ class OptimizerWidget(QWidget):
             plan = plans_by_id.get(deck_id)
             name = plan.target_deck_name if plan else str(deck_id)
             status = self._queue_status_label(plan) if plan else "?"
-            mark = "✓" if plan and not plan.already_armed and not plan.still_missing and plan.result.solutions else "✗"
+            mark = (
+                "✓"
+                if plan
+                and not plan.already_armed
+                and not plan.still_missing
+                and plan.result.solutions
+                else "✗"
+            )
             if plan and plan.already_armed:
                 mark = "—"
             item = QListWidgetItem(f"{index}. {name}  {mark} {status}")
@@ -489,17 +538,19 @@ class OptimizerWidget(QWidget):
         if self._queue_list.currentItem() is None and self._queue_list.count() > 0:
             self._queue_list.setCurrentRow(0)
         self._queue_list.blockSignals(False)
-        self._on_queue_selection_changed(self._queue_list.currentRow())
+        self._refresh_plan_display()
 
     def _on_queue_selection_changed(self, row: int) -> None:
-        if row < 0 or row >= len(self._plans):
-            self._clear_plan_panels()
-            return
-        self._current_plan = self._plans[row]
-        self._refresh_plan_display()
+        if len(self._plans) <= 1 and 0 <= row < len(self._plans):
+            self._current_plan = self._plans[row]
+        # Aggregate (2+) view ignores selection for the main panels.
+        if not self._recomputing_queue:
+            self._refresh_plan_display()
 
     def _on_solution_changed(self, _index: int = 0) -> None:
         if self._recomputing_queue:
+            return
+        if len(self._plans) > 1:
             return
         plan = self._current_plan
         if plan is None:
@@ -515,16 +566,40 @@ class OptimizerWidget(QWidget):
                 return
         self._show_selected_solution()
 
-    def _refresh_plan_display(self) -> None:
-        plan = self._current_plan
-        if plan is None:
+    def _on_step_solution_changed(self, deck_id: int) -> None:
+        if self._recomputing_queue:
             return
+        combo = self._step_solution_combos.get(deck_id)
+        if combo is None:
+            return
+        solution = combo.currentData()
+        if not isinstance(solution, frozenset):
+            return
+        previous = self._chosen_solutions.get(deck_id)
+        self._chosen_solutions[deck_id] = solution
+        if previous != solution:
+            self._recompute_queue_plans(select_deck_id=deck_id)
 
+    def _refresh_plan_display(self) -> None:
+        if not self._plans:
+            self._clear_plan_panels()
+            return
+        if len(self._plans) == 1:
+            self._current_plan = self._plans[0]
+            self._refresh_single_plan_display(self._plans[0])
+            return
+        self._current_plan = None
+        self._refresh_aggregate_plan_display()
+
+    def _refresh_single_plan_display(self, plan: AssemblyPlan) -> None:
         self._inventory_list.clear()
         self._solution_tree.clear()
         self._solution_combo.blockSignals(True)
         self._solution_combo.clear()
         self._solution_combo.blockSignals(False)
+        self._clear_step_combos()
+        self._step_combos_host.setVisible(False)
+        self._solution_combo.setVisible(True)
         self._missing_tree.clear()
         self._apply_section_titles_from_plan()
 
@@ -542,7 +617,7 @@ class OptimizerWidget(QWidget):
                 plan.free_inventory_used.items(),
                 key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
-                self._inventory_list.addItem(self._card_qty_label(card_id, qty))
+                self._inventory_list.addItem(self._card_qty_label(plan, card_id, qty))
         else:
             self._inventory_list.addItem("—")
 
@@ -591,6 +666,198 @@ class OptimizerWidget(QWidget):
         self._solution_combo.blockSignals(False)
         self._show_selected_solution()
 
+    def _refresh_aggregate_plan_display(self) -> None:
+        self._inventory_list.clear()
+        self._solution_tree.clear()
+        self._missing_tree.clear()
+        self._solution_combo.blockSignals(True)
+        self._solution_combo.clear()
+        self._solution_combo.blockSignals(False)
+        self._solution_combo.setVisible(False)
+        self._clear_step_combos()
+        self._apply_section_titles_from_plan()
+
+        viable = sequence_is_viable(self._plans)
+        if viable:
+            donors = unique_donors_for_sequence(self._plans, self._chosen_solutions)
+            count = len(donors)
+            if count == 0:
+                summary = self._translator.t("optimize.summary.inventory_only_set")
+            else:
+                summary = self._translator.t("optimize.summary.dismantle_set").format(
+                    count=count
+                )
+            self._summary.setText(summary)
+        else:
+            self._summary.setText(self._translator.t("optimize.no_solutions_set"))
+
+        self._inventory_group.setVisible(True)
+        for plan in self._plans:
+            self._inventory_list.addItem(self._section_header(plan.target_deck_name))
+            if plan.already_armed:
+                self._inventory_list.addItem(
+                    self._translator.t("optimize.queue.kept")
+                )
+                continue
+            if plan.free_inventory_used:
+                for card_id, qty in sorted(
+                    plan.free_inventory_used.items(),
+                    key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+                ):
+                    self._inventory_list.addItem(
+                        self._card_qty_label(plan, card_id, qty)
+                    )
+            else:
+                self._inventory_list.addItem("—")
+
+        show_solutions = viable
+        if show_solutions:
+            self._solution_group.setVisible(True)
+            self._missing_group.setVisible(False)
+            self._populate_aggregate_solutions()
+            self._set_plan_actions_visible(True)
+        else:
+            self._solution_group.setVisible(False)
+            self._set_plan_actions_visible(False)
+            self._cancel_button.setVisible(True)
+            self._missing_group.setVisible(True)
+            self._populate_aggregate_missing()
+
+    def _populate_aggregate_solutions(self) -> None:
+        self._step_combos_host.setVisible(False)
+        multi_steps = [
+            plan
+            for plan in self._plans
+            if not plan.already_armed
+            and plan.result.solutions
+            and len(plan.result.solutions) > 1
+        ]
+        if multi_steps:
+            self._step_combos_host.setVisible(True)
+            for plan in multi_steps:
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                label = QLabel(plan.target_deck_name)
+                combo = QComboBox()
+                preferred = self._chosen_solutions.get(plan.target_deck_id)
+                select_index = 0
+                for index, solution in enumerate(plan.result.solutions):
+                    text = plan.solution_labels.get(
+                        solution, ", ".join(sorted(solution))
+                    )
+                    if index == 0:
+                        text = (
+                            f"{text} — "
+                            f"{self._translator.t('optimize.solution.suggested')}"
+                        )
+                    combo.addItem(text, solution)
+                    if preferred == solution:
+                        select_index = index
+                combo.setCurrentIndex(select_index)
+                deck_id = plan.target_deck_id
+                combo.currentIndexChanged.connect(
+                    lambda _i, d=deck_id: self._on_step_solution_changed(d)
+                )
+                row_layout.addWidget(label)
+                row_layout.addWidget(combo, 1)
+                self._step_combos_layout.addWidget(row)
+                self._step_solution_combos[deck_id] = combo
+
+        for plan in self._plans:
+            header = QTreeWidgetItem([self._section_header(plan.target_deck_name)])
+            self._solution_tree.addTopLevelItem(header)
+            if plan.already_armed:
+                header.addChild(
+                    QTreeWidgetItem([self._translator.t("optimize.queue.kept")])
+                )
+                header.setExpanded(True)
+                continue
+            solution = self._chosen_solutions.get(
+                plan.target_deck_id, plan.result.solutions[0]
+            )
+            taken = plan.cards_taken_from_solution(solution)
+            if not solution:
+                header.addChild(QTreeWidgetItem(["—"]))
+                header.setExpanded(True)
+                continue
+            for deck_id in sorted(
+                solution,
+                key=lambda item: plan.deck_names.get(item, item).lower(),
+            ):
+                deck_name = plan.deck_names.get(deck_id, deck_id)
+                parent = QTreeWidgetItem([deck_name])
+                header.addChild(parent)
+                cards = taken.get(deck_id, {})
+                for card_id, qty in sorted(
+                    cards.items(),
+                    key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+                ):
+                    parent.addChild(
+                        QTreeWidgetItem([self._card_qty_label(plan, card_id, qty)])
+                    )
+                parent.setExpanded(True)
+            header.setExpanded(True)
+
+    def _populate_aggregate_missing(self) -> None:
+        for plan in self._plans:
+            if plan.already_armed:
+                continue
+            if not plan.still_missing and plan.result.solutions:
+                continue
+            header = QTreeWidgetItem([self._section_header(plan.target_deck_name)])
+            self._missing_tree.addTopLevelItem(header)
+            if plan.still_missing:
+                by_deck, need_to_find = plan.missing_by_source()
+                for deck_id in sorted(
+                    by_deck.keys(),
+                    key=lambda item: plan.deck_names.get(item, item).lower(),
+                ):
+                    deck_name = plan.deck_names.get(deck_id, deck_id)
+                    parent = QTreeWidgetItem([deck_name])
+                    header.addChild(parent)
+                    cards = by_deck[deck_id]
+                    for card_id, qty in sorted(
+                        cards.items(),
+                        key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+                    ):
+                        parent.addChild(
+                            QTreeWidgetItem(
+                                [self._card_qty_label(plan, card_id, qty)]
+                            )
+                        )
+                    parent.setExpanded(True)
+                if need_to_find:
+                    find_parent = QTreeWidgetItem(
+                        [self._translator.t("optimize.missing.need_to_find")]
+                    )
+                    header.addChild(find_parent)
+                    for card_id, qty in sorted(
+                        need_to_find.items(),
+                        key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+                    ):
+                        find_parent.addChild(
+                            QTreeWidgetItem(
+                                [self._card_qty_label(plan, card_id, qty)]
+                            )
+                        )
+                    find_parent.setExpanded(True)
+                if not by_deck and not need_to_find:
+                    for card_id, qty in sorted(
+                        plan.still_missing.items(),
+                        key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
+                    ):
+                        header.addChild(
+                            QTreeWidgetItem(
+                                [self._card_qty_label(plan, card_id, qty)]
+                            )
+                        )
+            else:
+                header.addChild(
+                    QTreeWidgetItem([self._translator.t("optimize.no_solutions")])
+                )
+            header.setExpanded(True)
+
     def _populate_missing_tree(self, plan: AssemblyPlan) -> None:
         """Group unmet cards by armed deck; leftover under Need to find."""
         self._missing_tree.clear()
@@ -608,7 +875,9 @@ class OptimizerWidget(QWidget):
                 cards.items(),
                 key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
-                parent.addChild(QTreeWidgetItem([self._card_qty_label(card_id, qty)]))
+                parent.addChild(
+                    QTreeWidgetItem([self._card_qty_label(plan, card_id, qty)])
+                )
             parent.setExpanded(True)
 
         if need_to_find:
@@ -621,7 +890,7 @@ class OptimizerWidget(QWidget):
                 key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
                 find_parent.addChild(
-                    QTreeWidgetItem([self._card_qty_label(card_id, qty)])
+                    QTreeWidgetItem([self._card_qty_label(plan, card_id, qty)])
                 )
             find_parent.setExpanded(True)
 
@@ -631,7 +900,7 @@ class OptimizerWidget(QWidget):
                 key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
                 self._missing_tree.addTopLevelItem(
-                    QTreeWidgetItem([self._card_qty_label(card_id, qty)])
+                    QTreeWidgetItem([self._card_qty_label(plan, card_id, qty)])
                 )
 
     def _show_selected_solution(self) -> None:
@@ -659,7 +928,9 @@ class OptimizerWidget(QWidget):
                 cards.items(),
                 key=lambda item: plan.card_names.get(item[0], item[0]).lower(),
             ):
-                parent.addChild(QTreeWidgetItem([self._card_qty_label(card_id, qty)]))
+                parent.addChild(
+                    QTreeWidgetItem([self._card_qty_label(plan, card_id, qty)])
+                )
             parent.setExpanded(True)
 
         if not solution:
@@ -668,6 +939,9 @@ class OptimizerWidget(QWidget):
         self._set_plan_actions_visible(True)
 
     def _confirm_plan(self) -> None:
+        if len(self._plans) > 1:
+            self._confirm_aggregate_plan()
+            return
         plan = self._current_plan
         if plan is None or plan.already_armed or plan.still_missing:
             return
@@ -726,6 +1000,81 @@ class OptimizerWidget(QWidget):
         else:
             self._clear_queue()
             self._summary.setText(self._translator.t("optimize.apply.success"))
+        self.changed.emit()
+
+    def _confirm_aggregate_plan(self) -> None:
+        if not sequence_is_viable(self._plans):
+            return
+        donor_ids = unique_donors_for_sequence(self._plans, self._chosen_solutions)
+        name_lookup: dict[str, str] = {}
+        for plan in self._plans:
+            name_lookup.update(plan.deck_names)
+        donor_names = [
+            name_lookup.get(deck_id, deck_id)
+            for deck_id in sorted(
+                donor_ids, key=lambda item: name_lookup.get(item, item).lower()
+            )
+        ]
+        targets = [
+            plan.target_deck_name
+            for plan in self._plans
+            if not plan.already_armed
+        ]
+        decks_text = (
+            "\n".join(f"• {name}" for name in donor_names) if donor_names else "—"
+        )
+        targets_text = (
+            "\n".join(f"• {name}" for name in targets) if targets else "—"
+        )
+        body = self._translator.t("optimize.apply.confirm_body_set").format(
+            decks=decks_text,
+            targets=targets_text,
+        )
+        reply = QMessageBox.question(
+            self,
+            self._translator.t("optimize.apply.confirm_title"),
+            body,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        steps = [
+            (
+                plan.target_deck_id,
+                plan.target_deck_name,
+                self._chosen_solutions.get(
+                    plan.target_deck_id, plan.result.solutions[0]
+                ),
+            )
+            for plan in self._plans
+            if not plan.already_armed
+        ]
+        try:
+            with get_session() as session:
+                service = OptimizationService(session)
+                all_moved: list[tuple[str, list[MovedCopy]]] = []
+                for target_id, target_name, solution in steps:
+                    moved = service.apply_assembly_plan(target_id, solution)
+                    if moved:
+                        all_moved.append((target_name, moved))
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            self.refresh_decks()
+            self.changed.emit()
+            return
+
+        self._clear_queue()
+        self.refresh_decks()
+        self._summary.setText(self._translator.t("optimize.apply.success_set"))
+        if self._track_editions:
+            for target_name, moved in all_moved:
+                self._prompt_for_editions(target_name, moved)
         self.changed.emit()
 
     def _prompt_for_editions(self, deck_name: str, moved: list[MovedCopy]) -> None:
