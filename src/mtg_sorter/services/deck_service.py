@@ -41,6 +41,16 @@ class DeckEditRow:
 
 
 @dataclass(frozen=True)
+class DeckCardSummary:
+    """Lightweight list-row for the Decks detail pane (no free/assigned counts)."""
+
+    oracle_id: str
+    name: str
+    quantity: int
+    role: DeckCardRole
+
+
+@dataclass(frozen=True)
 class DeckEditLine:
     oracle_id: str
     quantity: int
@@ -450,6 +460,30 @@ class DeckService:
                 self._session.delete(copy)
 
         self._decks.flush()
+
+    def deck_card_summaries(self, deck_id: int) -> list[DeckCardSummary]:
+        """Cards on a deck list for display, command zone first then by name."""
+        rows = self._decks.list_deck_cards_with_card(deck_id, exclude_token=True)
+        priority = {
+            DeckCardRole.COMMANDER: 0,
+            DeckCardRole.PARTNER: 1,
+            DeckCardRole.COMPANION: 2,
+            DeckCardRole.BACKGROUND: 3,
+            DeckCardRole.MAIN: 4,
+        }
+        summaries = [
+            DeckCardSummary(
+                oracle_id=card.oracle_id,
+                name=card.name,
+                quantity=deck_card.quantity,
+                role=deck_card.role,
+            )
+            for deck_card, card in rows
+        ]
+        return sorted(
+            summaries,
+            key=lambda row: (priority.get(row.role, 99), row.name.casefold()),
+        )
 
     def deck_edit_rows(self, deck_id: int) -> list[DeckEditRow]:
         rows = self._decks.list_deck_cards_with_card(deck_id, exclude_token=True)

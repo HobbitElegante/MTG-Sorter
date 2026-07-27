@@ -545,3 +545,64 @@ def test_list_decks_filter_and_move(session: Session) -> None:
     assert [d.name for d in service.list_decks()] == ["Charlie", "Bravo", "Alpha"]
 
     assert service.move_deck(c.id, direction=-1, status=DeckStatus.ARMED) is False
+
+
+def test_deck_card_summaries_orders_command_zone_first(session: Session) -> None:
+    commander = Card(
+        oracle_id="cmd", name="Kellan", is_basic_land=False, is_token=False
+    )
+    partner = Card(
+        oracle_id="prt", name="Rograkh", is_basic_land=False, is_token=False
+    )
+    main_b = Card(
+        oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False
+    )
+    main_a = Card(
+        oracle_id="arc", name="Arcane Signet", is_basic_land=False, is_token=False
+    )
+    token = Card(
+        oracle_id="tok", name="Treasure", is_basic_land=False, is_token=True
+    )
+    deck = Deck(name="Summaries", status=DeckStatus.DISMANTLED, sort_order=0)
+    session.add_all([commander, partner, main_a, main_b, token, deck])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=deck.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="arc",
+                quantity=2,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="cmd",
+                quantity=1,
+                role=DeckCardRole.COMMANDER,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="prt",
+                quantity=1,
+                role=DeckCardRole.PARTNER,
+            ),
+            DeckCard(
+                deck_id=deck.id,
+                card_id="tok",
+                quantity=1,
+                role=DeckCardRole.TOKEN,
+            ),
+        ]
+    )
+    session.flush()
+
+    summaries = DeckService(session).deck_card_summaries(deck.id)
+    assert [row.oracle_id for row in summaries] == ["cmd", "prt", "arc", "sol"]
+    assert summaries[2].quantity == 2
+    assert all(row.role != DeckCardRole.TOKEN for row in summaries)

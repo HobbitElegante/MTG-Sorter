@@ -1402,8 +1402,11 @@ class DeckEditDialog(QDialog):
         layout = QVBoxLayout(self)
         self._total_label = QLabel("")
         self._slots_label = QLabel("")
-        layout.addWidget(self._total_label)
-        layout.addWidget(self._slots_label)
+        header_row = QHBoxLayout()
+        header_row.addWidget(self._total_label)
+        header_row.addStretch()
+        header_row.addWidget(self._slots_label)
+        layout.addLayout(header_row)
 
         self._table = QTableWidget(0, 4)
         self._table.setHorizontalHeaderLabels(
@@ -1424,14 +1427,21 @@ class DeckEditDialog(QDialog):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self._table.currentCellChanged.connect(
             lambda row, *_: self._on_row_selected(row)
         )
         if card_images_enabled():
             self._preview = CardPreviewPanel(self._translator)
-            layout.addWidget(build_preview_splitter(self._table, self._preview))
+            splitter = build_preview_splitter(self._table, self._preview)
+            splitter.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+            layout.addWidget(splitter, 1)
         else:
-            layout.addWidget(self._table)
+            layout.addWidget(self._table, 1)
 
         actions = QHBoxLayout()
         self._add_button = QPushButton(self._translator.t("decks.edit.add"))

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QPainter, QShowEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -33,9 +34,16 @@ from mtg_sorter.services import (
     SettingsService,
 )
 from mtg_sorter.services.deck_export import load_deck_export_cards
+from mtg_sorter.services.deck_service import DeckCardSummary
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
+from mtg_sorter.ui.deck_list_display import (
+    DeckListRow,
+    DeckSortKey,
+    filter_deck_rows,
+    sort_deck_rows,
+)
 from mtg_sorter.ui.inventory_display import format_deck_warning_tooltip
-from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, build_preview_splitter
+from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, PREVIEW_MIN_WIDTH
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
     CommandZoneFields,
@@ -51,6 +59,21 @@ DECK_NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 DECK_STATUS_ROLE = Qt.ItemDataRole.UserRole + 2
 DECK_WARNING_ROLE = Qt.ItemDataRole.UserRole + 3
 DECK_LOCKED_ROLE = Qt.ItemDataRole.UserRole + 4
+CARD_ORACLE_ROLE = Qt.ItemDataRole.UserRole + 1
+CARD_NAME_ROLE = Qt.ItemDataRole.UserRole + 2
+
+_COMMAND_ZONE_ROLES = {
+    DeckCardRole.COMMANDER,
+    DeckCardRole.PARTNER,
+    DeckCardRole.COMPANION,
+    DeckCardRole.BACKGROUND,
+}
+_ROLE_I18N = {
+    DeckCardRole.PARTNER: "decks.role.partner",
+    DeckCardRole.COMPANION: "decks.role.companion",
+    DeckCardRole.BACKGROUND: "decks.role.background",
+    DeckCardRole.COMMANDER: "decks.details_edit.commander",
+}
 
 
 class DeckListItemDelegate(QStyledItemDelegate):
@@ -166,17 +189,27 @@ class DecksWidget(QWidget):
         super().__init__(parent)
         self._translator = translator
         self._status_filter: DeckStatus | None = None
+        self._sort_key: DeckSortKey = "number"
+        self._sort_ascending = True
+        self._deck_rows: list[DeckListRow] = []
+        # Heavy list load waits until Mazos is shown (Browse is the startup tab).
+        self._decks_loaded = False
         # Deck being re-synced from a paste/URL; None while importing a new deck.
         self._update_deck_id: int | None = None
         self._update_deck_name = ""
         with get_session() as session:
             self._show_card_images = SettingsService(session).get_show_card_images()
         self._build_ui()
-        self.refresh()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt override)
+        super().showEvent(event)
+        if not self._decks_loaded:
+            self.refresh()
 
     def set_show_card_images(self, enabled: bool) -> None:
         self._show_card_images = enabled
-        self._command_zone_previews.setVisible(enabled)
+        self._commander_preview.setVisible(enabled)
+        self._card_preview.setVisible(enabled)
 
     def retranslate(self) -> None:
         self._decks_group.setTitle(self._translator.t("decks.list.title"))
@@ -201,10 +234,14 @@ class DecksWidget(QWidget):
         self._lock_button.setText(self._translator.t("decks.lock"))
         self._search.setPlaceholderText(self._translator.t("decks.search"))
         self._filter_label.setText(self._translator.t("decks.filter.label"))
+        self._sort_label.setText(self._translator.t("decks.sort.by"))
+        self._cards_label.setText(self._translator.t("decks.cards.title"))
         self._commander_preview.retranslate()
-        self._secondary_preview.retranslate()
+        self._card_preview.retranslate()
         self._retranslate_filter()
-        self.refresh()
+        self._retranslate_sort()
+        if self._decks_loaded:
+            self.refresh()
 
     def _retranslate_import_panel(self) -> None:
         """Import panel doubles as the update panel; labels follow the mode."""
@@ -236,6 +273,22 @@ class DecksWidget(QWidget):
         self._filter_combo.setCurrentIndex(index if index >= 0 else 0)
         self._filter_combo.blockSignals(False)
 
+    def _retranslate_sort(self) -> None:
+        current = self._sort_combo.currentData()
+        self._sort_combo.blockSignals(True)
+        self._sort_combo.clear()
+        self._sort_combo.addItem(self._translator.t("decks.sort.number"), "number")
+        self._sort_combo.addItem(self._translator.t("decks.sort.name"), "name")
+        self._sort_combo.addItem(self._translator.t("decks.sort.status"), "status")
+        index = self._sort_combo.findData(current if current is not None else "number")
+        self._sort_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._sort_combo.blockSignals(False)
+        self._update_sort_dir_button()
+
+    def _update_sort_dir_button(self) -> None:
+        key = "decks.sort.asc" if self._sort_ascending else "decks.sort.desc"
+        self._sort_dir_button.setText(self._translator.t(key))
+
     def _build_ui(self) -> None:
         self._main_layout = QVBoxLayout(self)
 
@@ -245,7 +298,7 @@ class DecksWidget(QWidget):
         filter_row = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText(self._translator.t("decks.search"))
-        self._search.textChanged.connect(self.refresh)
+        self._search.textChanged.connect(self._populate_deck_list)
         self._filter_label = QLabel(self._translator.t("decks.filter.label"))
         self._filter_combo = QComboBox()
         self._filter_combo.setSizeAdjustPolicy(
@@ -253,6 +306,15 @@ class DecksWidget(QWidget):
         )
         self._retranslate_filter()
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
+        self._sort_label = QLabel(self._translator.t("decks.sort.by"))
+        self._sort_combo = QComboBox()
+        self._sort_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self._sort_dir_button = QPushButton()
+        self._sort_dir_button.clicked.connect(self._toggle_sort_direction)
+        self._retranslate_sort()
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
         self._move_up_button = QPushButton(self._translator.t("decks.move_up"))
         self._move_down_button = QPushButton(self._translator.t("decks.move_down"))
         self._move_up_button.clicked.connect(lambda: self._move_selected(-1))
@@ -260,6 +322,9 @@ class DecksWidget(QWidget):
         filter_row.addWidget(self._search, 1)
         filter_row.addWidget(self._filter_label)
         filter_row.addWidget(self._filter_combo)
+        filter_row.addWidget(self._sort_label)
+        filter_row.addWidget(self._sort_combo)
+        filter_row.addWidget(self._sort_dir_button)
         filter_row.addWidget(self._move_up_button)
         filter_row.addWidget(self._move_down_button)
         decks_layout.addLayout(filter_row)
@@ -278,20 +343,36 @@ class DecksWidget(QWidget):
         list_layout.addWidget(self._details)
 
         self._commander_preview = CardPreviewPanel(self._translator)
-        self._secondary_preview = CardPreviewPanel(
-            self._translator, show_title=False
-        )
-        self._secondary_preview.setVisible(False)
-        self._command_zone_previews = QWidget()
-        zone_layout = QVBoxLayout(self._command_zone_previews)
-        zone_layout.setContentsMargins(0, 0, 0, 0)
-        zone_layout.addWidget(self._commander_preview, 1)
-        zone_layout.addWidget(self._secondary_preview, 1)
-        self._command_zone_previews.setVisible(self._show_card_images)
+        self._commander_preview.setVisible(self._show_card_images)
 
-        decks_layout.addWidget(
-            build_preview_splitter(list_column, self._command_zone_previews), 1
+        self._cards_label = QLabel(self._translator.t("decks.cards.title"))
+        self._deck_cards = QListWidget()
+        self._deck_cards.currentItemChanged.connect(self._on_deck_card_selected)
+        cards_column = QWidget()
+        cards_layout = QVBoxLayout(cards_column)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.addWidget(self._cards_label)
+        cards_layout.addWidget(self._deck_cards, 1)
+
+        self._card_preview = CardPreviewPanel(self._translator, show_title=False)
+        self._card_preview.setVisible(self._show_card_images)
+
+        self._detail_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._detail_splitter.addWidget(list_column)
+        self._detail_splitter.addWidget(self._commander_preview)
+        self._detail_splitter.addWidget(cards_column)
+        self._detail_splitter.addWidget(self._card_preview)
+        self._detail_splitter.setStretchFactor(0, 2)
+        self._detail_splitter.setStretchFactor(1, 0)
+        self._detail_splitter.setStretchFactor(2, 2)
+        self._detail_splitter.setStretchFactor(3, 0)
+        with get_session() as session:
+            preview_width = SettingsService(session).get_card_preview_width()
+        preview_width = max(preview_width, PREVIEW_MIN_WIDTH)
+        self._detail_splitter.setSizes(
+            [320, preview_width, 280, preview_width]
         )
+        decks_layout.addWidget(self._detail_splitter, 1)
 
         self._deck_actions = QWidget()
         actions_layout = QHBoxLayout(self._deck_actions)
@@ -424,76 +505,139 @@ class DecksWidget(QWidget):
     def _on_filter_changed(self) -> None:
         data = self._filter_combo.currentData()
         self._status_filter = data if isinstance(data, DeckStatus) else None
-        self.refresh()
+        self._populate_deck_list()
+
+    def _on_sort_changed(self) -> None:
+        data = self._sort_combo.currentData()
+        if data in ("number", "name", "status"):
+            self._sort_key = data
+        self._populate_deck_list()
+
+    def _toggle_sort_direction(self) -> None:
+        self._sort_ascending = not self._sort_ascending
+        self._update_sort_dir_button()
+        self._populate_deck_list()
+
+    def _status_label(self, status: DeckStatus) -> str:
+        if status == DeckStatus.ARMED:
+            return self._translator.t("decks.status.armed")
+        return self._translator.t("decks.status.dismantled")
 
     def refresh(self) -> None:
+        self._decks_loaded = True
         selected_id = self._selected_deck_id()
-        self._deck_list.clear()
-        needle = self._search.text().strip().casefold()
+        rows: list[DeckListRow] = []
         with get_session() as session:
             service = DeckService(session)
-            decks = service.list_decks(status=self._status_filter)
-            if needle:
-                decks = [
-                    deck
-                    for deck in decks
-                    if needle in deck.name.casefold()
-                    or needle
-                    in (service.commander_name(deck.id) or "").casefold()
-                ]
-            if not decks:
-                empty_key = (
-                    "decks.empty_filtered"
-                    if self._status_filter is not None or needle
-                    else "decks.empty"
-                )
-                self._deck_list.addItem(self._translator.t(empty_key))
-                self._deck_actions.setVisible(False)
-                self._details.setText("")
-                self._update_move_buttons()
-                return
-            for index, deck in enumerate(decks, start=1):
-                name_label, status_label = self._format_deck_label(
-                    index, deck.name, deck.status, self._translator
-                )
+            for deck in service.list_decks():
                 issues = service.commander_legality_issues(deck.id)
                 rule_issues = service.commander_rule_issues(deck.id)
-                item = QListWidgetItem(name_label)
-                item.setData(Qt.ItemDataRole.UserRole, deck.id)
-                item.setData(DECK_NAME_ROLE, name_label)
-                item.setData(DECK_STATUS_ROLE, status_label)
-                if deck.is_locked:
-                    item.setData(
-                        DECK_LOCKED_ROLE,
-                        self._translator.t("decks.locked.icon"),
-                    )
-                else:
-                    item.setData(DECK_LOCKED_ROLE, "")
                 tip_parts: list[str] = []
                 if deck.is_locked:
                     tip_parts.append(self._translator.t("decks.locked.tooltip"))
-                if issues or rule_issues:
-                    item.setData(
-                        DECK_WARNING_ROLE,
-                        self._translator.t("decks.legality.warning"),
-                    )
+                has_warning = bool(issues or rule_issues)
+                if has_warning:
                     tip_parts.append(
                         format_deck_warning_tooltip(
                             issues, rule_issues, self._translator
                         )
                     )
-                else:
-                    item.setData(DECK_WARNING_ROLE, "")
-                item.setToolTip("\n\n".join(tip_parts))
-                self._deck_list.addItem(item)
-                if deck.id == selected_id:
-                    self._deck_list.setCurrentItem(item)
+                rows.append(
+                    DeckListRow(
+                        id=deck.id,
+                        name=deck.name,
+                        status=deck.status,
+                        sort_order=deck.sort_order,
+                        is_locked=deck.is_locked,
+                        commander_name=service.commander_name(deck.id),
+                        has_warning=has_warning,
+                        tooltip="\n\n".join(tip_parts),
+                    )
+                )
+        self._deck_rows = rows
+        self._populate_deck_list(prefer_deck_id=selected_id, reload_detail=True)
 
-        if self._deck_list.currentItem() is None and self._deck_list.count() > 0:
+    def _populate_deck_list(
+        self,
+        prefer_deck_id: int | None = None,
+        *,
+        reload_detail: bool = False,
+    ) -> None:
+        selected_id = (
+            prefer_deck_id
+            if prefer_deck_id is not None
+            else self._selected_deck_id()
+        )
+        needle = self._search.text()
+        visible = filter_deck_rows(
+            self._deck_rows,
+            status=self._status_filter,
+            needle=needle,
+        )
+        visible = sort_deck_rows(
+            visible,
+            key=self._sort_key,
+            ascending=self._sort_ascending,
+            status_label=self._status_label,
+        )
+
+        self._deck_list.blockSignals(True)
+        self._deck_list.clear()
+        if not visible:
+            empty_key = (
+                "decks.empty_filtered"
+                if self._status_filter is not None or needle.strip()
+                else "decks.empty"
+            )
+            self._deck_list.addItem(self._translator.t(empty_key))
+            self._deck_list.blockSignals(False)
+            self._deck_actions.setVisible(False)
+            self._details.setText("")
+            self._clear_deck_detail_panels()
+            self._update_move_buttons()
+            return
+
+        restore_item: QListWidgetItem | None = None
+        for index, deck in enumerate(visible, start=1):
+            name_label, status_label = self._format_deck_label(
+                index, deck.name, deck.status, self._translator
+            )
+            item = QListWidgetItem(name_label)
+            item.setData(Qt.ItemDataRole.UserRole, deck.id)
+            item.setData(DECK_NAME_ROLE, name_label)
+            item.setData(DECK_STATUS_ROLE, status_label)
+            item.setData(
+                DECK_LOCKED_ROLE,
+                self._translator.t("decks.locked.icon") if deck.is_locked else "",
+            )
+            item.setData(
+                DECK_WARNING_ROLE,
+                self._translator.t("decks.legality.warning")
+                if deck.has_warning
+                else "",
+            )
+            item.setToolTip(deck.tooltip)
+            self._deck_list.addItem(item)
+            if deck.id == selected_id:
+                restore_item = item
+
+        self._deck_list.blockSignals(False)
+        if restore_item is not None:
+            self._deck_list.blockSignals(True)
+            self._deck_list.setCurrentItem(restore_item)
+            self._deck_list.blockSignals(False)
+            if reload_detail:
+                self._on_selection_changed()
+            else:
+                self._update_move_buttons()
+        elif self._deck_list.count() > 0:
             first = self._deck_list.item(0)
             if first is not None and first.data(Qt.ItemDataRole.UserRole) is not None:
                 self._deck_list.setCurrentRow(0)
-        self._update_move_buttons()
+            else:
+                self._update_move_buttons()
+        else:
+            self._update_move_buttons()
 
     def _selected_deck_id(self) -> int | None:
         item = self._deck_list.currentItem()
@@ -502,12 +646,18 @@ class DecksWidget(QWidget):
         deck_id = item.data(Qt.ItemDataRole.UserRole)
         return deck_id if isinstance(deck_id, int) else None
 
+    def _manual_order_active(self) -> bool:
+        return self._sort_key == "number" and self._sort_ascending
+
     def _update_move_buttons(self) -> None:
         row = self._deck_list.currentRow()
         count = self._deck_list.count()
         has_deck = self._selected_deck_id() is not None
-        self._move_up_button.setEnabled(has_deck and row > 0)
-        self._move_down_button.setEnabled(has_deck and row >= 0 and row < count - 1)
+        can_reorder = has_deck and self._manual_order_active()
+        self._move_up_button.setEnabled(can_reorder and row > 0)
+        self._move_down_button.setEnabled(
+            can_reorder and row >= 0 and row < count - 1
+        )
 
     def _update_status_buttons(self, status: DeckStatus) -> None:
         if status == DeckStatus.ARMED:
@@ -535,17 +685,69 @@ class DecksWidget(QWidget):
         self.refresh()
         self.changed.emit()
 
-    def _update_command_zone_previews(self, cards: list[tuple[str, str]]) -> None:
-        if cards:
-            self._commander_preview.set_card(cards[0][0], cards[0][1])
+    def _clear_deck_detail_panels(self) -> None:
+        self._commander_preview.clear()
+        self._card_preview.clear()
+        self._deck_cards.blockSignals(True)
+        self._deck_cards.clear()
+        self._deck_cards.blockSignals(False)
+
+    def _format_deck_card_label(self, card: DeckCardSummary) -> str:
+        if card.role in _COMMAND_ZONE_ROLES:
+            role_key = _ROLE_I18N[card.role]
+            return self._translator.t("decks.cards.line_role").format(
+                qty=card.quantity,
+                name=card.name,
+                role=self._translator.t(role_key),
+            )
+        return self._translator.t("decks.cards.line").format(
+            qty=card.quantity,
+            name=card.name,
+        )
+
+    def _load_deck_cards(self, deck_id: int) -> None:
+        with get_session() as session:
+            service = DeckService(session)
+            cards = service.deck_card_summaries(deck_id)
+            zone = service.command_zone_cards(deck_id)
+
+        if zone:
+            self._commander_preview.set_card(zone[0][0], zone[0][1])
         else:
             self._commander_preview.clear()
-        if len(cards) > 1:
-            self._secondary_preview.set_card(cards[1][0], cards[1][1])
-            self._secondary_preview.setVisible(True)
-        else:
-            self._secondary_preview.clear()
-            self._secondary_preview.setVisible(False)
+
+        self._deck_cards.blockSignals(True)
+        self._deck_cards.clear()
+        if not cards:
+            empty = QListWidgetItem(self._translator.t("decks.cards.empty"))
+            self._deck_cards.addItem(empty)
+            self._deck_cards.blockSignals(False)
+            self._card_preview.clear()
+            return
+
+        commander_oracle = zone[0][0] if zone else None
+        select_row = 0
+        for index, card in enumerate(cards):
+            item = QListWidgetItem(self._format_deck_card_label(card))
+            item.setData(CARD_ORACLE_ROLE, card.oracle_id)
+            item.setData(CARD_NAME_ROLE, card.name)
+            self._deck_cards.addItem(item)
+            if commander_oracle and card.oracle_id == commander_oracle:
+                select_row = index
+        self._deck_cards.blockSignals(False)
+        self._deck_cards.setCurrentRow(select_row)
+
+    def _on_deck_card_selected(self) -> None:
+        item = self._deck_cards.currentItem()
+        if item is None:
+            self._card_preview.clear()
+            return
+        oracle_id = item.data(CARD_ORACLE_ROLE)
+        name = item.data(CARD_NAME_ROLE)
+        if not isinstance(oracle_id, str):
+            self._card_preview.clear()
+            return
+        self._card_preview.set_card(oracle_id, name if isinstance(name, str) else "")
 
     def _on_selection_changed(self) -> None:
         deck_id = self._selected_deck_id()
@@ -553,16 +755,16 @@ class DecksWidget(QWidget):
         if deck_id is None:
             self._details.setText("")
             self._deck_actions.setVisible(False)
-            self._update_command_zone_previews([])
+            self._clear_deck_detail_panels()
             return
 
         self._deck_actions.setVisible(True)
+        self._load_deck_cards(deck_id)
         with get_session() as session:
             service = DeckService(session)
             deck = service.get_deck(deck_id)
             if deck is None:
                 return
-            self._update_command_zone_previews(service.command_zone_cards(deck_id))
             self._update_status_buttons(deck.status)
             self._update_lock_button(deck.is_locked)
             card_count = sum(card.quantity for card in deck.cards)
@@ -590,20 +792,17 @@ class DecksWidget(QWidget):
                 lines.append(self._translator.t("decks.details.commander_none"))
             if secondary is not None:
                 role, name = secondary
-                role_i18n = {
-                    DeckCardRole.PARTNER: "decks.role.partner",
-                    DeckCardRole.COMPANION: "decks.role.companion",
-                    DeckCardRole.BACKGROUND: "decks.role.background",
-                }
                 lines.append(
                     self._translator.t("decks.details.secondary").format(
-                        role=self._translator.t(role_i18n[role]),
+                        role=self._translator.t(_ROLE_I18N[role]),
                         name=name,
                     )
                 )
             self._details.setText("\n".join(lines))
 
     def _move_selected(self, direction: int) -> None:
+        if not self._manual_order_active():
+            return
         deck_id = self._selected_deck_id()
         if deck_id is None:
             return

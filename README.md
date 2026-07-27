@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.8.2)
+## Features (v0.8.3)
 
 ### Collection
 
@@ -18,7 +18,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Armed / dismantled status with automatic physical-copy assignment
 - Command zone: commander plus optional Partner / Companion / Background
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
-- Search, filter by status, and reorder decks
+- Search, filter by status, ephemeral sort (number / name / armed status), and reorder decks (Move up/down when sorted by number ascending)
+- Selected deck: commander preview, full card list, and preview of the selected card (Partner / Companion / Background appear in the list)
 - Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity, Partner / Background / Companion pairings, singleton with printed exceptions, 100-card list size)
 - Lock / unlock a deck so Optimize will not dismantle it (ɸ in the list)
 
@@ -45,6 +46,8 @@ Prebuilt binaries: **https://github.com/HobbitElegante/MTG-Sorter/releases/lates
 
 - Linux: `.AppImage` — `chmod +x` then run.
 - Windows: `.zip` — unzip and run `MTG-Sorter.exe`.
+
+Feedback: [Issues](https://github.com/HobbitElegante/MTG-Sorter/issues) · [Discussions](https://github.com/HobbitElegante/MTG-Sorter/discussions) · Support: [Ko-fi](https://ko-fi.com/hobbitelegante)
 
 Local development setup is below.
 
@@ -88,7 +91,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-187 tests passing.
+193 tests passing.
 
 ## First-time setup
 
@@ -119,10 +122,11 @@ Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL
 - **Edit name / commander:** rename the deck; set or clear the commander; use **+** to add Partner, Companion, or Background (second card field). Cards must be in the local Scryfall cache.
 - **Export list:** opens a dialog with a format picker (MTGO / Moxfield / Arena / Archidekt / MTGGoldfish); copy to clipboard.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
-- **Filter / reorder:** search by deck or commander name; show All, Armed only, or Dismantled only (compact dropdown); Move up / Move down persists custom order (reorder does not refresh Inventory/Browse).
-- Selected deck summary: dismantled shows free coverage as `{available}/{needed}` trackable cards (basics/tokens excluded from the denominator); armed shows “complete”; commander and secondary role are shown when set. Decks with format-legality issues show ⚠ left of `[Armed|Dismantled]` (hover for the card list).
+- **Filter / sort / reorder:** search by deck or commander name; show All, Armed only, or Dismantled only; sort by number, name, or armed/dismantled (ascending/descending — display only; does not rewrite saved order). Move up / Move down persists custom order and is enabled only when sorted by number ascending (reorder does not refresh Inventory/Browse).
+- Selected deck: summary under the deck list (coverage / commander / secondary); to the right, commander image · full card list · image of the selected card. Secondary command-zone cards are in the list (no dedicated preview column).
+- Decks with format-legality or rule issues show ⚠ left of `[Armed|Dismantled]` (hover for details).
 
-Tip: **Edit list** keeps the list size fixed (open slots only). To add or remove cards beyond that — or to fully replace the list from Moxfield — use **Update list**.
+Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table grows when you resize the window. To add or remove cards beyond that — or to fully replace the list from Moxfield — use **Update list**.
 
 ## Inventory
 
@@ -166,7 +170,7 @@ src/mtg_sorter/
   models/         # SQLAlchemy models (ActivityEvent, Card.commander_legality/image_uri_back, …)
   repositories/   # Thin data-access layer (Card, Copy, Deck, Activity, Settings)
   services/       # Business logic / orchestration (uses repositories for SQL)
-  ui/             # PySide6 desktop UI (+ inventory_display, card_preview, import/update dialogs)
+  ui/             # PySide6 desktop UI (+ deck_list_display, inventory_display, card_preview, import/update dialogs)
 tests/
   fixtures/       # Sample exports (kellan, arena, archidekt, mtgo .dek)
 alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
@@ -174,8 +178,8 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.8.2)
+## Latest (v0.8.3)
 
-**v0.8.2** is the recommended build. Prefer it over **v0.8.0** (does not launch) and **v0.8.1** (startup fix only).
+**v0.8.3** is the recommended build. Prefer it over **v0.8.0** (does not launch), **v0.8.1** (startup fix only), and **v0.8.2**.
 
-Optimize plans an **armed set**: add decks you want armed at once (including already-armed ones to keep); viability is for the whole set, with free-inventory and dismantle panels grouped per target. Locked decks (ɸ) stay out of the donor pool permanently; armed decks in the plan are kept without locking them in Decks. Browse → Overview includes a first-run checklist. Commander rule warnings cover **singleton** and **list size**; see also edition tracking and Optimize concentration tie-break from v0.7.0.
+Decks tab: faster filter/search (in-memory after one load), ephemeral sort by number / name / status, and a detail pane with commander image · full list · selected-card preview. Deck data loads on first visit to Decks (not at app startup). Edit-list dialog stretches with the window.
