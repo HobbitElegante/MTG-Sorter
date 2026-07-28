@@ -8,6 +8,7 @@ from mtg_sorter.models.enums import (
     DeckCardRole,
     DeckStatus,
 )
+from mtg_sorter.models.house_ban import HouseBan
 from mtg_sorter.models.metadata import AppSetting
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "DeckCard",
     "DeckCardRole",
     "DeckStatus",
+    "HouseBan",
 ]

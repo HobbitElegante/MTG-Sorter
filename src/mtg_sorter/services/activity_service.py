@@ -177,6 +177,13 @@ class ActivityService:
         latest = self.latest_event()
         return latest is not None and latest.event_type in UNDOABLE_EVENT_TYPES
 
+    def can_redo_last(self) -> bool:
+        try:
+            self._undone_original()
+        except ValueError:
+            return False
+        return True
+
     def undo_last(self) -> ActivityEventRow:
         latest = self.latest_event()
         if latest is None or latest.event_type not in UNDOABLE_EVENT_TYPES:
@@ -212,6 +219,47 @@ class ActivityService:
         row = self._to_row(undone)
         assert row is not None
         return row
+
+    def redo_last(self) -> ActivityEventRow:
+        original = self._undone_original()
+
+        if original.event_type == ActivityEventType.COPIES_ADDED:
+            self._redo_copies_added(original)
+        elif original.event_type == ActivityEventType.COPIES_REMOVED:
+            self._redo_copies_removed(original)
+        elif original.event_type == ActivityEventType.DECK_ARMED:
+            self._redo_deck_armed(original)
+        elif original.event_type == ActivityEventType.DECK_DISMANTLED:
+            self._redo_deck_dismantled(original)
+        elif original.event_type == ActivityEventType.PLAN_APPLIED:
+            self._redo_plan_applied(original)
+        else:
+            raise ValueError(f"Cannot redo event type {original.event_type}")
+
+        redone = self.record(
+            original.event_type,
+            original.summary_key,
+            dict(original.payload),
+        )
+        row = self._to_row(redone)
+        assert row is not None
+        return row
+
+    def _undone_original(self) -> ActivityEventRow:
+        latest = self.latest_event()
+        if latest is None or latest.event_type != ActivityEventType.ACTIVITY_UNDONE:
+            raise ValueError("Nothing to redo")
+        try:
+            event_id = int(latest.payload.get("undone_event_id"))  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid undone_event_id in undo payload") from exc
+        event = self._events.get(event_id)
+        if event is None:
+            raise ValueError(f"Original event {event_id} not found")
+        original = self._to_row(event)
+        if original is None or original.event_type not in UNDOABLE_EVENT_TYPES:
+            raise ValueError("Original event is not redoable")
+        return original
 
     def _undo_copies_added(self, event: ActivityEventRow) -> None:
         from mtg_sorter.services.deck_service import InventoryService
@@ -279,6 +327,74 @@ class ActivityService:
             if donor.status != DeckStatus.DISMANTLED:
                 raise ValueError(f"Donor deck {donor.name} is not dismantled")
             decks.set_status(donor, DeckStatus.ARMED, record_activity=False)
+
+    def _redo_copies_added(self, event: ActivityEventRow) -> None:
+        from mtg_sorter.services.deck_service import InventoryService
+
+        oracle_id = event.payload.get("oracle_id")
+        qty = int(event.payload.get("qty_delta") or 0)
+        if not isinstance(oracle_id, str) or qty <= 0:
+            raise ValueError("Invalid copies-added event payload")
+        InventoryService(self._session).add_copy(
+            oracle_id, qty, record_activity=False
+        )
+
+    def _redo_copies_removed(self, event: ActivityEventRow) -> None:
+        from mtg_sorter.services.deck_service import InventoryService
+
+        oracle_id = event.payload.get("oracle_id")
+        qty = int(event.payload.get("qty_delta") or 0)
+        if not isinstance(oracle_id, str) or qty <= 0:
+            raise ValueError("Invalid copies-removed event payload")
+        removed = InventoryService(self._session).remove_free_copies(
+            oracle_id, qty, record_activity=False
+        )
+        if removed != qty:
+            raise ValueError(
+                f"Not enough free copies to redo (need {qty}, free {removed})"
+            )
+
+    def _redo_deck_armed(self, event: ActivityEventRow) -> None:
+        from mtg_sorter.services.deck_service import DeckService
+
+        deck = self._require_deck(event.payload.get("deck_id"))
+        if deck.status != DeckStatus.DISMANTLED:
+            raise ValueError(f"Deck {deck.name} is not dismantled")
+        DeckService(self._session).set_status(
+            deck, DeckStatus.ARMED, record_activity=False
+        )
+
+    def _redo_deck_dismantled(self, event: ActivityEventRow) -> None:
+        from mtg_sorter.services.deck_service import DeckService
+
+        deck = self._require_deck(event.payload.get("deck_id"))
+        if deck.status != DeckStatus.ARMED:
+            raise ValueError(f"Deck {deck.name} is not armed")
+        DeckService(self._session).set_status(
+            deck, DeckStatus.DISMANTLED, record_activity=False
+        )
+
+    def _redo_plan_applied(self, event: ActivityEventRow) -> None:
+        from mtg_sorter.services.deck_service import DeckService
+
+        decks = DeckService(self._session)
+        target = self._require_deck(event.payload.get("deck_id"))
+        donor_ids = event.payload.get("donor_deck_ids") or []
+        if not isinstance(donor_ids, list):
+            raise ValueError("Invalid plan-applied event payload")
+        donors: list[Deck] = []
+        for raw_id in donor_ids:
+            donors.append(self._require_deck(raw_id))
+
+        for donor in donors:
+            self._session.refresh(donor)
+            if donor.status != DeckStatus.ARMED:
+                raise ValueError(f"Donor deck {donor.name} is not armed")
+            decks.set_status(donor, DeckStatus.DISMANTLED, record_activity=False)
+        self._session.refresh(target)
+        if target.status != DeckStatus.DISMANTLED:
+            raise ValueError(f"Target deck {target.name} is not dismantled")
+        decks.set_status(target, DeckStatus.ARMED, record_activity=False)
 
     def _require_deck(self, deck_id: object) -> Deck:
         try:

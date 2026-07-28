@@ -28,6 +28,7 @@ def session() -> Session:
         ("banned", True),
         ("not_legal", True),
         ("restricted", True),
+        ("house_banned", True),
         ("legal", False),
         (None, False),
         ("", False),

@@ -42,7 +42,10 @@ def is_scryfall_art_series(payload: dict) -> bool:
     return is_art_series_type_line(payload.get("type_line"))
 
 
-COMMANDER_LEGALITY_ISSUE_VALUES = frozenset({"banned", "not_legal", "restricted"})
+COMMANDER_LEGALITY_ISSUE_VALUES = frozenset(
+    {"banned", "not_legal", "restricted", "house_banned"}
+)
+SCRYFALL_LEGALITY_ISSUE_VALUES = frozenset({"banned", "not_legal", "restricted"})
 
 
 def commander_legality_from_payload(payload: dict) -> str | None:
@@ -61,3 +64,10 @@ def is_commander_legality_issue(legality: str | None) -> bool:
     if legality is None:
         return False
     return legality.casefold() in COMMANDER_LEGALITY_ISSUE_VALUES
+
+
+def is_scryfall_legality_issue(legality: str | None) -> bool:
+    """True for official Scryfall Commander legality issues (excludes house bans)."""
+    if legality is None:
+        return False
+    return legality.casefold() in SCRYFALL_LEGALITY_ISSUE_VALUES

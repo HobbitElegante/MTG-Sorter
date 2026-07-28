@@ -5,8 +5,11 @@ from mtg_sorter.config import (
     DEFAULT_LOCALE,
     SETTING_CARD_PREVIEW_WIDTH,
     SETTING_SHOW_CARD_IMAGES,
+    SETTING_SHOW_LEGALITY_WARNINGS,
+    SETTING_SHOW_RULE_WARNINGS,
     SETTING_TRACK_EDITIONS,
     SETTING_UI_LOCALE,
+    SETTING_WINDOW_GEOMETRY,
 )
 from mtg_sorter.i18n.translator import TRANSLATIONS
 from mtg_sorter.repositories import SettingsRepository
@@ -50,6 +53,24 @@ class SettingsService:
     def set_track_editions(self, enabled: bool) -> None:
         self.set(SETTING_TRACK_EDITIONS, "1" if enabled else "0")
 
+    def get_show_legality_warnings(self) -> bool:
+        value = self.get(SETTING_SHOW_LEGALITY_WARNINGS)
+        if value is None:
+            return True
+        return value == "1"
+
+    def set_show_legality_warnings(self, enabled: bool) -> None:
+        self.set(SETTING_SHOW_LEGALITY_WARNINGS, "1" if enabled else "0")
+
+    def get_show_rule_warnings(self) -> bool:
+        value = self.get(SETTING_SHOW_RULE_WARNINGS)
+        if value is None:
+            return True
+        return value == "1"
+
+    def set_show_rule_warnings(self, enabled: bool) -> None:
+        self.set(SETTING_SHOW_RULE_WARNINGS, "1" if enabled else "0")
+
     def get_card_preview_width(self) -> int:
         value = self.get(SETTING_CARD_PREVIEW_WIDTH)
         try:
@@ -61,3 +82,13 @@ class SettingsService:
     def set_card_preview_width(self, width: int) -> None:
         if width > 0:
             self.set(SETTING_CARD_PREVIEW_WIDTH, str(width))
+
+    def get_window_geometry(self) -> str | None:
+        value = self.get(SETTING_WINDOW_GEOMETRY)
+        if value is None or not value.strip():
+            return None
+        return value
+
+    def set_window_geometry(self, geometry: str) -> None:
+        if geometry:
+            self.set(SETTING_WINDOW_GEOMETRY, geometry)

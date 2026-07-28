@@ -70,6 +70,31 @@ class ScryfallClient:
                 return prints
             page += 1
 
+    def search_oracle_ids(self, query: str, *, max_pages: int = 10) -> set[str]:
+        """Return oracle_ids matching a Scryfall search query (paginated)."""
+        trimmed = query.strip()
+        if not trimmed:
+            return set()
+        found: set[str] = set()
+        page = 1
+        while page <= max_pages:
+            payload = self._get(
+                "/cards/search",
+                params={"q": trimmed, "unique": "cards", "page": page},
+            )
+            data = payload.get("data")
+            if isinstance(data, list):
+                for entry in data:
+                    if not isinstance(entry, dict):
+                        continue
+                    oracle_id = entry.get("oracle_id")
+                    if isinstance(oracle_id, str) and oracle_id:
+                        found.add(oracle_id)
+            if not payload.get("has_more"):
+                break
+            page += 1
+        return found
+
     def fetch_bulk_data(self) -> list[dict[str, Any]]:
         payload = self._get("/bulk-data")
         data = payload.get("data")

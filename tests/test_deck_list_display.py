@@ -1,6 +1,7 @@
 from mtg_sorter.models.enums import DeckStatus
 from mtg_sorter.ui.deck_list_display import (
     DeckListRow,
+    coerce_deck_status,
     filter_deck_rows,
     sort_deck_rows,
 )
@@ -24,6 +25,16 @@ def _row(
         has_warning=False,
         tooltip="",
     )
+
+
+def test_coerce_deck_status_from_qt_userdata() -> None:
+    # QComboBox returns StrEnum items as plain str.
+    assert coerce_deck_status("ARMED") is DeckStatus.ARMED
+    assert coerce_deck_status("DISMANTLED") is DeckStatus.DISMANTLED
+    assert coerce_deck_status(DeckStatus.ARMED) is DeckStatus.ARMED
+    assert coerce_deck_status(None) is None
+    assert coerce_deck_status("nope") is None
+    assert coerce_deck_status(1) is None
 
 
 def test_filter_deck_rows_by_status_and_search() -> None:

@@ -286,21 +286,77 @@ class DeckRepository:
 
     def inventory_copy_rows(
         self,
-    ) -> list[tuple[str, str, str | None, int]]:
+    ) -> list[
+        tuple[
+            str,
+            str,
+            str | None,
+            int,
+            str | None,
+            str | None,
+            float | None,
+            str | None,
+            str | None,
+            bool,
+            bool,
+        ]
+    ]:
         rows = self._session.execute(
             select(
                 Card.oracle_id,
                 Card.name,
                 Card.color_identity,
                 func.count(CardCopy.id),
+                Card.type_line,
+                Card.colors,
+                Card.cmc,
+                Card.oracle_text,
+                Card.commander_legality,
+                Card.is_basic_land,
+                Card.is_token,
             )
             .join(Card, Card.oracle_id == CardCopy.card_id)
-            .group_by(Card.oracle_id, Card.name, Card.color_identity)
+            .group_by(
+                Card.oracle_id,
+                Card.name,
+                Card.color_identity,
+                Card.type_line,
+                Card.colors,
+                Card.cmc,
+                Card.oracle_text,
+                Card.commander_legality,
+                Card.is_basic_land,
+                Card.is_token,
+            )
             .order_by(Card.name)
         ).all()
         return [
-            (oracle_id, name, color_identity, int(total))
-            for oracle_id, name, color_identity, total in rows
+            (
+                oracle_id,
+                name,
+                color_identity,
+                int(total),
+                type_line,
+                colors,
+                cmc,
+                oracle_text,
+                commander_legality,
+                bool(is_basic_land),
+                bool(is_token),
+            )
+            for (
+                oracle_id,
+                name,
+                color_identity,
+                total,
+                type_line,
+                colors,
+                cmc,
+                oracle_text,
+                commander_legality,
+                is_basic_land,
+                is_token,
+            ) in rows
         ]
 
     def distinct_card_ids(self) -> set[str]:

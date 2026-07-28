@@ -1,5 +1,13 @@
+from PySide6.QtCore import QByteArray
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
+from mtg_sorter.config import (
+    DEFAULT_WINDOW_HEIGHT,
+    DEFAULT_WINDOW_WIDTH,
+    MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH,
+)
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import SettingsService
@@ -14,7 +22,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._translator = translator
         self.setWindowTitle(self._translator.t("app.title"))
-        self.resize(960, 720)
+        self.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+        self._restore_or_default_geometry()
 
         self._tabs = QTabWidget()
         self.setCentralWidget(self._tabs)
@@ -47,6 +56,24 @@ class MainWindow(QMainWindow):
         self._browse.locale_changed.connect(self.set_locale)
         self._browse.show_images_changed.connect(self._on_show_images_changed)
         self._browse.track_editions_changed.connect(self._on_track_editions_changed)
+        self._browse.warning_settings_changed.connect(self._decks.refresh)
+
+    def _restore_or_default_geometry(self) -> None:
+        with get_session() as session:
+            encoded = SettingsService(session).get_window_geometry()
+        if encoded:
+            restored = self.restoreGeometry(
+                QByteArray.fromBase64(encoded.encode("ascii"))
+            )
+            if restored:
+                return
+        self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        encoded = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        with get_session() as session:
+            SettingsService(session).set_window_geometry(encoded)
+        super().closeEvent(event)
 
     def _on_show_images_changed(self, enabled: bool) -> None:
         self._inventory.set_show_card_images(enabled)

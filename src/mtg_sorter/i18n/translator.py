@@ -17,8 +17,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "{unique} unique cards · {copies} physical copies · "
             "{free} free · {assigned} assigned to armed decks"
         ),
-        "inventory.search.collection": "Search your collection…",
+        "inventory.search.collection": (
+            "Search collection (name or Scryfall syntax, e.g. t:creature c:r)…"
+        ),
         "inventory.search.hint": "Type a card name to check whether you have free copies.",
+        "inventory.search.offline_filters": (
+            "Ignored filters [{filters}]: require an internet connection"
+        ),
         "inventory.add_new": "Add new card to collection",
         "inventory.add_list": "Add list to collection",
         "inventory.add_list.title": "Add list to collection",
@@ -41,9 +46,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_list.confirm": "Add copies",
         "inventory.add_list.empty": "No cards found in that list.",
         "inventory.add_list.placeholder": (
-            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield deck URL…"
+            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield / Archidekt deck URL…"
         ),
-        "inventory.add_list.url_failed": "Could not download that Moxfield deck:\n{error}",
+        "inventory.add_list.url_failed": "Could not download that deck:\n{error}",
         "inventory.add_list.not_trackable": (
             "Basics and tokens are not tracked in inventory. Choose another card."
         ),
@@ -90,10 +95,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.name": "Deck name",
         "decks.commander": "Commander name (optional)",
         "decks.import.placeholder": (
-            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield deck URL…"
+            "Paste Moxfield / Archidekt / Arena / MTGO (.dek), or a Moxfield / Archidekt deck URL…"
         ),
-        "decks.import.url_failed": "Could not download that Moxfield deck:\n{error}",
-        "decks.import.url_filled": "Loaded deck from Moxfield. Review and confirm again.",
+        "decks.import.url_failed": "Could not download that deck:\n{error}",
+        "decks.import.url_filled": "Loaded deck from URL. Review and confirm again.",
         "decks.status.armed": "Armed",
         "decks.status.dismantled": "Dismantled",
         "decks.legality.warning": "⚠",
@@ -286,6 +291,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "common.error": "Error",
         "common.success": "Success",
         "browse.section.overview": "Overview",
+        "browse.section.customize": "Customize",
         "browse.section.cards": "Cards",
         "browse.section.decks": "Decks",
         "browse.section.availability": "Availability",
@@ -302,7 +308,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.history.export": "Export CSV",
         "browse.history.undo": "Undo last",
         "browse.history.undo.confirm": (
-            "Undo the most recent change? This cannot be redone from History."
+            "Undo the most recent change?"
+        ),
+        "browse.history.redo": "Redo last",
+        "browse.history.redo.confirm": (
+            "Redo the change that was just undone?"
         ),
         "history.event.copies_added": "Added {name} × {qty_delta}",
         "history.event.copies_removed": "Removed {name} × {qty_delta}",
@@ -358,6 +368,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Adds an Edition column to Inventory and asks for set codes after "
             "reassembling a deck. Copies with no edition yet show as “-”."
         ),
+        "browse.customize.display": "Display",
+        "browse.customize.warnings": "Deck warnings",
+        "browse.customize.show_images": "Show card images",
+        "browse.customize.track_editions": "Track card editions",
+        "browse.customize.track_editions_hint": (
+            "Adds an Edition column to Inventory and asks for set codes after "
+            "reassembling a deck. Copies with no edition yet show as “-”."
+        ),
+        "browse.customize.show_legality_warnings": (
+            "Show Scryfall Commander legality warnings (⚠)"
+        ),
+        "browse.customize.show_rule_warnings": (
+            "Show Commander game-rule warnings (⚠)"
+        ),
+        "browse.customize.house_ban.title": "House banlist",
+        "browse.customize.house_ban.hint": (
+            "Cards on this list always show an advisory ⚠ on decks that include them."
+        ),
+        "browse.customize.house_ban.add": "Add card…",
+        "browse.customize.house_ban.remove": "Remove selected",
+        "decks.legality.house_banned": "house banned",
         "preview.title": "Card image",
         "preview.empty": "Select a card to preview it.",
         "preview.loading": "Loading image…",
@@ -442,8 +473,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "{unique} cartas únicas · {copies} copias físicas · "
             "{free} libres · {assigned} asignadas a mazos armados"
         ),
-        "inventory.search.collection": "Buscar en tu colección…",
+        "inventory.search.collection": (
+            "Buscar en la colección (nombre o sintaxis Scryfall, p. ej. t:creature c:r)…"
+        ),
         "inventory.search.hint": "Escribe el nombre de una carta para ver si tienes copias libres.",
+        "inventory.search.offline_filters": (
+            "Se ignoraron los filtros [{filters}]: requieren conexión a internet"
+        ),
         "inventory.add_new": "Agregar carta nueva a la colección",
         "inventory.add_list": "Agregar listado a la colección",
         "inventory.add_list.title": "Agregar listado a la colección",
@@ -466,9 +502,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.add_list.confirm": "Agregar copias",
         "inventory.add_list.empty": "No se encontraron cartas en ese listado.",
         "inventory.add_list.placeholder": (
-            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield…"
+            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield / Archidekt…"
         ),
-        "inventory.add_list.url_failed": "No se pudo descargar ese mazo de Moxfield:\n{error}",
+        "inventory.add_list.url_failed": "No se pudo descargar ese mazo:\n{error}",
         "inventory.add_list.not_trackable": (
             "Las básicas y tokens no se llevan en el inventario. Elige otra carta."
         ),
@@ -515,10 +551,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.name": "Nombre del mazo",
         "decks.commander": "Nombre del commander (opcional)",
         "decks.import.placeholder": (
-            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield…"
+            "Pega Moxfield / Archidekt / Arena / MTGO (.dek), o una URL de mazo Moxfield / Archidekt…"
         ),
-        "decks.import.url_failed": "No se pudo descargar ese mazo de Moxfield:\n{error}",
-        "decks.import.url_filled": "Mazo cargado desde Moxfield. Revísalo y confirma de nuevo.",
+        "decks.import.url_failed": "No se pudo descargar ese mazo:\n{error}",
+        "decks.import.url_filled": "Mazo cargado desde URL. Revísalo y confirma de nuevo.",
         "decks.status.armed": "Armado",
         "decks.status.dismantled": "Desarmado",
         "decks.legality.warning": "⚠",
@@ -713,6 +749,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "common.error": "Error",
         "common.success": "Éxito",
         "browse.section.overview": "Resumen",
+        "browse.section.customize": "Personalizar",
         "browse.section.cards": "Cartas",
         "browse.section.decks": "Mazos",
         "browse.section.availability": "Disponibilidad",
@@ -729,7 +766,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "browse.history.export": "Exportar CSV",
         "browse.history.undo": "Deshacer último",
         "browse.history.undo.confirm": (
-            "¿Deshacer el cambio más reciente? No se puede rehacer desde el Historial."
+            "¿Deshacer el cambio más reciente?"
+        ),
+        "browse.history.redo": "Rehacer último",
+        "browse.history.redo.confirm": (
+            "¿Rehacer el cambio que acabas de deshacer?"
         ),
         "history.event.copies_added": "Añadidas {name} × {qty_delta}",
         "history.event.copies_removed": "Quitadas {name} × {qty_delta}",
@@ -788,6 +829,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Agrega la columna Edición en Inventario y pide los códigos de set "
             "al rearmar un mazo. Las copias sin edición se muestran como «-»."
         ),
+        "browse.customize.display": "Visualización",
+        "browse.customize.warnings": "Avisos de mazos",
+        "browse.customize.show_images": "Mostrar imágenes de cartas",
+        "browse.customize.track_editions": "Registrar ediciones de las cartas",
+        "browse.customize.track_editions_hint": (
+            "Agrega la columna Edición en Inventario y pide los códigos de set "
+            "al rearmar un mazo. Las copias sin edición se muestran como «-»."
+        ),
+        "browse.customize.show_legality_warnings": (
+            "Mostrar avisos de legalidad Commander de Scryfall (⚠)"
+        ),
+        "browse.customize.show_rule_warnings": (
+            "Mostrar avisos de reglas de juego Commander (⚠)"
+        ),
+        "browse.customize.house_ban.title": "Banlist casera",
+        "browse.customize.house_ban.hint": (
+            "Las cartas de esta lista siempre muestran un ⚠ informativo "
+            "en los mazos que las incluyen."
+        ),
+        "browse.customize.house_ban.add": "Agregar carta…",
+        "browse.customize.house_ban.remove": "Quitar seleccionada",
+        "decks.legality.house_banned": "baneada en casa",
         "preview.title": "Imagen de la carta",
         "preview.empty": "Selecciona una carta para verla.",
         "preview.loading": "Cargando imagen…",

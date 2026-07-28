@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
+from mtg_sorter.algorithms.card_utils import is_scryfall_legality_issue
 from mtg_sorter.algorithms.commander_rules import (
     CommanderCard,
     CommanderRuleIssue,
@@ -675,7 +675,7 @@ class DeckService:
         """Cards on the list with Scryfall Commander legality issues (advisory)."""
         issues: list[CommanderLegalityIssue] = []
         for oracle_id, name, legality in self._decks.commander_legality_rows(deck_id):
-            if not is_commander_legality_issue(legality):
+            if not is_scryfall_legality_issue(legality):
                 continue
             issues.append(
                 CommanderLegalityIssue(

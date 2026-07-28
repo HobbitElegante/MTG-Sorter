@@ -2,11 +2,13 @@ from pathlib import Path
 
 import pytest
 
+from mtg_sorter.api.archidekt_client import deck_export_from_payload as archidekt_export
 from mtg_sorter.api.moxfield_client import deck_export_from_payload
 from mtg_sorter.models.enums import DeckCardRole
 from mtg_sorter.services.decklist_parser import (
     DecklistFormat,
     detect_format,
+    extract_archidekt_deck_id,
     extract_moxfield_deck_id,
     parse_decklist,
     parse_moxfield_line,
@@ -110,6 +112,104 @@ def test_extract_moxfield_deck_id() -> None:
     assert extract_moxfield_deck_id("1 Sol Ring") is None
     assert detect_format("https://moxfield.com/decks/abc") == DecklistFormat.MOXFIELD_URL
     assert parse_decklist("https://moxfield.com/decks/abc") == []
+
+
+def test_extract_archidekt_deck_id() -> None:
+    assert (
+        extract_archidekt_deck_id("https://www.archidekt.com/decks/7031486/buffs")
+        == "7031486"
+    )
+    assert extract_archidekt_deck_id("https://archidekt.com/decks/42") == "42"
+    assert extract_archidekt_deck_id("1 Sol Ring") is None
+    assert (
+        detect_format("https://archidekt.com/decks/7031486/yuriko")
+        == DecklistFormat.ARCHIDEKT_URL
+    )
+    assert parse_decklist("https://archidekt.com/decks/7031486") == []
+
+
+def test_deck_export_from_archidekt_payload() -> None:
+    payload = {
+        "id": 99,
+        "name": "Archidekt Test",
+        "categories": [
+            {"name": "Commander", "includedInDeck": True},
+            {"name": "Maybeboard", "includedInDeck": False},
+            {"name": "Sideboard", "includedInDeck": True},
+            {"name": "Tokens", "includedInDeck": True},
+            {"name": "Land", "includedInDeck": True},
+        ],
+        "cards": [
+            {
+                "quantity": 1,
+                "companion": False,
+                "categories": ["Commander"],
+                "card": {
+                    "oracleCard": {"name": "Tymna the Weaver"},
+                    "edition": {"editioncode": "c16"},
+                },
+            },
+            {
+                "quantity": 1,
+                "companion": False,
+                "categories": ["Commander"],
+                "card": {
+                    "oracleCard": {"name": "Kraum, Ludevic's Opus"},
+                    "edition": {"editioncode": "c16"},
+                },
+            },
+            {
+                "quantity": 1,
+                "companion": False,
+                "categories": ["Land"],
+                "card": {
+                    "oracleCard": {"name": "Command Tower"},
+                    "edition": {"editioncode": "c21"},
+                },
+            },
+            {
+                "quantity": 1,
+                "companion": False,
+                "categories": ["Maybeboard", "Land"],
+                "card": {"oracleCard": {"name": "Fabled Passage"}},
+            },
+            {
+                "quantity": 1,
+                "companion": False,
+                "categories": ["Sideboard"],
+                "card": {"oracleCard": {"name": "Duress"}},
+            },
+            {
+                "quantity": 1,
+                "companion": True,
+                "categories": ["Sideboard"],
+                "card": {"oracleCard": {"name": "Lurrus of the Dream-Den"}},
+            },
+            {
+                "quantity": 2,
+                "companion": False,
+                "categories": ["Tokens"],
+                "card": {"oracleCard": {"name": "Treasure"}},
+            },
+        ],
+    }
+    export = archidekt_export(payload)
+    assert export.name == "Archidekt Test"
+    assert export.commander_name == "Tymna the Weaver"
+    assert export.secondary_role == "partner"
+    assert export.secondary_name == "Kraum, Ludevic's Opus"
+    assert "Commander: 1 Tymna the Weaver (C16)" in export.list_text
+    assert "Partner: 1 Kraum, Ludevic's Opus (C16)" in export.list_text
+    assert "Companion: 1 Lurrus of the Dream-Den" in export.list_text
+    assert "1 Command Tower (C21)" in export.list_text
+    assert "Fabled Passage" not in export.list_text
+    assert "Duress" not in export.list_text
+    assert "Treasure" not in export.list_text
+    parsed = parse_decklist(export.list_text)
+    roles = {line.name: line.role for line in parsed}
+    assert roles["Tymna the Weaver"] == DeckCardRole.COMMANDER
+    assert roles["Kraum, Ludevic's Opus"] == DeckCardRole.PARTNER
+    assert roles["Lurrus of the Dream-Den"] == DeckCardRole.COMPANION
 
 
 def test_deck_export_from_moxfield_payload() -> None:

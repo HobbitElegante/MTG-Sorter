@@ -2,25 +2,26 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.8.3)
+## Features (v0.9.0)
 
 ### Collection
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
-- Inventory table: Name · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; search
-- Add a single card or paste a whole list (multi-format / Moxfield URL) into free inventory
-- Optional **edition tracking**: turn it on in Browse → Overview to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
+- Inventory table: Name · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
+- Search with name or Scryfall-lite syntax offline (`t:`, `c:`, `ci:`, `cmc`, `o:`, …); advanced tokens use Scryfall online when available
+- Add a single card or paste a whole list (multi-format / Moxfield or Archidekt URL) into free inventory
+- Optional **edition tracking**: turn it on in Browse → Customize to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)
 
 ### Decks
 
-- Import with auto-detect: Moxfield MTGO, Archidekt, Arena, MTGO `.dek`, or public Moxfield URL
+- Import with auto-detect: Moxfield MTGO, Archidekt, Arena, MTGO `.dek`, or public Moxfield / Archidekt URL
 - Armed / dismantled status with automatic physical-copy assignment
 - Command zone: commander plus optional Partner / Companion / Background
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
 - Search, filter by status, ephemeral sort (number / name / armed status), and reorder decks (Move up/down when sorted by number ascending)
 - Selected deck: commander preview, full card list, and preview of the selected card (Partner / Companion / Background appear in the list)
-- Advisory ⚠ that never blocks: Scryfall Commander legality plus game-rule checks (color identity, Partner / Background / Companion pairings, singleton with printed exceptions, 100-card list size)
+- Advisory ⚠ that never blocks: Scryfall Commander legality, game-rule checks, and optional **house banlist** (Customize); legality/rules visibility is toggleable
 - Lock / unlock a deck so Optimize will not dismantle it (ɸ in the list)
 
 ### Optimize
@@ -37,7 +38,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 - Offline card cache via Scryfall bulk (`oracle_cards` / optional `unique_artwork`); Art Series excluded
 - Local JPEGs under `data/images/`; refresh legality + image URLs for the collection without a full re-bulk
-- Browse: card search, availability, activity **History** (filter, load more, CSV, undo last)
+- Browse: Overview, **Customize** (display, warning toggles, house banlist), card search, availability, activity **History** (filter, load more, CSV, undo / redo last), Scryfall
 - UI in English or Spanish (persisted)
 
 ## Download
@@ -91,7 +92,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-193 tests passing.
+209 tests passing.
 
 ## First-time setup
 
@@ -99,21 +100,21 @@ uv run pytest
 2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
 3. Optional: **Use unique-artwork** for better default art; **Download images (collection)** for local JPEGs of owned/list cards.
 4. Import decks from the **Decks** tab (**Import new list**).
-5. Optional: **Browse → Overview** → switch language to Spanish, or uncheck **Show card images** (both persisted).
+5. Optional: **Browse → Customize** → switch language, toggle images / edition tracking / deck warnings, or edit the house banlist (all persisted).
 
 ## Importing a deck
 
 1. Open the **Decks** tab → **Import new list** (form fills the whole tab).
 2. Enter deck name and optional commander; use **+** for Partner, Companion, or Background if needed (a Moxfield URL can fill these for you).
-3. Paste the list, a public **Moxfield deck URL**, or click **Load file** (`.txt` / `.dek`).
-4. Click **Confirm list**. If you pasted a Moxfield URL, the app downloads the deck, fills the form, and asks you to confirm again after review.
+3. Paste the list, a public **Moxfield** or **Archidekt** deck URL, or click **Load file** (`.txt` / `.dek`).
+4. Click **Confirm list**. If you pasted a deck URL, the app downloads the deck, fills the form, and asks you to confirm again after review.
 5. Choose **Armed** or **Dismantled**:
    - **Armed:** physical copies are created/assigned automatically. Shared cards across armed decks get additional copies.
    - **Dismantled:** mark which cards from the list you still have available (−/+) → free inventory copies.
 
 Supported paste formats (auto-detected): Moxfield `Copy for MTGO`, Archidekt text, MTG Arena (`Commander` / `Deck` sections), MTGO `.dek` XML.
 
-Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL).
+Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL). Archidekt: paste the public deck URL, or export text.
 
 ## Editing, updating, exporting, and deleting decks
 
@@ -133,7 +134,7 @@ Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table
 1. Open the **Inventory** tab.
 2. Table columns: **Name** · **Colors** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). Colors show WUBRG identity (— if colorless). Name is the wide column.
 3. Click a column header to sort (text A–Z / Z–A; numbers high→low first, then reverse). Hover **In decks** for the full list when a card is in several decks.
-4. Use the search bar to filter your collection.
+4. Use the search bar to filter your collection by name or Scryfall-lite syntax (`t:creature`, `c:r`, `cmc>=3`, …). Filters that need the live Scryfall index run online when possible; if they cannot, a small note lists the ignored filters.
 5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
 6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
 7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
@@ -178,8 +179,11 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.8.3)
+## Latest (v0.9.0)
 
-**v0.8.3** is the recommended build. Prefer it over **v0.8.0** (does not launch), **v0.8.1** (startup fix only), and **v0.8.2**.
+**v0.9.0** is the recommended build (once tagged). Prefer it over **v0.8.3** and earlier.
 
-Decks tab: faster filter/search (in-memory after one load), ephemeral sort by number / name / status, and a detail pane with commander image · full list · selected-card preview. Deck data loads on first visit to Decks (not at app startup). Edit-list dialog stretches with the window.
+- Browse → **Customize**: display settings (editions / images / language), toggleable Scryfall legality and game-rule ⚠ warnings, and a user **house banlist**
+- Inventory: read-only table cells; collection search with Scryfall-lite syntax offline and advanced filters online (with a note when filters need the network)
+- Decks: Armed/Dismantled filter fixed; search no longer reloads detail on every keystroke; public **Archidekt** URL import
+- History: **redo** the last undo; main window wider by default and remembers geometry

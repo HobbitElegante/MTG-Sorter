@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mtg_sorter.algorithms.card_utils import is_scryfall_legality_issue
+from mtg_sorter.config import HOUSE_BANNED_LEGALITY
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
@@ -50,7 +52,6 @@ from mtg_sorter.services.import_service import (
     InventoryListCard,
     TrackableDeckCard,
 )
-from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.ui.inventory_display import format_card_legality_tooltip
 from mtg_sorter.ui.widgets.card_preview import (
     CardPreviewPanel,
@@ -377,10 +378,12 @@ class ExportDeckDialog(QDialog):
         self._refresh_text()
 
     def _selected_format(self) -> ExportFormat:
+        # PySide returns StrEnum userData as plain str.
         data = self._format_combo.currentData()
-        if isinstance(data, ExportFormat):
-            return data
-        return ExportFormat.MTGO
+        try:
+            return ExportFormat(data) if data is not None else ExportFormat.MTGO
+        except ValueError:
+            return ExportFormat.MTGO
 
     def _refresh_text(self) -> None:
         text = format_deck_export(self._cards, self._selected_format())
@@ -1370,9 +1373,14 @@ class DeckEditDialog(QDialog):
         deck_name: str,
         rows: list[DeckEditRow],
         parent: QWidget | None = None,
+        *,
+        house_banned_ids: set[str] | None = None,
+        show_legality_warnings: bool = True,
     ) -> None:
         super().__init__(parent)
         self._translator = translator
+        self._house_banned_ids = house_banned_ids or set()
+        self._show_legality_warnings = show_legality_warnings
         self._target_total = sum(row.quantity for row in rows)
         self._lines = [
             EditableDeckLine(
@@ -1476,6 +1484,22 @@ class DeckEditDialog(QDialog):
     def _open_slots(self) -> int:
         return max(0, self._target_total - self._current_total())
 
+    def _line_display_legality(self, line: EditableDeckLine) -> str | None:
+        if line.oracle_id in self._house_banned_ids:
+            return HOUSE_BANNED_LEGALITY
+        if self._show_legality_warnings and is_scryfall_legality_issue(
+            line.commander_legality
+        ):
+            return line.commander_legality
+        return None
+
+    def _line_has_warning(self, line: EditableDeckLine) -> bool:
+        return self._line_display_legality(line) is not None
+
+    def _line_warning_tooltip(self, line: EditableDeckLine) -> str:
+        legality = self._line_display_legality(line)
+        return format_card_legality_tooltip(line.name, legality, self._translator)
+
     def _update_header(self) -> None:
         self._total_label.setText(
             self._translator.t("decks.edit.total").format(
@@ -1503,13 +1527,9 @@ class DeckEditDialog(QDialog):
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
             )
             name_layout.addWidget(name_label, 1)
-            if is_commander_legality_issue(line.commander_legality):
+            if self._line_has_warning(line):
                 warn = QLabel(self._translator.t("decks.legality.warning"))
-                warn.setToolTip(
-                    format_card_legality_tooltip(
-                        line.name, line.commander_legality, self._translator
-                    )
-                )
+                warn.setToolTip(self._line_warning_tooltip(line))
                 name_layout.addWidget(
                     warn, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )

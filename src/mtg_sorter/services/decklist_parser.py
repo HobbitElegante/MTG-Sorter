@@ -46,6 +46,11 @@ MOXFIELD_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+ARCHIDEKT_URL_RE = re.compile(
+    r"https?://(?:www\.)?archidekt\.com/decks/(\d+)",
+    re.IGNORECASE,
+)
+
 
 class DecklistFormat(str, Enum):
     MOXFIELD_MTGO = "moxfield_mtgo"
@@ -53,6 +58,7 @@ class DecklistFormat(str, Enum):
     ARCHIDEKT = "archidekt"
     MTGO_DEK = "mtgo_dek"
     MOXFIELD_URL = "moxfield_url"
+    ARCHIDEKT_URL = "archidekt_url"
 
 
 @dataclass(frozen=True)
@@ -65,28 +71,41 @@ class ParsedDeckLine:
     set_code: str | None = None
 
 
-def extract_moxfield_deck_id(text: str) -> str | None:
-    """Return public deck id if text is (only) a Moxfield deck URL."""
+def _single_line_url_candidate(text: str) -> str | None:
     stripped = text.strip()
     if not stripped:
         return None
-    # Single-line URL (optional whitespace / trailing slash).
     if "\n" in stripped or "\r" in stripped:
-        # Allow URL alone on first line with blank rest.
         lines = [ln.strip() for ln in stripped.splitlines() if ln.strip()]
         if len(lines) != 1:
             return None
         stripped = lines[0]
-    match = MOXFIELD_URL_RE.fullmatch(stripped.rstrip("/"))
+    return stripped
+
+
+def _match_deck_url(pattern: re.Pattern[str], text: str) -> str | None:
+    stripped = _single_line_url_candidate(text)
+    if stripped is None:
+        return None
+    match = pattern.fullmatch(stripped.rstrip("/"))
     if match is None:
-        # Also accept URL with query/fragment after id path segment.
-        match = MOXFIELD_URL_RE.search(stripped)
+        match = pattern.search(stripped)
         if match is None:
             return None
         # Reject if there is substantial non-URL content.
         if len(stripped) > len(match.group(0)) + 20:
             return None
     return match.group(1)
+
+
+def extract_moxfield_deck_id(text: str) -> str | None:
+    """Return public deck id if text is (only) a Moxfield deck URL."""
+    return _match_deck_url(MOXFIELD_URL_RE, text)
+
+
+def extract_archidekt_deck_id(text: str) -> str | None:
+    """Return numeric deck id if text is (only) an Archidekt deck URL."""
+    return _match_deck_url(ARCHIDEKT_URL_RE, text)
 
 
 def detect_format(text: str) -> DecklistFormat:
@@ -96,6 +115,9 @@ def detect_format(text: str) -> DecklistFormat:
 
     if extract_moxfield_deck_id(stripped) is not None:
         return DecklistFormat.MOXFIELD_URL
+
+    if extract_archidekt_deck_id(stripped) is not None:
+        return DecklistFormat.ARCHIDEKT_URL
 
     if "<Deck" in stripped or (
         stripped.lstrip().startswith("<") and "Quantity=" in stripped
@@ -126,7 +148,7 @@ def detect_format(text: str) -> DecklistFormat:
 def parse_decklist(text: str) -> list[ParsedDeckLine]:
     """Parse pasted/loaded decklist text into card lines (not URLs)."""
     fmt = detect_format(text)
-    if fmt == DecklistFormat.MOXFIELD_URL:
+    if fmt in (DecklistFormat.MOXFIELD_URL, DecklistFormat.ARCHIDEKT_URL):
         return []
     if fmt == DecklistFormat.MTGO_DEK:
         return _parse_mtgo_dek(text)

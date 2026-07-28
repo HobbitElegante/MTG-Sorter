@@ -8,6 +8,7 @@ from mtg_sorter.config import (
     DEFAULT_LOCALE,
     SETTING_CARD_PREVIEW_WIDTH,
     SETTING_UI_LOCALE,
+    SETTING_WINDOW_GEOMETRY,
 )
 from mtg_sorter.models import Base
 from mtg_sorter.services.settings_service import SettingsService
@@ -70,3 +71,30 @@ def test_card_preview_width_defaults_and_rejects_garbage(session: Session) -> No
 
     settings.set_card_preview_width(320)
     assert settings.get_card_preview_width() == 320
+
+
+def test_window_geometry_round_trip(session: Session) -> None:
+    settings = SettingsService(session)
+    assert settings.get_window_geometry() is None
+
+    settings.set_window_geometry("YWJjZA==")
+    assert settings.get_window_geometry() == "YWJjZA=="
+
+    settings.set(SETTING_WINDOW_GEOMETRY, "   ")
+    assert settings.get_window_geometry() is None
+
+
+def test_legality_and_rule_warnings_default_on(session: Session) -> None:
+    settings = SettingsService(session)
+    assert settings.get_show_legality_warnings() is True
+    assert settings.get_show_rule_warnings() is True
+
+    settings.set_show_legality_warnings(False)
+    settings.set_show_rule_warnings(False)
+    assert settings.get_show_legality_warnings() is False
+    assert settings.get_show_rule_warnings() is False
+
+    settings.set_show_legality_warnings(True)
+    settings.set_show_rule_warnings(True)
+    assert settings.get_show_legality_warnings() is True
+    assert settings.get_show_rule_warnings() is True

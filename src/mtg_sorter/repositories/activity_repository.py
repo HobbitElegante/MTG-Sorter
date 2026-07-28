@@ -15,6 +15,9 @@ class ActivityRepository:
         self._session.flush()
         return event
 
+    def get(self, event_id: int) -> ActivityEvent | None:
+        return self._session.get(ActivityEvent, event_id)
+
     def list_events(
         self,
         *,

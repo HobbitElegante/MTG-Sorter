@@ -23,6 +23,20 @@ class DeckListRow:
     tooltip: str
 
 
+def coerce_deck_status(value: object) -> DeckStatus | None:
+    """Normalize QComboBox userData (often a plain str) back to DeckStatus."""
+    if value is None:
+        return None
+    if isinstance(value, DeckStatus):
+        return value
+    if isinstance(value, str):
+        try:
+            return DeckStatus(value)
+        except ValueError:
+            return None
+    return None
+
+
 def filter_deck_rows(
     rows: list[DeckListRow],
     *,

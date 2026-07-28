@@ -41,6 +41,13 @@ class InventorySummaryRow:
     # (set code or None for unspecified, copies) — only populated when the
     # edition-tracking setting is on.
     editions: tuple[tuple[str | None, int], ...] = ()
+    type_line: str | None = None
+    colors: str | None = None
+    cmc: float | None = None
+    oracle_text: str | None = None
+    commander_legality: str | None = None
+    is_basic_land: bool = False
+    is_token: bool = False
 
 
 def _sorted_editions(
@@ -95,7 +102,19 @@ class BrowseService:
     ) -> list[InventorySummaryRow]:
         edition_counts = self._copies.edition_counts() if include_editions else {}
         summaries: list[InventorySummaryRow] = []
-        for oracle_id, name, color_identity, total in self._decks.inventory_copy_rows():
+        for (
+            oracle_id,
+            name,
+            color_identity,
+            total,
+            type_line,
+            colors,
+            cmc,
+            oracle_text,
+            commander_legality,
+            is_basic_land,
+            is_token,
+        ) in self._decks.inventory_copy_rows():
             assigned_count = self._copies.count_assigned(oracle_id)
             summaries.append(
                 InventorySummaryRow(
@@ -106,6 +125,13 @@ class BrowseService:
                     assigned_decks=self._decks.deck_names_for_card(oracle_id),
                     color_identity=color_identity,
                     editions=_sorted_editions(edition_counts.get(oracle_id, {})),
+                    type_line=type_line,
+                    colors=colors,
+                    cmc=cmc,
+                    oracle_text=oracle_text,
+                    commander_legality=commander_legality,
+                    is_basic_land=is_basic_land,
+                    is_token=is_token,
                 )
             )
         return summaries

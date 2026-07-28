@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -32,10 +33,12 @@ from mtg_sorter.services import (
     ActivityService,
     BrowseService,
     CardImageService,
+    HouseBanService,
     ScryfallBulkService,
     ScryfallService,
     SettingsService,
 )
+from mtg_sorter.ui.widgets.import_dialogs import CardPickDialog
 from mtg_sorter.services.activity_service import (
     ActivityEventRow,
     HISTORY_PAGE_SIZE,
@@ -53,8 +56,10 @@ INV_COL_TOTAL = 1
 INV_COL_FREE = 2
 INV_COL_ASSIGNED = 3
 INV_COL_DECKS = 4
-SCRYFALL_SECTION_INDEX = 4
+CUSTOMIZE_SECTION_INDEX = 1
+SCRYFALL_SECTION_INDEX = 5
 CARD_ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
+HOUSE_BAN_ORACLE_ROLE = Qt.ItemDataRole.UserRole
 
 
 class BulkSyncWorker(QThread):
@@ -149,6 +154,7 @@ class BrowseWidget(QWidget):
     locale_changed = Signal(str)
     show_images_changed = Signal(bool)
     track_editions_changed = Signal(bool)
+    warning_settings_changed = Signal()
 
     def __init__(self, translator: Translator, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -157,6 +163,8 @@ class BrowseWidget(QWidget):
             settings = SettingsService(session)
             self._show_card_images = settings.get_show_card_images()
             self._track_editions = settings.get_track_editions()
+            self._show_legality_warnings = settings.get_show_legality_warnings()
+            self._show_rule_warnings = settings.get_show_rule_warnings()
         self._sync_worker: BulkSyncWorker | None = None
         self._card_data_worker: CardDataRefreshWorker | None = None
         self._image_worker: ImageDownloadWorker | None = None
@@ -168,14 +176,17 @@ class BrowseWidget(QWidget):
 
     def retranslate(self) -> None:
         self._section_list.item(0).setText(self._translator.t("browse.section.overview"))
-        self._section_list.item(1).setText(self._translator.t("browse.section.cards"))
-        self._section_list.item(2).setText(
+        self._section_list.item(1).setText(
+            self._translator.t("browse.section.customize")
+        )
+        self._section_list.item(2).setText(self._translator.t("browse.section.cards"))
+        self._section_list.item(3).setText(
             self._translator.t("browse.section.availability")
         )
-        self._section_list.item(3).setText(
+        self._section_list.item(4).setText(
             self._translator.t("browse.section.history")
         )
-        self._section_list.item(4).setText(
+        self._section_list.item(5).setText(
             self._translator.t("browse.section.scryfall")
         )
         self._card_search.setPlaceholderText(self._translator.t("browse.cards.search"))
@@ -235,23 +246,49 @@ class BrowseWidget(QWidget):
         )
         self._history_export.setText(self._translator.t("browse.history.export"))
         self._history_undo.setText(self._translator.t("browse.history.undo"))
-        self._update_history_undo_enabled()
+        self._history_redo.setText(self._translator.t("browse.history.redo"))
+        self._update_history_undo_redo_enabled()
         self._scryfall_group.setTitle(self._translator.t("browse.section.scryfall"))
         self._show_images_check.setText(
-            self._translator.t("browse.overview.show_images")
+            self._translator.t("browse.customize.show_images")
         )
         self._welcome_separator.setText(
             self._translator.t("browse.overview.welcome_separator")
         )
         self._welcome_label.setText(self._translator.t("browse.overview.welcome"))
         self._track_editions_check.setText(
-            self._translator.t("browse.overview.track_editions")
+            self._translator.t("browse.customize.track_editions")
         )
         self._track_editions_check.setToolTip(
-            self._translator.t("browse.overview.track_editions_hint")
+            self._translator.t("browse.customize.track_editions_hint")
+        )
+        self._show_legality_check.setText(
+            self._translator.t("browse.customize.show_legality_warnings")
+        )
+        self._show_rules_check.setText(
+            self._translator.t("browse.customize.show_rule_warnings")
+        )
+        self._house_ban_group.setTitle(
+            self._translator.t("browse.customize.house_ban.title")
+        )
+        self._house_ban_hint.setText(
+            self._translator.t("browse.customize.house_ban.hint")
+        )
+        self._house_ban_add.setText(
+            self._translator.t("browse.customize.house_ban.add")
+        )
+        self._house_ban_remove.setText(
+            self._translator.t("browse.customize.house_ban.remove")
+        )
+        self._display_group.setTitle(
+            self._translator.t("browse.customize.display")
+        )
+        self._warnings_group.setTitle(
+            self._translator.t("browse.customize.warnings")
         )
         self._card_preview.retranslate()
         self._sync_language_combo()
+        self._refresh_house_bans()
         self.refresh()
 
     @property
@@ -269,6 +306,7 @@ class BrowseWidget(QWidget):
 
         self._section_list = QListWidget()
         self._section_list.addItem(self._translator.t("browse.section.overview"))
+        self._section_list.addItem(self._translator.t("browse.section.customize"))
         self._section_list.addItem(self._translator.t("browse.section.cards"))
         self._section_list.addItem(self._translator.t("browse.section.availability"))
         self._section_list.addItem(self._translator.t("browse.section.history"))
@@ -280,6 +318,7 @@ class BrowseWidget(QWidget):
         splitter.setStretchFactor(1, 1)
 
         self._panels.addWidget(self._build_overview_panel())
+        self._panels.addWidget(self._build_customize_panel())
         self._panels.addWidget(self._build_cards_panel())
         self._panels.addWidget(self._build_inventory_panel())
         self._panels.addWidget(self._build_history_panel())
@@ -290,6 +329,8 @@ class BrowseWidget(QWidget):
 
     def _on_section_changed(self, index: int) -> None:
         self._panels.setCurrentIndex(index)
+        if index == CUSTOMIZE_SECTION_INDEX:
+            self._refresh_house_bans()
         if index == SCRYFALL_SECTION_INDEX:
             self._start_remote_status_check()
 
@@ -314,31 +355,6 @@ class BrowseWidget(QWidget):
         self._overview_label.setWordWrap(True)
         layout.addWidget(self._overview_label)
 
-        self._track_editions_check = QCheckBox(
-            self._translator.t("browse.overview.track_editions")
-        )
-        self._track_editions_check.setToolTip(
-            self._translator.t("browse.overview.track_editions_hint")
-        )
-        self._track_editions_check.setChecked(self._track_editions)
-        self._track_editions_check.toggled.connect(self._on_track_editions_toggled)
-        layout.addWidget(self._track_editions_check)
-
-        self._language_group = QGroupBox(self._translator.t("config.language"))
-        language_form = QFormLayout(self._language_group)
-        self._language_label = QLabel(self._translator.t("config.language"))
-        self._language_combo = QComboBox()
-        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        language_form.addRow(self._language_label, self._language_combo)
-        layout.addWidget(self._language_group)
-
-        self._show_images_check = QCheckBox(
-            self._translator.t("browse.overview.show_images")
-        )
-        self._show_images_check.setChecked(self._show_card_images)
-        self._show_images_check.toggled.connect(self._on_show_images_toggled)
-        layout.addWidget(self._show_images_check)
-
         self._welcome_separator = QLabel(
             self._translator.t("browse.overview.welcome_separator")
         )
@@ -351,8 +367,88 @@ class BrowseWidget(QWidget):
         )
         layout.addWidget(self._welcome_label)
 
-        self._sync_language_combo()
         layout.addStretch()
+        return panel
+
+    def _build_customize_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        self._display_group = QGroupBox(self._translator.t("browse.customize.display"))
+        display_layout = QVBoxLayout(self._display_group)
+
+        self._track_editions_check = QCheckBox(
+            self._translator.t("browse.customize.track_editions")
+        )
+        self._track_editions_check.setToolTip(
+            self._translator.t("browse.customize.track_editions_hint")
+        )
+        self._track_editions_check.setChecked(self._track_editions)
+        self._track_editions_check.toggled.connect(self._on_track_editions_toggled)
+        display_layout.addWidget(self._track_editions_check)
+
+        self._show_images_check = QCheckBox(
+            self._translator.t("browse.customize.show_images")
+        )
+        self._show_images_check.setChecked(self._show_card_images)
+        self._show_images_check.toggled.connect(self._on_show_images_toggled)
+        display_layout.addWidget(self._show_images_check)
+
+        self._language_group = QGroupBox(self._translator.t("config.language"))
+        language_form = QFormLayout(self._language_group)
+        self._language_label = QLabel(self._translator.t("config.language"))
+        self._language_combo = QComboBox()
+        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
+        language_form.addRow(self._language_label, self._language_combo)
+        display_layout.addWidget(self._language_group)
+        layout.addWidget(self._display_group)
+
+        self._warnings_group = QGroupBox(
+            self._translator.t("browse.customize.warnings")
+        )
+        warnings_layout = QVBoxLayout(self._warnings_group)
+        self._show_legality_check = QCheckBox(
+            self._translator.t("browse.customize.show_legality_warnings")
+        )
+        self._show_legality_check.setChecked(self._show_legality_warnings)
+        self._show_legality_check.toggled.connect(self._on_show_legality_toggled)
+        warnings_layout.addWidget(self._show_legality_check)
+        self._show_rules_check = QCheckBox(
+            self._translator.t("browse.customize.show_rule_warnings")
+        )
+        self._show_rules_check.setChecked(self._show_rule_warnings)
+        self._show_rules_check.toggled.connect(self._on_show_rules_toggled)
+        warnings_layout.addWidget(self._show_rules_check)
+        layout.addWidget(self._warnings_group)
+
+        self._house_ban_group = QGroupBox(
+            self._translator.t("browse.customize.house_ban.title")
+        )
+        ban_layout = QVBoxLayout(self._house_ban_group)
+        self._house_ban_hint = QLabel(
+            self._translator.t("browse.customize.house_ban.hint")
+        )
+        self._house_ban_hint.setWordWrap(True)
+        ban_layout.addWidget(self._house_ban_hint)
+        self._house_ban_list = QListWidget()
+        ban_layout.addWidget(self._house_ban_list, 1)
+        ban_actions = QHBoxLayout()
+        self._house_ban_add = QPushButton(
+            self._translator.t("browse.customize.house_ban.add")
+        )
+        self._house_ban_add.clicked.connect(self._add_house_ban)
+        ban_actions.addWidget(self._house_ban_add)
+        self._house_ban_remove = QPushButton(
+            self._translator.t("browse.customize.house_ban.remove")
+        )
+        self._house_ban_remove.clicked.connect(self._remove_house_ban)
+        ban_actions.addWidget(self._house_ban_remove)
+        ban_actions.addStretch()
+        ban_layout.addLayout(ban_actions)
+        layout.addWidget(self._house_ban_group, 1)
+
+        self._sync_language_combo()
+        self._refresh_house_bans()
         return panel
 
     def _on_track_editions_toggled(self, checked: bool) -> None:
@@ -371,6 +467,61 @@ class BrowseWidget(QWidget):
             SettingsService(session).set_show_card_images(checked)
         self._card_preview.setVisible(checked)
         self.show_images_changed.emit(checked)
+
+    def _on_show_legality_toggled(self, checked: bool) -> None:
+        if checked == self._show_legality_warnings:
+            return
+        self._show_legality_warnings = checked
+        with get_session() as session:
+            SettingsService(session).set_show_legality_warnings(checked)
+        self.warning_settings_changed.emit()
+
+    def _on_show_rules_toggled(self, checked: bool) -> None:
+        if checked == self._show_rule_warnings:
+            return
+        self._show_rule_warnings = checked
+        with get_session() as session:
+            SettingsService(session).set_show_rule_warnings(checked)
+        self.warning_settings_changed.emit()
+
+    def _refresh_house_bans(self) -> None:
+        self._house_ban_list.clear()
+        with get_session() as session:
+            bans = HouseBanService(session).list_bans()
+        for ban in bans:
+            item = QListWidgetItem(ban.name)
+            item.setData(HOUSE_BAN_ORACLE_ROLE, ban.oracle_id)
+            self._house_ban_list.addItem(item)
+
+    def _add_house_ban(self) -> None:
+        dialog = CardPickDialog(
+            self._translator,
+            title=self._translator.t("browse.customize.house_ban.add"),
+            max_quantity=1,
+            show_available=False,
+            parent=self,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        picked = dialog.result()
+        if picked is None:
+            return
+        with get_session() as session:
+            HouseBanService(session).add(picked.oracle_id, picked.name)
+        self._refresh_house_bans()
+        self.warning_settings_changed.emit()
+
+    def _remove_house_ban(self) -> None:
+        item = self._house_ban_list.currentItem()
+        if item is None:
+            return
+        oracle_id = item.data(HOUSE_BAN_ORACLE_ROLE)
+        if not isinstance(oracle_id, str) or not oracle_id:
+            return
+        with get_session() as session:
+            HouseBanService(session).remove(oracle_id)
+        self._refresh_house_bans()
+        self.warning_settings_changed.emit()
 
     def _sync_language_combo(self) -> None:
         self._language_combo.blockSignals(True)
@@ -510,6 +661,9 @@ class BrowseWidget(QWidget):
         self._history_undo = QPushButton(self._translator.t("browse.history.undo"))
         self._history_undo.clicked.connect(self._undo_last_history)
         actions.addWidget(self._history_undo)
+        self._history_redo = QPushButton(self._translator.t("browse.history.redo"))
+        self._history_redo.clicked.connect(self._redo_last_history)
+        actions.addWidget(self._history_redo)
         self._history_export = QPushButton(
             self._translator.t("browse.history.export")
         )
@@ -621,10 +775,13 @@ class BrowseWidget(QWidget):
         if rows:
             self._history_oldest_id = rows[-1].id
 
-    def _update_history_undo_enabled(self) -> None:
+    def _update_history_undo_redo_enabled(self) -> None:
         with get_session() as session:
-            enabled = ActivityService(session).can_undo_last()
-        self._history_undo.setEnabled(enabled)
+            activity = ActivityService(session)
+            can_undo = activity.can_undo_last()
+            can_redo = activity.can_redo_last()
+        self._history_undo.setEnabled(can_undo)
+        self._history_redo.setEnabled(can_redo)
 
     def _load_more_history(self) -> None:
         if not self._history_has_more or self._history_oldest_id is None:
@@ -673,6 +830,27 @@ class BrowseWidget(QWidget):
         try:
             with get_session() as session:
                 ActivityService(session).undo_last()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self._translator.t("common.error"),
+                str(exc),
+            )
+            return
+        self._refresh_history()
+        self.changed.emit()
+
+    def _redo_last_history(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            self._translator.t("browse.history.redo"),
+            self._translator.t("browse.history.redo.confirm"),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            with get_session() as session:
+                ActivityService(session).redo_last()
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -770,7 +948,7 @@ class BrowseWidget(QWidget):
         self._append_history_rows(rows)
         self._history_empty.setVisible(self._history_table.rowCount() == 0)
         self._history_table.setVisible(self._history_table.rowCount() > 0)
-        self._update_history_undo_enabled()
+        self._update_history_undo_redo_enabled()
 
     def _refresh_overview(self) -> None:
         self._greeting_label.setText(self._translator.t("browse.overview.greeting"))

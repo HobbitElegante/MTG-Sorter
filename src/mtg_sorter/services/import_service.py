@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from mtg_sorter.algorithms.card_utils import is_basic_land_name
+from mtg_sorter.api.archidekt_client import fetch_archidekt_deck
 from mtg_sorter.api.moxfield_client import fetch_moxfield_deck
 from mtg_sorter.models import Deck, DeckCard
 from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
@@ -15,6 +16,7 @@ from mtg_sorter.services.decklist_parser import (
     DecklistFormat,
     ParsedDeckLine,
     detect_format,
+    extract_archidekt_deck_id,
     extract_moxfield_deck_id,
     parse_decklist,
     parse_moxfield_line,
@@ -124,20 +126,28 @@ class ImportService:
         *,
         fetch_url: bool = True,
     ) -> ResolvedDecklistInput:
-        """Expand a Moxfield URL when needed; otherwise return text as-is."""
+        """Expand a Moxfield/Archidekt URL when needed; otherwise return text as-is."""
         stripped = text.strip()
         fmt = detect_format(stripped)
-        if fmt != DecklistFormat.MOXFIELD_URL:
+        if fmt not in (DecklistFormat.MOXFIELD_URL, DecklistFormat.ARCHIDEKT_URL):
             return ResolvedDecklistInput(text=stripped, format=fmt)
 
         if not fetch_url:
-            raise ValueError("Moxfield URL requires network fetch")
+            raise ValueError("Deck URL requires network fetch")
 
-        deck_id = extract_moxfield_deck_id(stripped)
-        if deck_id is None:
-            raise ValueError("Could not parse Moxfield deck URL")
+        if fmt == DecklistFormat.MOXFIELD_URL:
+            deck_id = extract_moxfield_deck_id(stripped)
+            if deck_id is None:
+                raise ValueError("Could not parse Moxfield deck URL")
+            export = fetch_moxfield_deck(deck_id)
+            list_format = DecklistFormat.MOXFIELD_MTGO
+        else:
+            deck_id = extract_archidekt_deck_id(stripped)
+            if deck_id is None:
+                raise ValueError("Could not parse Archidekt deck URL")
+            export = fetch_archidekt_deck(deck_id)
+            list_format = DecklistFormat.ARCHIDEKT
 
-        export = fetch_moxfield_deck(deck_id)
         secondary_role = None
         if export.secondary_role:
             secondary_role = SECONDARY_ROLE_FROM_NAME.get(
@@ -145,7 +155,7 @@ class ImportService:
             )
         return ResolvedDecklistInput(
             text=export.list_text,
-            format=DecklistFormat.MOXFIELD_MTGO,
+            format=list_format,
             deck_name=export.name,
             commander_name=export.commander_name,
             secondary_role=secondary_role,
@@ -156,7 +166,7 @@ class ImportService:
         """Resolve decklist text into inventoriable cards + unresolved lines.
 
         Basics and tokens are skipped (not trackable). Supports Moxfield/MTGO,
-        Arena, Archidekt, MTGO .dek, and Moxfield URLs (fetched).
+        Arena, Archidekt, MTGO .dek, and Moxfield / Archidekt URLs (fetched).
         """
         resolved = self.resolve_decklist_input(text)
         body = resolved.text

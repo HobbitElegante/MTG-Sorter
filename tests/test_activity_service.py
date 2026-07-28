@@ -296,3 +296,89 @@ def test_cannot_undo_import_or_delete(session: Session) -> None:
     assert not activity.can_undo_last()
     with pytest.raises(ValueError, match="Nothing to undo"):
         activity.undo_last()
+
+
+def test_redo_copies_added_restores_state(session: Session) -> None:
+    _add_card(session, "sol", "Sol Ring")
+    inventory = InventoryService(session)
+    inventory.add_copy("sol", 2)
+    activity = ActivityService(session)
+
+    activity.undo_last()
+    assert inventory.free_counts().get("sol", 0) == 0
+    assert activity.can_redo_last()
+    assert not activity.can_undo_last()
+
+    activity.redo_last()
+    assert inventory.free_counts().get("sol", 0) == 2
+    assert activity.latest_event().event_type == ActivityEventType.COPIES_ADDED
+    assert activity.can_undo_last()
+    assert not activity.can_redo_last()
+
+
+def test_redo_cleared_after_new_action(session: Session) -> None:
+    _add_card(session, "sol", "Sol Ring")
+    inventory = InventoryService(session)
+    inventory.add_copy("sol", 1)
+    activity = ActivityService(session)
+
+    activity.undo_last()
+    assert activity.can_redo_last()
+    inventory.add_copy("sol", 1)
+    assert not activity.can_redo_last()
+    with pytest.raises(ValueError, match="Nothing to redo"):
+        activity.redo_last()
+
+
+def test_redo_fails_when_tip_not_undone(session: Session) -> None:
+    _add_card(session, "sol", "Sol Ring")
+    InventoryService(session).add_copy("sol", 1)
+    activity = ActivityService(session)
+    assert not activity.can_redo_last()
+    with pytest.raises(ValueError, match="Nothing to redo"):
+        activity.redo_last()
+
+
+def test_redo_plan_applied_restores_target(session: Session) -> None:
+    _add_card(session, "sol", "Sol Ring")
+    target = Deck(name="Target", status=DeckStatus.DISMANTLED)
+    donor = Deck(name="Donor", status=DeckStatus.DISMANTLED)
+    session.add_all([target, donor])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=target.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=donor.id,
+                card_id="sol",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+        ]
+    )
+    session.flush()
+    decks = DeckService(session)
+    decks.set_status(donor, DeckStatus.ARMED)
+    for event in session.scalars(select(ActivityEvent)).all():
+        session.delete(event)
+    session.flush()
+
+    OptimizationService(session).apply_assembly_plan(
+        target.id, frozenset({str(donor.id)})
+    )
+    activity = ActivityService(session)
+    activity.undo_last()
+    activity.redo_last()
+
+    session.refresh(target)
+    session.refresh(donor)
+    assert target.status == DeckStatus.ARMED
+    assert donor.status == DeckStatus.DISMANTLED
+    assert activity.latest_event().event_type == ActivityEventType.PLAN_APPLIED
+    assert activity.can_undo_last()
+    assert not activity.can_redo_last()

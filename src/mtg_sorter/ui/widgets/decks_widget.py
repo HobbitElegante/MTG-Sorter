@@ -29,6 +29,7 @@ from mtg_sorter.i18n import Translator
 from mtg_sorter.models.enums import DeckCardRole, DeckStatus
 from mtg_sorter.services import (
     DeckService,
+    HouseBanService,
     ImportService,
     ScryfallService,
     SettingsService,
@@ -39,6 +40,7 @@ from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
 from mtg_sorter.ui.deck_list_display import (
     DeckListRow,
     DeckSortKey,
+    coerce_deck_status,
     filter_deck_rows,
     sort_deck_rows,
 )
@@ -298,7 +300,9 @@ class DecksWidget(QWidget):
         filter_row = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText(self._translator.t("decks.search"))
-        self._search.textChanged.connect(self._populate_deck_list)
+        # textChanged passes the string; do not bind _populate_deck_list directly
+        # or that text becomes prefer_deck_id and forces a full detail reload.
+        self._search.textChanged.connect(lambda _text: self._populate_deck_list())
         self._filter_label = QLabel(self._translator.t("decks.filter.label"))
         self._filter_combo = QComboBox()
         self._filter_combo.setSizeAdjustPolicy(
@@ -362,6 +366,10 @@ class DecksWidget(QWidget):
         self._detail_splitter.addWidget(self._commander_preview)
         self._detail_splitter.addWidget(cards_column)
         self._detail_splitter.addWidget(self._card_preview)
+        list_column.setMinimumWidth(240)
+        cards_column.setMinimumWidth(220)
+        self._detail_splitter.setCollapsible(0, False)
+        self._detail_splitter.setCollapsible(2, False)
         self._detail_splitter.setStretchFactor(0, 2)
         self._detail_splitter.setStretchFactor(1, 0)
         self._detail_splitter.setStretchFactor(2, 2)
@@ -503,8 +511,8 @@ class DecksWidget(QWidget):
         self._main_layout.setStretchFactor(self._decks_group, 1)
 
     def _on_filter_changed(self) -> None:
-        data = self._filter_combo.currentData()
-        self._status_filter = data if isinstance(data, DeckStatus) else None
+        # PySide returns StrEnum userData as plain str — coerce, don't isinstance.
+        self._status_filter = coerce_deck_status(self._filter_combo.currentData())
         self._populate_deck_list()
 
     def _on_sort_changed(self) -> None:
@@ -529,9 +537,19 @@ class DecksWidget(QWidget):
         rows: list[DeckListRow] = []
         with get_session() as session:
             service = DeckService(session)
+            settings = SettingsService(session)
+            show_legality = settings.get_show_legality_warnings()
+            show_rules = settings.get_show_rule_warnings()
+            house = HouseBanService(session)
             for deck in service.list_decks():
-                issues = service.commander_legality_issues(deck.id)
-                rule_issues = service.commander_rule_issues(deck.id)
+                legality_issues = (
+                    service.commander_legality_issues(deck.id) if show_legality else []
+                )
+                house_issues = house.house_ban_issues(deck.id)
+                issues = legality_issues + house_issues
+                rule_issues = (
+                    service.commander_rule_issues(deck.id) if show_rules else []
+                )
                 tip_parts: list[str] = []
                 if deck.is_locked:
                     tip_parts.append(self._translator.t("decks.locked.tooltip"))
@@ -565,7 +583,7 @@ class DecksWidget(QWidget):
     ) -> None:
         selected_id = (
             prefer_deck_id
-            if prefer_deck_id is not None
+            if isinstance(prefer_deck_id, int)
             else self._selected_deck_id()
         )
         needle = self._search.text()
@@ -918,8 +936,17 @@ class DecksWidget(QWidget):
                 return
             deck_name = deck.name
             rows = service.deck_edit_rows(deck_id)
+            house_banned_ids = HouseBanService(session).oracle_ids()
+            show_legality = SettingsService(session).get_show_legality_warnings()
 
-        dialog = DeckEditDialog(self._translator, deck_name, rows, self)
+        dialog = DeckEditDialog(
+            self._translator,
+            deck_name,
+            rows,
+            self,
+            house_banned_ids=house_banned_ids,
+            show_legality_warnings=show_legality,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -1088,8 +1115,8 @@ class DecksWidget(QWidget):
         self.refresh()
         self.changed.emit()
 
-    def _expand_moxfield_url(self, text: str) -> None:
-        """Fetch a Moxfield deck into the form so the user can review it."""
+    def _expand_deck_url(self, text: str) -> None:
+        """Fetch a Moxfield/Archidekt deck into the form so the user can review it."""
         try:
             with get_session() as session:
                 scryfall = ScryfallService(session)
@@ -1131,9 +1158,12 @@ class DecksWidget(QWidget):
         if not text:
             return
 
-        # Expand Moxfield URL into the form so the user can review before arming.
-        if detect_format(text) == DecklistFormat.MOXFIELD_URL:
-            self._expand_moxfield_url(text)
+        # Expand deck URL into the form so the user can review before arming.
+        if detect_format(text) in (
+            DecklistFormat.MOXFIELD_URL,
+            DecklistFormat.ARCHIDEKT_URL,
+        ):
+            self._expand_deck_url(text)
             return
 
         if self._update_deck_id is not None:

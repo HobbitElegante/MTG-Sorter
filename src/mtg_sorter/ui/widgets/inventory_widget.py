@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -22,6 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mtg_sorter.algorithms.inventory_query import (
+    build_online_search_query,
+    filter_inventory_rows,
+    parse_inventory_query,
+)
+from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
@@ -48,6 +54,7 @@ from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable, EditionComboB
 from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
+SEARCH_DEBOUNCE_MS = 350
 
 COL_NAME = 0
 COL_COLOR = 1
@@ -56,6 +63,33 @@ COL_TOTAL = 3
 COL_FREE = 4
 COL_ASSIGNED = 5
 COL_DECKS = 6
+
+
+class InventorySearchWorker(QThread):
+    finished_ok = Signal(object, object)  # query_text, oracle_ids set
+    failed = Signal(str, object)  # query_text, ignored raw tokens
+
+    def __init__(
+        self,
+        query_text: str,
+        online_query: str,
+        ignored_raw: tuple[str, ...],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._query_text = query_text
+        self._online_query = online_query
+        self._ignored_raw = ignored_raw
+
+    def run(self) -> None:
+        client = ScryfallClient()
+        try:
+            oracle_ids = client.search_oracle_ids(self._online_query)
+            self.finished_ok.emit(self._query_text, oracle_ids)
+        except Exception:
+            self.failed.emit(self._query_text, self._ignored_raw)
+        finally:
+            client.close()
 
 
 class AddInventoryCardDialog(QDialog):
@@ -272,10 +306,18 @@ class InventoryWidget(QWidget):
         self._visible_rows: list[InventorySummaryRow] = []
         self._sort_column = COL_NAME
         self._sort_ascending = True
+        self._search_worker: InventorySearchWorker | None = None
+        self._pending_online_ids: set[str] | None = None
+        self._ignored_online_filters: tuple[str, ...] = ()
+        self._search_generation = 0
         with get_session() as session:
             settings = SettingsService(session)
             self._show_card_images = settings.get_show_card_images()
             self._track_editions = settings.get_track_editions()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
+        self._search_timer.timeout.connect(self._run_search)
         self._build_ui()
         self.refresh()
 
@@ -307,6 +349,7 @@ class InventoryWidget(QWidget):
         self._cancel_list_button.setText(self._translator.t("decks.cancel_import"))
         self._table.setHorizontalHeaderLabels(self._header_labels())
         self._preview.retranslate()
+        self._update_search_hint()
         self._populate_table()
 
     def _header_labels(self) -> list[str]:
@@ -331,8 +374,16 @@ class InventoryWidget(QWidget):
         self._search.setPlaceholderText(
             self._translator.t("inventory.search.collection")
         )
-        self._search.textChanged.connect(self._populate_table)
+        self._search.textChanged.connect(self._on_search_text_changed)
         collection.addWidget(self._search)
+
+        self._search_hint = QLabel("")
+        self._search_hint.setWordWrap(True)
+        self._search_hint.setVisible(False)
+        hint_font = self._search_hint.font()
+        hint_font.setPointSize(max(8, hint_font.pointSize() - 1))
+        self._search_hint.setFont(hint_font)
+        collection.addWidget(self._search_hint)
 
         actions = QHBoxLayout()
         self._add_button = QPushButton(self._translator.t("inventory.add_new"))
@@ -353,6 +404,7 @@ class InventoryWidget(QWidget):
         self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels(self._header_labels())
         self._table.setColumnHidden(COL_EDITION, not self._track_editions)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
@@ -469,14 +521,90 @@ class InventoryWidget(QWidget):
             return ", ".join(row.assigned_decks).casefold()
         return row.card_name.casefold()
 
+    def _on_search_text_changed(self) -> None:
+        self._search_timer.start()
+
+    def _update_search_hint(self) -> None:
+        if not self._ignored_online_filters:
+            self._search_hint.clear()
+            self._search_hint.setVisible(False)
+            return
+        filters = ", ".join(self._ignored_online_filters)
+        self._search_hint.setText(
+            self._translator.t("inventory.search.offline_filters").format(
+                filters=filters
+            )
+        )
+        self._search_hint.setVisible(True)
+
+    def _run_search(self) -> None:
+        query_text = self._search.text()
+        parsed = parse_inventory_query(query_text)
+        online_query = build_online_search_query(parsed)
+        self._ignored_online_filters = ()
+        self._pending_online_ids = None
+
+        if online_query is None:
+            self._update_search_hint()
+            self._populate_table()
+            return
+
+        # Apply local filters immediately while the online request runs.
+        self._populate_table()
+        self._search_generation += 1
+        generation = self._search_generation
+        worker = InventorySearchWorker(
+            query_text,
+            online_query,
+            parsed.online_raw,
+            parent=self,
+        )
+        self._search_worker = worker
+
+        def on_ok(done_query: object, oracle_ids: object) -> None:
+            if generation != self._search_generation:
+                return
+            if done_query != self._search.text():
+                return
+            if not isinstance(oracle_ids, set):
+                return
+            self._pending_online_ids = oracle_ids
+            self._ignored_online_filters = ()
+            self._update_search_hint()
+            self._populate_table()
+
+        def on_fail(done_query: object, ignored: object) -> None:
+            if generation != self._search_generation:
+                return
+            if done_query != self._search.text():
+                return
+            self._pending_online_ids = None
+            if isinstance(ignored, tuple):
+                self._ignored_online_filters = ignored
+            else:
+                self._ignored_online_filters = ()
+            self._update_search_hint()
+            self._populate_table()
+
+        worker.finished_ok.connect(on_ok)
+        worker.failed.connect(on_fail)
+        worker.start()
+
     def _populate_table(self) -> None:
-        rows = self._rows
-        search = self._search.text().strip()
-        if search:
-            needle = search.casefold()
-            rows = [row for row in rows if needle in row.card_name.casefold()]
-        rows = sorted(rows, key=self._sort_key, reverse=not self._sort_ascending)
-        self._visible_rows = rows
+        parsed = parse_inventory_query(self._search.text())
+        online_ids = self._pending_online_ids
+        # Only intersect with online ids when the current query still has
+        # online tokens and we successfully resolved them.
+        if parsed.online_tokens and online_ids is not None:
+            filtered = filter_inventory_rows(
+                self._rows, parsed, online_oracle_ids=online_ids
+            )
+        else:
+            filtered = filter_inventory_rows(self._rows, parsed)
+        rows = sorted(
+            filtered, key=self._sort_key, reverse=not self._sort_ascending
+        )
+        self._visible_rows = list(rows)
 
         self._table.setRowCount(len(rows))
         for index, row in enumerate(rows):
@@ -486,23 +614,30 @@ class InventoryWidget(QWidget):
 
             name_item = QTableWidgetItem(row.card_name)
             name_item.setData(ORACLE_ID_ROLE, row.oracle_id)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             color_item = QTableWidgetItem(color_text)
             color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            color_item.setFlags(color_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             edition_item = QTableWidgetItem(format_edition_summary(row))
             edition_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            edition_item.setFlags(edition_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             total_item = QTableWidgetItem(str(row.total_copies))
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             free_item = QTableWidgetItem(str(row.free_copies))
             free_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            free_item.setFlags(free_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             assigned_item = QTableWidgetItem(str(assigned))
             assigned_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            assigned_item.setFlags(assigned_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             decks_item = QTableWidgetItem(decks_text)
+            decks_item.setFlags(decks_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if row.assigned_decks:
                 decks_item.setToolTip("\n".join(row.assigned_decks))
 
@@ -599,7 +734,10 @@ class InventoryWidget(QWidget):
                 self._translator.t("inventory.add_list.url_failed").format(
                     error=str(exc)
                 )
-                if "moxfield" in text.casefold()
+                if any(
+                    host in text.casefold()
+                    for host in ("moxfield", "archidekt")
+                )
                 else str(exc),
             )
             return
