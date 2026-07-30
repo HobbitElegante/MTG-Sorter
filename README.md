@@ -7,8 +7,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 ### Collection
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
-- Inventory table: Name · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
-- Search with name or Scryfall-lite syntax offline (`t:`, `c:`, `ci:`, `cmc`, `o:`, …); advanced tokens use Scryfall online when available
+- Inventory table: Name · Mana value · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
+- Search by card name; **Filter** dialog for type, color identity (`id≤`), and mana value
 - Add a single card or paste a whole list (multi-format / Moxfield or Archidekt URL) into free inventory
 - Optional **edition tracking**: turn it on in Browse → Customize to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)
@@ -132,9 +132,9 @@ Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table
 ## Inventory
 
 1. Open the **Inventory** tab.
-2. Table columns: **Name** · **Colors** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). Colors show WUBRG identity (— if colorless). Name is the wide column.
+2. Table columns: **Name** · **Mana value** · **Colors** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). Mana value is the numeric CMC (e.g. GGG → 3). Colors show WUBRG identity (— if colorless). Name is the wide column.
 3. Click a column header to sort (text A–Z / Z–A; numbers high→low first, then reverse). Hover **In decks** for the full list when a card is in several decks.
-4. Use the search bar to filter your collection by name or Scryfall-lite syntax (`t:creature`, `c:r`, `cmc>=3`, …). Filters that need the live Scryfall index run online when possible; if they cannot, a small note lists the ignored filters.
+4. Use the search bar to filter by card name. **Filter** opens a dialog for type (add/remove), color identity at most (`id≤`), and mana-value comparisons.
 5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
 6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
 7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
@@ -184,6 +184,6 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 **v0.9.0** is the recommended build (once tagged). Prefer it over **v0.8.3** and earlier.
 
 - Browse → **Customize**: display settings (editions / images / language), toggleable Scryfall legality and game-rule ⚠ warnings, and a user **house banlist**
-- Inventory: read-only table cells; collection search with Scryfall-lite syntax offline and advanced filters online (with a note when filters need the network)
+- Inventory: read-only table; name search; **Filter** dialog (type / color identity / mana value); mana-value column
 - Decks: Armed/Dismantled filter fixed; search no longer reloads detail on every keystroke; public **Archidekt** URL import
 - History: **redo** the last undo; main window wider by default and remembers geometry

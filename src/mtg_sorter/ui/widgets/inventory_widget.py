@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -18,17 +18,13 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from mtg_sorter.algorithms.inventory_query import (
-    build_online_search_query,
-    filter_inventory_rows,
-    parse_inventory_query,
-)
+from mtg_sorter.algorithms.inventory_filters import filter_inventory_cards
 from mtg_sorter.api.scryfall_client import ScryfallClient
-from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import (
@@ -44,7 +40,9 @@ from mtg_sorter.ui.inventory_display import (
     format_color_identity,
     format_edition_summary,
     format_inventory_decks,
+    format_mana_value,
 )
+from mtg_sorter.ui.scryfall_icon import scryfall_icon
 from mtg_sorter.ui.widgets.card_preview import (
     CardPreviewPanel,
     build_preview_splitter,
@@ -52,42 +50,51 @@ from mtg_sorter.ui.widgets.card_preview import (
 )
 from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable, EditionComboBox
 from mtg_sorter.ui.widgets.import_dialogs import AddInventoryListDialog, QuantityStepper
+from mtg_sorter.ui.widgets.inventory_filter_panel import InventoryFilterDialog
 
 ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
 SEARCH_DEBOUNCE_MS = 350
+# Inventory Scryfall-syntax search (checkbox + logo). Hidden for now — local
+# Filter dialog covers type / id≤ / CMC. Flip to True to re-enable the UI.
+SCRYFALL_INVENTORY_SEARCH_ENABLED = False
 
 COL_NAME = 0
-COL_COLOR = 1
-COL_EDITION = 2
-COL_TOTAL = 3
-COL_FREE = 4
-COL_ASSIGNED = 5
-COL_DECKS = 6
+COL_CMC = 1
+COL_COLOR = 2
+COL_EDITION = 3
+COL_TOTAL = 4
+COL_FREE = 5
+COL_ASSIGNED = 6
+COL_DECKS = 7
 
 
 class InventorySearchWorker(QThread):
     finished_ok = Signal(object, object)  # query_text, oracle_ids set
-    failed = Signal(str, object)  # query_text, ignored raw tokens
+    failed = Signal(object, object)  # query_text, error message
 
     def __init__(
         self,
         query_text: str,
-        online_query: str,
-        ignored_raw: tuple[str, ...],
+        inventory_ids: set[str],
         parent: QWidget | None = None,
     ) -> None:
+        # Do not parent to a QWidget — keeps thread lifetime independent of UI.
         super().__init__(parent)
         self._query_text = query_text
-        self._online_query = online_query
-        self._ignored_raw = ignored_raw
+        self._inventory_ids = inventory_ids
 
     def run(self) -> None:
         client = ScryfallClient()
         try:
-            oracle_ids = client.search_oracle_ids(self._online_query)
+            oracle_ids = client.search_oracle_ids_in(
+                self._query_text, self._inventory_ids, max_pages=15
+            )
+            if self.isInterruptionRequested():
+                return
             self.finished_ok.emit(self._query_text, oracle_ids)
-        except Exception:
-            self.failed.emit(self._query_text, self._ignored_raw)
+        except Exception as exc:
+            if not self.isInterruptionRequested():
+                self.failed.emit(self._query_text, str(exc))
         finally:
             client.close()
 
@@ -307,9 +314,11 @@ class InventoryWidget(QWidget):
         self._sort_column = COL_NAME
         self._sort_ascending = True
         self._search_worker: InventorySearchWorker | None = None
-        self._pending_online_ids: set[str] | None = None
-        self._ignored_online_filters: tuple[str, ...] = ()
+        self._scryfall_oracle_ids: set[str] | None = None
+        self._scryfall_query_applied: str = ""
+        self._scryfall_busy = False
         self._search_generation = 0
+        self._ignore_scryfall_button = False
         with get_session() as session:
             settings = SettingsService(session)
             self._show_card_images = settings.get_show_card_images()
@@ -317,7 +326,7 @@ class InventoryWidget(QWidget):
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
-        self._search_timer.timeout.connect(self._run_search)
+        self._search_timer.timeout.connect(self._populate_table)
         self._build_ui()
         self.refresh()
 
@@ -334,9 +343,19 @@ class InventoryWidget(QWidget):
         self.refresh()
 
     def retranslate(self) -> None:
-        self._search.setPlaceholderText(
-            self._translator.t("inventory.search.collection")
-        )
+        self._update_search_placeholder()
+        self._update_filter_button()
+        self._filter_dialog.retranslate()
+        if SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            self._scryfall_mode.setText(
+                self._translator.t("inventory.search.scryfall_mode")
+            )
+            self._scryfall_mode.setToolTip(
+                self._translator.t("inventory.search.scryfall_mode_tip")
+            )
+            self._scryfall_button.setToolTip(
+                self._translator.t("inventory.search.scryfall_run")
+            )
         self._add_button.setText(self._translator.t("inventory.add_new"))
         self._add_list_button.setText(self._translator.t("inventory.add_list"))
         self._edit_button.setText(self._translator.t("inventory.edit_copies"))
@@ -355,6 +374,7 @@ class InventoryWidget(QWidget):
     def _header_labels(self) -> list[str]:
         return [
             self._translator.t("browse.cards.name"),
+            self._translator.t("inventory.table.cmc"),
             self._translator.t("inventory.table.color"),
             self._translator.t("inventory.table.edition"),
             self._translator.t("inventory.table.total"),
@@ -370,12 +390,32 @@ class InventoryWidget(QWidget):
         collection = QVBoxLayout(self._collection_panel)
         collection.setContentsMargins(0, 0, 0, 0)
 
+        search_row = QHBoxLayout()
         self._search = QLineEdit()
-        self._search.setPlaceholderText(
-            self._translator.t("inventory.search.collection")
-        )
         self._search.textChanged.connect(self._on_search_text_changed)
-        collection.addWidget(self._search)
+        search_row.addWidget(self._search, 1)
+
+        # Checkbox before the run button so enabling the button mid-click
+        # cannot steal the mouse release (layout-shift click-through).
+        self._scryfall_mode = QCheckBox()
+        self._scryfall_mode.toggled.connect(self._on_scryfall_mode_toggled)
+        search_row.addWidget(self._scryfall_mode)
+
+        self._scryfall_button = QToolButton()
+        # Warm both variants so the first checkbox toggle never paints.
+        scryfall_icon(22, active=False)
+        scryfall_icon(22, active=True)
+        self._scryfall_button.setIcon(scryfall_icon(22, active=False))
+        self._scryfall_button.setIconSize(QSize(28, 28))
+        self._scryfall_button.setAutoRaise(True)
+        self._scryfall_button.setEnabled(False)
+        self._scryfall_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._scryfall_button.clicked.connect(self._run_scryfall_search)
+        search_row.addWidget(self._scryfall_button)
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            self._scryfall_mode.hide()
+            self._scryfall_button.hide()
+        collection.addLayout(search_row)
 
         self._search_hint = QLabel("")
         self._search_hint.setWordWrap(True)
@@ -384,41 +424,55 @@ class InventoryWidget(QWidget):
         hint_font.setPointSize(max(8, hint_font.pointSize() - 1))
         self._search_hint.setFont(hint_font)
         collection.addWidget(self._search_hint)
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            self._search_hint.hide()
 
         actions = QHBoxLayout()
-        self._add_button = QPushButton(self._translator.t("inventory.add_new"))
-        self._add_button.clicked.connect(self._add_card)
-        actions.addWidget(self._add_button)
+        self._filter_button = QPushButton()
+        self._filter_button.clicked.connect(self._open_filters)
+        actions.addWidget(self._filter_button)
 
-        self._add_list_button = QPushButton(self._translator.t("inventory.add_list"))
-        self._add_list_button.clicked.connect(self._show_add_list_section)
-        actions.addWidget(self._add_list_button)
-
-        self._edit_button = QPushButton(self._translator.t("inventory.edit_copies"))
+        self._edit_button = QPushButton()
         self._edit_button.clicked.connect(self._edit_copies)
         self._edit_button.setVisible(False)
         actions.addWidget(self._edit_button)
         actions.addStretch()
+
+        self._add_button = QPushButton()
+        self._add_button.clicked.connect(self._add_card)
+        actions.addWidget(self._add_button)
+
+        self._add_list_button = QPushButton()
+        self._add_list_button.clicked.connect(self._show_add_list_section)
+        actions.addWidget(self._add_list_button)
         collection.addLayout(actions)
 
-        self._table = QTableWidget(0, 7)
+        self._filter_dialog = InventoryFilterDialog(self._translator, self)
+        self._filter_dialog.filters_changed.connect(self._on_filters_changed)
+
+        self._table = QTableWidget(0, 8)
         self._table.setHorizontalHeaderLabels(self._header_labels())
         self._table.setColumnHidden(COL_EDITION, not self._track_editions)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(False)
+        # Fixed/Interactive only — ResizeToContents rescans every cell on each
+        # rebuild and freezes the UI with ~1.5k inventory rows when visible.
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(
-            COL_EDITION, QHeaderView.ResizeMode.ResizeToContents
-        )
-        header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(
-            COL_ASSIGNED, QHeaderView.ResizeMode.ResizeToContents
-        )
+        header.setSectionResizeMode(COL_CMC, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(COL_EDITION, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(COL_ASSIGNED, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_DECKS, QHeaderView.ResizeMode.Interactive)
         header.setMinimumSectionSize(60)
+        header.resizeSection(COL_CMC, 56)
+        header.resizeSection(COL_COLOR, 72)
+        header.resizeSection(COL_EDITION, 110)
+        header.resizeSection(COL_TOTAL, 64)
+        header.resizeSection(COL_FREE, 64)
+        header.resizeSection(COL_ASSIGNED, 80)
         header.resizeSection(COL_DECKS, 220)
         header.setSortIndicatorShown(True)
         header.setSortIndicator(COL_NAME, Qt.SortOrder.AscendingOrder)
@@ -433,25 +487,18 @@ class InventoryWidget(QWidget):
 
         self._main_layout.addWidget(self._collection_panel, 1)
 
-        self._add_list_group = QGroupBox(self._translator.t("inventory.add_list.title"))
+        self._add_list_group = QGroupBox()
         import_layout = QVBoxLayout(self._add_list_group)
 
         self._import_text = QTextEdit()
-        self._import_text.setPlaceholderText(
-            self._translator.t("inventory.add_list.placeholder")
-        )
         import_layout.addWidget(self._import_text, 1)
 
         import_buttons = QHBoxLayout()
-        self._load_file_button = QPushButton(self._translator.t("decks.load_file"))
+        self._load_file_button = QPushButton()
         self._load_file_button.clicked.connect(self._load_list_file)
-        self._submit_list_button = QPushButton(
-            self._translator.t("decks.submit_import")
-        )
+        self._submit_list_button = QPushButton()
         self._submit_list_button.clicked.connect(self._confirm_add_list)
-        self._cancel_list_button = QPushButton(
-            self._translator.t("decks.cancel_import")
-        )
+        self._cancel_list_button = QPushButton()
         self._cancel_list_button.clicked.connect(self._hide_add_list_section)
         import_buttons.addWidget(self._load_file_button)
         import_buttons.addWidget(self._submit_list_button)
@@ -461,6 +508,10 @@ class InventoryWidget(QWidget):
 
         self._add_list_group.setVisible(False)
         self._main_layout.addWidget(self._add_list_group, 0)
+
+        self.retranslate()
+        self._update_search_placeholder()
+        self._sync_scryfall_controls()
 
     def _show_add_list_section(self) -> None:
         self._collection_panel.setVisible(False)
@@ -507,6 +558,8 @@ class InventoryWidget(QWidget):
         assigned = row.total_copies - row.free_copies
         if self._sort_column == COL_NAME:
             return row.card_name.casefold()
+        if self._sort_column == COL_CMC:
+            return -1.0 if row.cmc is None else float(row.cmc)
         if self._sort_column == COL_COLOR:
             return (row.color_identity or "").casefold()
         if self._sort_column == COL_EDITION:
@@ -522,132 +575,316 @@ class InventoryWidget(QWidget):
         return row.card_name.casefold()
 
     def _on_search_text_changed(self) -> None:
+        if (
+            SCRYFALL_INVENTORY_SEARCH_ENABLED
+            and self._scryfall_mode.isChecked()
+        ):
+            self._sync_scryfall_controls()
+            current = self._search.text().strip()
+            if not current:
+                self._clear_scryfall_results()
+                self._update_search_hint()
+                self._populate_table()
+            elif (
+                self._scryfall_oracle_ids is not None
+                and current != self._scryfall_query_applied
+            ):
+                # Text diverged from the last API result — wait for logo click.
+                self._scryfall_oracle_ids = None
+                self._scryfall_query_applied = ""
+                self._update_search_hint()
+                self._populate_table()
+            else:
+                self._update_search_hint()
+            return
         self._search_timer.start()
 
+    def _open_filters(self) -> None:
+        self._filter_dialog.retranslate()
+        self._filter_dialog.show()
+        self._filter_dialog.raise_()
+        self._filter_dialog.activateWindow()
+
+    def _on_filters_changed(self) -> None:
+        self._update_filter_button()
+        self._populate_table()
+
+    def _update_filter_button(self) -> None:
+        label = self._translator.t("inventory.filters.toggle")
+        if self._filter_dialog.filter_state().is_active:
+            label = self._translator.t("inventory.filters.toggle_active")
+        self._filter_button.setText(label)
+
+    def _on_scryfall_mode_toggled(self, checked: bool) -> None:
+        """Toggle mode only — never hits the Scryfall API here."""
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            return
+        self._search_timer.stop()
+        self._abandon_scryfall_worker()
+        self._clear_scryfall_results()
+        # Ignore accidental click-through onto the run button while the
+        # checkbox click is still being delivered / layout is settling.
+        self._ignore_scryfall_button = True
+        self._scryfall_button.setEnabled(False)
+        self._scryfall_button.setIcon(scryfall_icon(22, active=checked))
+        self._update_search_placeholder()
+        self._update_search_hint()
+        # Defer so the checkbox paints before any table work.
+        QTimer.singleShot(0, lambda: self._after_scryfall_mode_toggled(checked))
+
+    def _after_scryfall_mode_toggled(self, checked: bool) -> None:
+        if checked != self._scryfall_mode.isChecked():
+            return
+        self._ignore_scryfall_button = False
+        self._sync_scryfall_controls()
+        if not checked:
+            # Re-apply name filter (may differ from the full list shown in mode).
+            self._search_timer.start()
+            return
+        # Entering Scryfall mode ignores the name box until the logo runs.
+        # Rebuild only when a name filter was active (otherwise the table
+        # already shows the full panel-filtered collection).
+        if self._search.text().strip():
+            self._populate_table()
+
+    def _update_search_placeholder(self) -> None:
+        if (
+            SCRYFALL_INVENTORY_SEARCH_ENABLED
+            and self._scryfall_mode.isChecked()
+        ):
+            self._search.setPlaceholderText(
+                self._translator.t("inventory.search.scryfall")
+            )
+        else:
+            self._search.setPlaceholderText(
+                self._translator.t("inventory.search.name")
+            )
+
+    def _sync_scryfall_controls(self) -> None:
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            return
+        mode_on = self._scryfall_mode.isChecked()
+        self._scryfall_button.setIcon(scryfall_icon(22, active=mode_on))
+        if self._ignore_scryfall_button or self._scryfall_busy:
+            self._scryfall_button.setEnabled(False)
+            return
+        has_query = bool(self._search.text().strip())
+        self._scryfall_button.setEnabled(mode_on and has_query)
+
+    def _clear_scryfall_results(self) -> None:
+        self._scryfall_oracle_ids = None
+        self._scryfall_query_applied = ""
+        self._search_generation += 1
+
+    def _abandon_scryfall_worker(self) -> None:
+        worker = self._search_worker
+        self._search_worker = None
+        self._scryfall_busy = False
+        if worker is None:
+            return
+        try:
+            worker.finished_ok.disconnect()
+        except RuntimeError:
+            pass
+        try:
+            worker.failed.disconnect()
+        except RuntimeError:
+            pass
+        worker.requestInterruption()
+        if worker.isRunning():
+            # Keep the QThread object alive until it finishes so Qt does not
+            # destroy a running thread (which can wedge the process).
+            worker.finished.connect(worker.deleteLater)
+        else:
+            worker.deleteLater()
+
     def _update_search_hint(self) -> None:
-        if not self._ignored_online_filters:
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
             self._search_hint.clear()
             self._search_hint.setVisible(False)
             return
-        filters = ", ".join(self._ignored_online_filters)
-        self._search_hint.setText(
-            self._translator.t("inventory.search.offline_filters").format(
-                filters=filters
-            )
-        )
-        self._search_hint.setVisible(True)
-
-    def _run_search(self) -> None:
-        query_text = self._search.text()
-        parsed = parse_inventory_query(query_text)
-        online_query = build_online_search_query(parsed)
-        self._ignored_online_filters = ()
-        self._pending_online_ids = None
-
-        if online_query is None:
-            self._update_search_hint()
-            self._populate_table()
+        if self._scryfall_busy:
+            self._search_hint.setText(self._translator.t("inventory.search.scryfall_busy"))
+            self._search_hint.setVisible(True)
             return
+        if self._scryfall_mode.isChecked() and self._scryfall_query_applied:
+            self._search_hint.setText(
+                self._translator.t("inventory.search.scryfall_applied").format(
+                    query=self._scryfall_query_applied,
+                    count=len(self._scryfall_oracle_ids or ()),
+                )
+            )
+            self._search_hint.setVisible(True)
+            return
+        if self._scryfall_mode.isChecked():
+            self._search_hint.setText(
+                self._translator.t("inventory.search.scryfall_idle")
+            )
+            self._search_hint.setVisible(True)
+            return
+        self._search_hint.clear()
+        self._search_hint.setVisible(False)
 
-        # Apply local filters immediately while the online request runs.
-        self._populate_table()
+    def _run_scryfall_search(self) -> None:
+        if not SCRYFALL_INVENTORY_SEARCH_ENABLED:
+            return
+        if self._ignore_scryfall_button or self._scryfall_busy:
+            return
+        query_text = self._search.text().strip()
+        if not query_text or not self._scryfall_mode.isChecked():
+            return
+        self._abandon_scryfall_worker()
+        inventory_ids = {row.oracle_id for row in self._rows}
         self._search_generation += 1
         generation = self._search_generation
-        worker = InventorySearchWorker(
-            query_text,
-            online_query,
-            parsed.online_raw,
-            parent=self,
-        )
+        self._scryfall_busy = True
+        self._update_search_hint()
+        self._sync_scryfall_controls()
+
+        worker = InventorySearchWorker(query_text, inventory_ids)
         self._search_worker = worker
 
         def on_ok(done_query: object, oracle_ids: object) -> None:
             if generation != self._search_generation:
                 return
-            if done_query != self._search.text():
+            self._scryfall_busy = False
+            self._search_worker = None
+            if done_query != self._search.text().strip():
+                self._sync_scryfall_controls()
+                self._update_search_hint()
                 return
             if not isinstance(oracle_ids, set):
+                self._sync_scryfall_controls()
+                self._update_search_hint()
                 return
-            self._pending_online_ids = oracle_ids
-            self._ignored_online_filters = ()
+            self._scryfall_oracle_ids = oracle_ids
+            self._scryfall_query_applied = str(done_query)
             self._update_search_hint()
+            self._sync_scryfall_controls()
             self._populate_table()
 
-        def on_fail(done_query: object, ignored: object) -> None:
+        def on_fail(done_query: object, error: object) -> None:
             if generation != self._search_generation:
                 return
-            if done_query != self._search.text():
-                return
-            self._pending_online_ids = None
-            if isinstance(ignored, tuple):
-                self._ignored_online_filters = ignored
-            else:
-                self._ignored_online_filters = ()
-            self._update_search_hint()
+            self._scryfall_busy = False
+            self._search_worker = None
+            self._scryfall_oracle_ids = None
+            self._scryfall_query_applied = ""
+            self._search_hint.setText(
+                self._translator.t("inventory.search.scryfall_failed").format(
+                    error=str(error)
+                )
+            )
+            self._search_hint.setVisible(True)
+            self._sync_scryfall_controls()
             self._populate_table()
 
-        worker.finished_ok.connect(on_ok)
-        worker.failed.connect(on_fail)
+        worker.finished_ok.connect(
+            on_ok, Qt.ConnectionType.QueuedConnection
+        )
+        worker.failed.connect(on_fail, Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(worker.deleteLater)
         worker.start()
 
     def _populate_table(self) -> None:
-        parsed = parse_inventory_query(self._search.text())
-        online_ids = self._pending_online_ids
-        # Only intersect with online ids when the current query still has
-        # online tokens and we successfully resolved them.
-        if parsed.online_tokens and online_ids is not None:
-            filtered = filter_inventory_rows(
-                self._rows, parsed, online_oracle_ids=online_ids
-            )
-        else:
-            filtered = filter_inventory_rows(self._rows, parsed)
+        scryfall_mode = (
+            SCRYFALL_INVENTORY_SEARCH_ENABLED and self._scryfall_mode.isChecked()
+        )
+        name_query = "" if scryfall_mode else self._search.text()
+        scryfall_ids = self._scryfall_oracle_ids if scryfall_mode else None
+        # In Scryfall mode with no query run yet, show the full collection
+        # (still panel-filtered). After a query, intersect.
+        filtered = filter_inventory_cards(
+            self._rows,
+            name_query=name_query,
+            panel=self._filter_dialog.filter_state(),
+            scryfall_oracle_ids=scryfall_ids,
+        )
         rows = sorted(
             filtered, key=self._sort_key, reverse=not self._sort_ascending
         )
         self._visible_rows = list(rows)
 
-        self._table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            assigned = row.total_copies - row.free_copies
-            decks_text = format_inventory_decks(row, self._translator)
-            color_text = format_color_identity(row.color_identity, self._translator)
+        table = self._table
+        header = table.horizontalHeader()
+        # Guard: if any column is still ResizeToContents, pin it Fixed for the
+        # bulk insert — otherwise Qt measures every cell and freezes (~1.5k rows).
+        pinned: list[tuple[int, int]] = []
+        for col in range(table.columnCount()):
+            mode = header.sectionResizeMode(col)
+            if mode == QHeaderView.ResizeMode.ResizeToContents:
+                pinned.append((col, header.sectionSize(col)))
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
 
-            name_item = QTableWidgetItem(row.card_name)
-            name_item.setData(ORACLE_ID_ROLE, row.oracle_id)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        table.setUpdatesEnabled(False)
+        table.blockSignals(True)
+        try:
+            table.setRowCount(len(rows))
+            for index, row in enumerate(rows):
+                assigned = row.total_copies - row.free_copies
+                decks_text = format_inventory_decks(row, self._translator)
+                color_text = format_color_identity(
+                    row.color_identity, self._translator
+                )
 
-            color_item = QTableWidgetItem(color_text)
-            color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            color_item.setFlags(color_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                name_item = QTableWidgetItem(row.card_name)
+                name_item.setData(ORACLE_ID_ROLE, row.oracle_id)
+                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            edition_item = QTableWidgetItem(format_edition_summary(row))
-            edition_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            edition_item.setFlags(edition_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                cmc_item = QTableWidgetItem(
+                    format_mana_value(row.cmc, self._translator)
+                )
+                cmc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                cmc_item.setFlags(cmc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            total_item = QTableWidgetItem(str(row.total_copies))
-            total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                color_item = QTableWidgetItem(color_text)
+                color_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                color_item.setFlags(
+                    color_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
 
-            free_item = QTableWidgetItem(str(row.free_copies))
-            free_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            free_item.setFlags(free_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                edition_item = QTableWidgetItem(format_edition_summary(row))
+                edition_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                edition_item.setFlags(
+                    edition_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
 
-            assigned_item = QTableWidgetItem(str(assigned))
-            assigned_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            assigned_item.setFlags(assigned_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                total_item = QTableWidgetItem(str(row.total_copies))
+                total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                total_item.setFlags(
+                    total_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
 
-            decks_item = QTableWidgetItem(decks_text)
-            decks_item.setFlags(decks_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            if row.assigned_decks:
-                decks_item.setToolTip("\n".join(row.assigned_decks))
+                free_item = QTableWidgetItem(str(row.free_copies))
+                free_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                free_item.setFlags(free_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            self._table.setItem(index, COL_NAME, name_item)
-            self._table.setItem(index, COL_COLOR, color_item)
-            self._table.setItem(index, COL_EDITION, edition_item)
-            self._table.setItem(index, COL_TOTAL, total_item)
-            self._table.setItem(index, COL_FREE, free_item)
-            self._table.setItem(index, COL_ASSIGNED, assigned_item)
-            self._table.setItem(index, COL_DECKS, decks_item)
+                assigned_item = QTableWidgetItem(str(assigned))
+                assigned_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                assigned_item.setFlags(
+                    assigned_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+
+                decks_item = QTableWidgetItem(decks_text)
+                decks_item.setFlags(
+                    decks_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+                if row.assigned_decks:
+                    decks_item.setToolTip("\n".join(row.assigned_decks))
+
+                table.setItem(index, COL_NAME, name_item)
+                table.setItem(index, COL_CMC, cmc_item)
+                table.setItem(index, COL_COLOR, color_item)
+                table.setItem(index, COL_EDITION, edition_item)
+                table.setItem(index, COL_TOTAL, total_item)
+                table.setItem(index, COL_FREE, free_item)
+                table.setItem(index, COL_ASSIGNED, assigned_item)
+                table.setItem(index, COL_DECKS, decks_item)
+        finally:
+            for col, width in pinned:
+                header.resizeSection(col, width)
+            table.blockSignals(False)
+            table.setUpdatesEnabled(True)
         self._on_selection_changed()
 
     def _selected_row(self) -> InventorySummaryRow | None:

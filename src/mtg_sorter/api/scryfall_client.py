@@ -72,24 +72,53 @@ class ScryfallClient:
 
     def search_oracle_ids(self, query: str, *, max_pages: int = 10) -> set[str]:
         """Return oracle_ids matching a Scryfall search query (paginated)."""
+        return self.search_oracle_ids_in(query, None, max_pages=max_pages)
+
+    def search_oracle_ids_in(
+        self,
+        query: str,
+        inventory_ids: set[str] | None,
+        *,
+        max_pages: int = 25,
+    ) -> set[str]:
+        """Return oracle_ids matching ``query``.
+
+        When ``inventory_ids`` is set, only those ids are kept (collection
+        intersection) and pagination stops early once every inventory id has
+        matched — useful for broad queries over a small collection.
+        """
         trimmed = query.strip()
         if not trimmed:
+            return set()
+        if inventory_ids is not None and not inventory_ids:
             return set()
         found: set[str] = set()
         page = 1
         while page <= max_pages:
-            payload = self._get(
-                "/cards/search",
-                params={"q": trimmed, "unique": "cards", "page": page},
-            )
+            try:
+                payload = self._get(
+                    "/cards/search",
+                    params={"q": trimmed, "unique": "cards", "page": page},
+                )
+            except httpx.HTTPStatusError as exc:
+                # Scryfall returns 404 when the query matches nothing.
+                if exc.response.status_code == 404:
+                    return found
+                raise
             data = payload.get("data")
             if isinstance(data, list):
                 for entry in data:
                     if not isinstance(entry, dict):
                         continue
                     oracle_id = entry.get("oracle_id")
-                    if isinstance(oracle_id, str) and oracle_id:
+                    if not isinstance(oracle_id, str) or not oracle_id:
+                        continue
+                    if inventory_ids is None:
                         found.add(oracle_id)
+                    elif oracle_id in inventory_ids:
+                        found.add(oracle_id)
+            if inventory_ids is not None and len(found) >= len(inventory_ids):
+                break
             if not payload.get("has_more"):
                 break
             page += 1

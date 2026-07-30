@@ -1,0 +1,154 @@
+"""Local inventory panel filters (type / color identity / mana value).
+
+Independent of Scryfall syntax. Color identity uses Scryfall ``id<=`` semantics:
+at most the selected colors (colorless included). Zero or all five color
+checkboxes means no color filter.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Protocol
+
+WUBRG = ("W", "U", "B", "R", "G")
+
+# Card types / common type-line tokens offered in the type picker.
+CARD_TYPE_OPTIONS: tuple[str, ...] = (
+    "Artifact",
+    "Battle",
+    "Creature",
+    "Enchantment",
+    "Instant",
+    "Land",
+    "Planeswalker",
+    "Sorcery",
+    "Kindred",
+    "Legendary",
+    "Snow",
+    "Basic",
+)
+
+CMC_OPS: tuple[str, ...] = ("=", "!=", "<", "<=", ">", ">=")
+
+
+class FilterableCard(Protocol):
+    oracle_id: str
+    card_name: str
+    type_line: str | None
+    color_identity: str | None
+    cmc: float | None
+
+
+@dataclass(frozen=True)
+class CmcCondition:
+    op: str
+    value: float
+
+
+@dataclass(frozen=True)
+class InventoryFilterState:
+    """Active panel filters. Empty collections / inactive color set = no filter."""
+
+    types: frozenset[str] = frozenset()
+    # Subset of WUBRG. Empty or all five → no color filter.
+    colors: frozenset[str] = frozenset()
+    cmc_conditions: tuple[CmcCondition, ...] = ()
+
+    @property
+    def color_filter_active(self) -> bool:
+        return bool(self.colors) and self.colors != frozenset(WUBRG)
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.types) or self.color_filter_active or bool(self.cmc_conditions)
+
+
+def color_identity_letters(color_identity: str | None) -> frozenset[str]:
+    if not color_identity:
+        return frozenset()
+    return frozenset(letter for letter in color_identity.upper() if letter in WUBRG)
+
+
+def matches_cmc(card_cmc: float | None, condition: CmcCondition) -> bool:
+    actual = 0.0 if card_cmc is None else float(card_cmc)
+    target = condition.value
+    op = condition.op
+    if op == "=":
+        return actual == target
+    if op == "!=":
+        return actual != target
+    if op == "<":
+        return actual < target
+    if op == "<=":
+        return actual <= target
+    if op == ">":
+        return actual > target
+    if op == ">=":
+        return actual >= target
+    return False
+
+
+def matches_type_line(type_line: str | None, selected: frozenset[str]) -> bool:
+    """OR match: type_line contains any selected token (case-insensitive word)."""
+    if not selected:
+        return True
+    haystack = (type_line or "").casefold()
+    if not haystack:
+        return False
+    tokens = {part.strip().casefold() for part in haystack.replace("—", " ").replace("-", " ").split()}
+    tokens.discard("")
+    for wanted in selected:
+        needle = wanted.casefold()
+        if needle in tokens or needle in haystack:
+            return True
+    return False
+
+
+def matches_color_identity_at_most(
+    color_identity: str | None, allowed: frozenset[str]
+) -> bool:
+    """``id<=``: every color in the identity is in ``allowed`` (colorless OK)."""
+    have = color_identity_letters(color_identity)
+    return have <= allowed
+
+
+def matches_panel_filters(card: FilterableCard, state: InventoryFilterState) -> bool:
+    if state.types and not matches_type_line(card.type_line, state.types):
+        return False
+    if state.color_filter_active:
+        if not matches_color_identity_at_most(card.color_identity, state.colors):
+            return False
+    for condition in state.cmc_conditions:
+        if not matches_cmc(card.cmc, condition):
+            return False
+    return True
+
+
+def matches_name(card: FilterableCard, needle: str) -> bool:
+    text = needle.strip().casefold()
+    if not text:
+        return True
+    return text in card.card_name.casefold()
+
+
+def filter_inventory_cards(
+    rows: Sequence[FilterableCard],
+    *,
+    name_query: str = "",
+    panel: InventoryFilterState | None = None,
+    scryfall_oracle_ids: set[str] | None = None,
+) -> list[FilterableCard]:
+    """Apply name (optional), panel filters, and optional Scryfall id intersection."""
+    state = panel or InventoryFilterState()
+    result: list[FilterableCard] = []
+    for row in rows:
+        if scryfall_oracle_ids is not None and row.oracle_id not in scryfall_oracle_ids:
+            continue
+        if name_query and not matches_name(row, name_query):
+            continue
+        if not matches_panel_filters(row, state):
+            continue
+        result.append(row)
+    return result
+

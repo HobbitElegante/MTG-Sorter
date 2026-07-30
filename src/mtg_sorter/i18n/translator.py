@@ -20,10 +20,51 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.search.collection": (
             "Search collection (name or Scryfall syntax, e.g. t:creature c:r)…"
         ),
+        "inventory.search.name": "Filter collection by card name…",
+        "inventory.search.scryfall": "Scryfall syntax (e.g. id<=rb t:creature)…",
+        "inventory.search.scryfall_mode": "Scryfall",
+        "inventory.search.scryfall_mode_tip": (
+            "Enables Scryfall syntax in the search box. Nothing is queried until "
+            "you press the Scryfall logo — results are limited to cards you own."
+        ),
+        "inventory.search.scryfall_run": "Run Scryfall search on your collection",
+        "inventory.search.scryfall_idle": (
+            "Scryfall mode on — type a query, then press the Scryfall logo. "
+            "Only cards in your collection are kept."
+        ),
+        "inventory.search.scryfall_busy": "Searching Scryfall…",
+        "inventory.search.scryfall_applied": (
+            "Scryfall “{query}” → {count} card(s) in your collection"
+        ),
+        "inventory.search.scryfall_failed": "Scryfall search failed: {error}",
         "inventory.search.hint": "Type a card name to check whether you have free copies.",
         "inventory.search.offline_filters": (
             "Ignored filters [{filters}]: require an internet connection"
         ),
+        "inventory.filters.toggle": "Filter",
+        "inventory.filters.toggle_active": "Filter ✓",
+        "inventory.filters.title": "Inventory filters",
+        "inventory.filters.close": "Close",
+        "inventory.filters.type": "Type",
+        "inventory.filters.type_hint": (
+            "Double-click a type to add it, or use Add. Double-click a selected "
+            "type (or Remove) to drop it. Matching is OR."
+        ),
+        "inventory.filters.type_search": "Find a type…",
+        "inventory.filters.type_selected": "Selected types",
+        "inventory.filters.type_add": "Add",
+        "inventory.filters.type_remove": "Remove",
+        "inventory.filters.colors": "Color identity",
+        "inventory.filters.colors_hint": (
+            "At most these colors (like id≤). Leave empty or check all five for no filter."
+        ),
+        "inventory.filters.cmc": "Mana value",
+        "inventory.filters.cmc_hint": (
+            "Add one or more comparisons; all must match (AND)."
+        ),
+        "inventory.filters.cmc_add": "Add",
+        "inventory.filters.cmc_remove": "Remove",
+        "inventory.filters.clear": "Clear filters",
         "inventory.add_new": "Add new card to collection",
         "inventory.add_list": "Add list to collection",
         "inventory.add_list.title": "Add list to collection",
@@ -72,6 +113,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.free": "Free",
         "inventory.table.assigned": "Assigned",
         "inventory.table.decks": "In decks",
+        "inventory.table.cmc": "Mana value",
         "inventory.table.color": "Colors",
         "inventory.table.edition": "Edition",
         "inventory.table.colorless": "—",
@@ -476,10 +518,51 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.search.collection": (
             "Buscar en la colección (nombre o sintaxis Scryfall, p. ej. t:creature c:r)…"
         ),
+        "inventory.search.name": "Filtrar la colección por nombre de carta…",
+        "inventory.search.scryfall": "Sintaxis Scryfall (p. ej. id<=rb t:creature)…",
+        "inventory.search.scryfall_mode": "Scryfall",
+        "inventory.search.scryfall_mode_tip": (
+            "Activa la sintaxis Scryfall en el cuadro. No se consulta nada hasta "
+            "que pulses el logo de Scryfall — solo se conservan cartas de tu colección."
+        ),
+        "inventory.search.scryfall_run": "Buscar en Scryfall sobre tu colección",
+        "inventory.search.scryfall_idle": (
+            "Modo Scryfall activo — escribe la consulta y pulsa el logo. "
+            "Solo se muestran cartas de tu inventario."
+        ),
+        "inventory.search.scryfall_busy": "Buscando en Scryfall…",
+        "inventory.search.scryfall_applied": (
+            "Scryfall «{query}» → {count} carta(s) en tu colección"
+        ),
+        "inventory.search.scryfall_failed": "Falló la búsqueda Scryfall: {error}",
         "inventory.search.hint": "Escribe el nombre de una carta para ver si tienes copias libres.",
         "inventory.search.offline_filters": (
             "Se ignoraron los filtros [{filters}]: requieren conexión a internet"
         ),
+        "inventory.filters.toggle": "Filtrar",
+        "inventory.filters.toggle_active": "Filtrar ✓",
+        "inventory.filters.title": "Filtros de inventario",
+        "inventory.filters.close": "Cerrar",
+        "inventory.filters.type": "Tipo",
+        "inventory.filters.type_hint": (
+            "Doble clic en un tipo para añadirlo, o usa Añadir. Doble clic en un "
+            "tipo seleccionado (o Quitar) para eliminarlo. La coincidencia es OR."
+        ),
+        "inventory.filters.type_search": "Buscar un tipo…",
+        "inventory.filters.type_selected": "Tipos seleccionados",
+        "inventory.filters.type_add": "Añadir",
+        "inventory.filters.type_remove": "Quitar",
+        "inventory.filters.colors": "Identidad de color",
+        "inventory.filters.colors_hint": (
+            "Como máximo estos colores (como id≤). Vacío o los cinco = sin filtro."
+        ),
+        "inventory.filters.cmc": "Valor de maná",
+        "inventory.filters.cmc_hint": (
+            "Añade una o más comparaciones; todas deben cumplirse (AND)."
+        ),
+        "inventory.filters.cmc_add": "Añadir",
+        "inventory.filters.cmc_remove": "Quitar",
+        "inventory.filters.clear": "Limpiar filtros",
         "inventory.add_new": "Agregar carta nueva a la colección",
         "inventory.add_list": "Agregar listado a la colección",
         "inventory.add_list.title": "Agregar listado a la colección",
@@ -528,6 +611,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.free": "Libres",
         "inventory.table.assigned": "Asignadas",
         "inventory.table.decks": "En mazos",
+        "inventory.table.cmc": "Coste de maná",
         "inventory.table.color": "Colores",
         "inventory.table.edition": "Edición",
         "inventory.table.colorless": "—",

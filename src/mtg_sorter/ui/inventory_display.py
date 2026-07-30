@@ -6,6 +6,16 @@ from mtg_sorter.services.browse_service import InventorySummaryRow
 from mtg_sorter.services.deck_service import CommanderLegalityIssue
 
 
+def format_mana_value(cmc: float | None, translator: Translator) -> str:
+    """Numeric mana value (CMC). Whole numbers as integers (GGG → 3)."""
+    if cmc is None:
+        return translator.t("inventory.table.colorless")
+    value = float(cmc)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
 def format_color_identity(
     color_identity: str | None, translator: Translator
 ) -> str:
