@@ -367,6 +367,7 @@ class InventoryWidget(QWidget):
         self._submit_list_button.setText(self._translator.t("decks.submit_import"))
         self._cancel_list_button.setText(self._translator.t("decks.cancel_import"))
         self._table.setHorizontalHeaderLabels(self._header_labels())
+        self._apply_header_tooltips()
         self._preview.retranslate()
         self._update_search_hint()
         self._populate_table()
@@ -382,6 +383,11 @@ class InventoryWidget(QWidget):
             self._translator.t("inventory.table.assigned"),
             self._translator.t("inventory.table.decks"),
         ]
+
+    def _apply_header_tooltips(self) -> None:
+        header = self._table.horizontalHeaderItem(COL_CMC)
+        if header is not None:
+            header.setToolTip(self._translator.t("inventory.table.cmc_tip"))
 
     def _build_ui(self) -> None:
         self._main_layout = QVBoxLayout(self)
@@ -452,6 +458,7 @@ class InventoryWidget(QWidget):
 
         self._table = QTableWidget(0, 8)
         self._table.setHorizontalHeaderLabels(self._header_labels())
+        self._apply_header_tooltips()
         self._table.setColumnHidden(COL_EDITION, not self._track_editions)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         header = self._table.horizontalHeader()
