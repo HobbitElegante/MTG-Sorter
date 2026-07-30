@@ -36,6 +36,7 @@ from mtg_sorter.services import (
 )
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
 from mtg_sorter.services.deck_service import CopyDetail
+from mtg_sorter.ui.error_text import format_deck_url_error
 from mtg_sorter.ui.inventory_display import (
     format_color_identity,
     format_edition_summary,
@@ -972,16 +973,14 @@ class InventoryWidget(QWidget):
                 finally:
                     scryfall.close()
         except Exception as exc:
+            is_url = any(
+                host in text.casefold() for host in ("moxfield", "archidekt")
+            )
             QMessageBox.critical(
                 self,
                 self._translator.t("common.error"),
-                self._translator.t("inventory.add_list.url_failed").format(
-                    error=str(exc)
-                )
-                if any(
-                    host in text.casefold()
-                    for host in ("moxfield", "archidekt")
-                )
+                format_deck_url_error(self._translator, exc)
+                if is_url
                 else str(exc),
             )
             return

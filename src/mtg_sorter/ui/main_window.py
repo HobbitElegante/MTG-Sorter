@@ -1,6 +1,6 @@
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
 from mtg_sorter.config import (
     DEFAULT_WINDOW_HEIGHT,
@@ -11,6 +11,7 @@ from mtg_sorter.config import (
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import SettingsService
+from mtg_sorter.ui.theme import apply_theme
 from mtg_sorter.ui.widgets.browse_widget import BrowseWidget
 from mtg_sorter.ui.widgets.decks_widget import DecksWidget
 from mtg_sorter.ui.widgets.inventory_widget import InventoryWidget
@@ -54,6 +55,7 @@ class MainWindow(QMainWindow):
         self._optimizer.changed.connect(self._on_optimizer_applied)
         self._browse.changed.connect(self._refresh_from_browse)
         self._browse.locale_changed.connect(self.set_locale)
+        self._browse.theme_changed.connect(self.set_theme)
         self._browse.show_images_changed.connect(self._on_show_images_changed)
         self._browse.track_editions_changed.connect(self._on_track_editions_changed)
         self._browse.warning_settings_changed.connect(self._decks.refresh)
@@ -114,3 +116,10 @@ class MainWindow(QMainWindow):
         self._decks.retranslate()
         self._inventory.retranslate()
         self._optimizer.retranslate()
+
+    def set_theme(self, theme: str) -> None:
+        with get_session() as session:
+            SettingsService(session).set_ui_theme(theme)
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, theme)

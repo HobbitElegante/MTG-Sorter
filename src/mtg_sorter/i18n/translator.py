@@ -142,6 +142,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "decks.import.url_failed": "Could not download that deck:\n{error}",
         "decks.import.url_filled": "Loaded deck from URL. Review and confirm again.",
+        "import.moxfield.forbidden": (
+            "Moxfield blocked the download (403).\n\n"
+            "The deck may be private, or Moxfield rejected the request from this "
+            "network.\n\n"
+            "Open the deck in your browser → More → Export → Copy for MTGO, then "
+            "paste that text here."
+        ),
+        "import.moxfield.not_found": (
+            "Moxfield could not find that deck.\n\n"
+            "It may be private or deleted. Paste More → Export → Copy for MTGO "
+            "instead."
+        ),
+        "import.moxfield.http": (
+            "Moxfield returned an error (HTTP {status}).\n\n"
+            "Paste More → Export → Copy for MTGO instead."
+        ),
+        "import.moxfield.bad_response": (
+            "Moxfield returned an unexpected response.\n\n"
+            "Paste More → Export → Copy for MTGO instead."
+        ),
+        "import.url.network": (
+            "Could not reach the deck site (network error).\n\n"
+            "Check your connection, or paste the exported list instead of the URL."
+        ),
         "decks.status.armed": "Armed",
         "decks.status.dismantled": "Dismantled",
         "decks.legality.warning": "⚠",
@@ -328,8 +352,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.card_qty": "{name} × {qty}",
         "menu.language": "Language",
         "config.language": "Language",
+        "config.theme": "Theme",
         "language.en": "English",
         "language.es": "Español",
+        "theme.system": "System",
+        "theme.light": "Light",
+        "theme.dark": "Dark",
         "common.refresh": "Refresh",
         "common.error": "Error",
         "common.success": "Success",
@@ -459,6 +487,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "browse.scryfall.starting": "Starting Scryfall sync…",
         "browse.scryfall.done": "Imported {count:,} cards from {pack}.",
+        "browse.scryfall.sync_failed": (
+            "Could not sync the Scryfall bulk pack.\n\n{detail}"
+        ),
+        "browse.scryfall.images_failed": (
+            "Could not download card images.\n\n{detail}"
+        ),
+        "browse.scryfall.card_data_failed": (
+            "Could not refresh card data.\n\n{detail}"
+        ),
+        "browse.scryfall.network_failed": (
+            "Could not reach Scryfall.\n\n"
+            "Check your internet connection and try again."
+        ),
         "browse.scryfall.images_starting": "Starting image download…",
         "browse.scryfall.images_done": (
             "Images: {downloaded:,} downloaded, {skipped:,} already local."
@@ -641,6 +682,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "decks.import.url_failed": "No se pudo descargar ese mazo:\n{error}",
         "decks.import.url_filled": "Mazo cargado desde URL. Revísalo y confirma de nuevo.",
+        "import.moxfield.forbidden": (
+            "Moxfield bloqueó la descarga (403).\n\n"
+            "El mazo puede ser privado, o Moxfield rechazó la petición desde esta "
+            "red.\n\n"
+            "Abre el mazo en el navegador → More → Export → Copy for MTGO y pega "
+            "ese texto aquí."
+        ),
+        "import.moxfield.not_found": (
+            "Moxfield no encontró ese mazo.\n\n"
+            "Puede ser privado o estar borrado. Pega More → Export → Copy for MTGO "
+            "en su lugar."
+        ),
+        "import.moxfield.http": (
+            "Moxfield devolvió un error (HTTP {status}).\n\n"
+            "Pega More → Export → Copy for MTGO en su lugar."
+        ),
+        "import.moxfield.bad_response": (
+            "Moxfield devolvió una respuesta inesperada.\n\n"
+            "Pega More → Export → Copy for MTGO en su lugar."
+        ),
+        "import.url.network": (
+            "No se pudo contactar con el sitio del mazo (error de red).\n\n"
+            "Revisa la conexión, o pega el listado exportado en lugar de la URL."
+        ),
         "decks.status.armed": "Armado",
         "decks.status.dismantled": "Desarmado",
         "decks.legality.warning": "⚠",
@@ -829,8 +894,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "optimize.card_qty": "{name} × {qty}",
         "menu.language": "Idioma",
         "config.language": "Idioma",
+        "config.theme": "Tema",
         "language.en": "English",
         "language.es": "Español",
+        "theme.system": "Sistema",
+        "theme.light": "Claro",
+        "theme.dark": "Oscuro",
         "common.refresh": "Actualizar",
         "common.error": "Error",
         "common.success": "Éxito",
@@ -964,6 +1033,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "browse.scryfall.starting": "Iniciando sincronización con Scryfall…",
         "browse.scryfall.done": "Se importaron {count:,} cartas desde {pack}.",
+        "browse.scryfall.sync_failed": (
+            "No se pudo sincronizar el pack bulk de Scryfall.\n\n{detail}"
+        ),
+        "browse.scryfall.images_failed": (
+            "No se pudieron descargar las imágenes.\n\n{detail}"
+        ),
+        "browse.scryfall.card_data_failed": (
+            "No se pudieron actualizar los datos de cartas.\n\n{detail}"
+        ),
+        "browse.scryfall.network_failed": (
+            "No se pudo contactar con Scryfall.\n\n"
+            "Revisa la conexión a internet e inténtalo de nuevo."
+        ),
         "browse.scryfall.images_starting": "Iniciando descarga de imágenes…",
         "browse.scryfall.images_done": (
             "Imágenes: {downloaded:,} descargadas, {skipped:,} ya locales."

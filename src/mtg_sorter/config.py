@@ -107,7 +107,14 @@ MOXFIELD_API_BASE = "https://api2.moxfield.com"
 ARCHIDEKT_API_BASE = "https://archidekt.com"
 DEFAULT_LOCALE = "en"
 
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+THEME_SYSTEM = "system"
+UI_THEMES = frozenset({THEME_LIGHT, THEME_DARK, THEME_SYSTEM})
+DEFAULT_UI_THEME = THEME_SYSTEM
+
 SETTING_UI_LOCALE = "ui_locale"
+SETTING_UI_THEME = "ui_theme"
 SETTING_SHOW_CARD_IMAGES = "ui_show_card_images"
 SETTING_TRACK_EDITIONS = "ui_track_editions"
 SETTING_SHOW_LEGALITY_WARNINGS = "ui_show_legality_warnings"

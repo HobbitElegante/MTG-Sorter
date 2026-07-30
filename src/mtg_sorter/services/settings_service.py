@@ -3,13 +3,16 @@ from sqlalchemy.orm import Session
 from mtg_sorter.config import (
     DEFAULT_CARD_PREVIEW_WIDTH,
     DEFAULT_LOCALE,
+    DEFAULT_UI_THEME,
     SETTING_CARD_PREVIEW_WIDTH,
     SETTING_SHOW_CARD_IMAGES,
     SETTING_SHOW_LEGALITY_WARNINGS,
     SETTING_SHOW_RULE_WARNINGS,
     SETTING_TRACK_EDITIONS,
     SETTING_UI_LOCALE,
+    SETTING_UI_THEME,
     SETTING_WINDOW_GEOMETRY,
+    UI_THEMES,
 )
 from mtg_sorter.i18n.translator import TRANSLATIONS
 from mtg_sorter.repositories import SettingsRepository
@@ -36,6 +39,17 @@ class SettingsService:
         if locale not in TRANSLATIONS:
             raise ValueError(f"Unsupported locale: {locale}")
         self.set(SETTING_UI_LOCALE, locale)
+
+    def get_ui_theme(self) -> str:
+        theme = self.get(SETTING_UI_THEME)
+        if theme in UI_THEMES:
+            return theme
+        return DEFAULT_UI_THEME
+
+    def set_ui_theme(self, theme: str) -> None:
+        if theme not in UI_THEMES:
+            raise ValueError(f"Unsupported theme: {theme}")
+        self.set(SETTING_UI_THEME, theme)
 
     def get_show_card_images(self) -> bool:
         value = self.get(SETTING_SHOW_CARD_IMAGES)

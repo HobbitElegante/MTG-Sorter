@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.1)
+## Features (v0.9.2)
 
 ### Collection
 
@@ -36,10 +36,10 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 ### Browse & data
 
-- Offline card cache via Scryfall bulk (`oracle_cards` / optional `unique_artwork`); Art Series excluded
+- Offline card cache via Scryfall bulk (`oracle_cards` / optional `unique_artwork`); Art Series excluded; reversible prints handled in unique-artwork sync
 - Local JPEGs under `data/images/`; refresh legality + image URLs for the collection without a full re-bulk
-- Browse: Overview, **Customize** (display, warning toggles, house banlist), card search, availability, activity **History** (filter, load more, CSV, undo / redo last), Scryfall
-- UI in English or Spanish (persisted)
+- Browse: Overview, **Customize** (display incl. light/dark/system theme, warning toggles, house banlist), card search, availability, activity **History** (filter, load more, CSV, undo / redo last), Scryfall
+- UI in English or Spanish; theme preference persisted
 
 ## Download
 
@@ -92,7 +92,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-209 tests passing.
+227 tests passing.
 
 ## First-time setup
 
@@ -100,7 +100,7 @@ uv run pytest
 2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
 3. Optional: **Use unique-artwork** for better default art; **Download images (collection)** for local JPEGs of owned/list cards.
 4. Import decks from the **Decks** tab (**Import new list**).
-5. Optional: **Browse → Customize** → switch language, toggle images / edition tracking / deck warnings, or edit the house banlist (all persisted).
+5. Optional: **Browse → Customize** → switch language or theme (system / light / dark), toggle images / edition tracking / deck warnings, or edit the house banlist (all persisted).
 
 ## Importing a deck
 
@@ -179,10 +179,12 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.9.1)
+## Latest (v0.9.2)
 
-**v0.9.1** is the recommended build (once tagged). Prefer it over **v0.9.0** and earlier.
+**v0.9.2** is the recommended build (once tagged). Prefer it over **v0.9.1** and earlier.
 
-- Inventory: **Filter** dialog (type / color identity / mana value); **CMC** column; name-only search (Scryfall-syntax mode hidden for now)
-- Table populate no longer freezes on large collections (`ResizeToContents` removed)
-- Browse → **Customize**, house banlist, Archidekt URL, History redo, and wider window geometry from **v0.9.0**
+- **Theme:** Browse → Customize → system / light / dark (persisted)
+- Fix: **unique-artwork** sync no longer crashes on Scryfall `reversible_card` prints (missing top-level `oracle_id`)
+- Fix: Moxfield URL import — better headers / browser UA retry on 403; clear EN/ES guidance to paste *Copy for MTGO* if Moxfield still blocks
+- Friendlier Scryfall sync / image / refresh error dialogs (network vs detail)
+- Inventory filters + CMC column and Customize / house banlist from **v0.9.1** / **v0.9.0**

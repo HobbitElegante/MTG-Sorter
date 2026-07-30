@@ -2,8 +2,14 @@ from pathlib import Path
 
 import pytest
 
+import httpx
+
 from mtg_sorter.api.archidekt_client import deck_export_from_payload as archidekt_export
-from mtg_sorter.api.moxfield_client import deck_export_from_payload
+from mtg_sorter.api.moxfield_client import (
+    MoxfieldClient,
+    MoxfieldError,
+    deck_export_from_payload,
+)
 from mtg_sorter.models.enums import DeckCardRole
 from mtg_sorter.services.decklist_parser import (
     DecklistFormat,
@@ -286,3 +292,82 @@ def test_deck_export_from_moxfield_v3_boards_payload() -> None:
     assert "1 Sol Ring" in export.list_text
     assert "Token:" not in export.list_text
     assert "Treasure" not in export.list_text
+
+
+def test_moxfield_client_maps_403_to_friendly_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"title": "Forbidden"})
+
+    client = MoxfieldClient(
+        httpx.Client(
+            base_url="https://api2.moxfield.com",
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    try:
+        with pytest.raises(MoxfieldError) as raised:
+            client.fetch_deck("abc")
+    finally:
+        client.close()
+    assert raised.value.code == "forbidden"
+
+
+def test_moxfield_client_retries_403_with_browser_headers() -> None:
+    seen_agents: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_agents.append(request.headers.get("user-agent", ""))
+        if "Chrome/" in request.headers.get("user-agent", ""):
+            return httpx.Response(
+                200,
+                json={
+                    "publicId": "abc",
+                    "name": "Rocco",
+                    "boards": {
+                        "commanders": {
+                            "count": 1,
+                            "cards": {
+                                "r": {
+                                    "quantity": 1,
+                                    "card": {"name": "Rocco, Cabaretti Caterer"},
+                                }
+                            },
+                        },
+                        "mainboard": {"count": 0, "cards": {}},
+                    },
+                },
+            )
+        return httpx.Response(403, json={"title": "Forbidden"})
+
+    client = MoxfieldClient(
+        httpx.Client(
+            base_url="https://api2.moxfield.com",
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    try:
+        payload = client.fetch_deck("abc")
+    finally:
+        client.close()
+
+    assert payload["name"] == "Rocco"
+    assert len(seen_agents) >= 2
+    assert any("Chrome/" in agent for agent in seen_agents)
+
+
+def test_moxfield_client_maps_404_to_friendly_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"title": "Not Found"})
+
+    client = MoxfieldClient(
+        httpx.Client(
+            base_url="https://api2.moxfield.com",
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    try:
+        with pytest.raises(MoxfieldError) as raised:
+            client.fetch_deck("missing")
+    finally:
+        client.close()
+    assert raised.value.code == "not_found"

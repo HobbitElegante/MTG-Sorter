@@ -3,11 +3,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from mtg_sorter.config import MOXFIELD_API_BASE
+
+# App identity first; browser-like fallback if Cloudflare rejects the app UA.
+_APP_HEADERS = {
+    "User-Agent": "MTG-Sorter/0.9 (+https://github.com/HobbitElegante/MTG-Sorter)",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.moxfield.com",
+    "Referer": "https://www.moxfield.com/",
+}
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.moxfield.com",
+    "Referer": "https://www.moxfield.com/",
+}
+
+MoxfieldErrorCode = Literal["forbidden", "not_found", "http", "bad_response"]
+
+
+class MoxfieldError(RuntimeError):
+    """Failure fetching a public Moxfield deck (UI maps ``code`` to i18n)."""
+
+    def __init__(self, code: MoxfieldErrorCode, *, status: int | None = None) -> None:
+        self.code = code
+        self.status = status
+        detail = code if status is None else f"{code} ({status})"
+        super().__init__(detail)
 
 
 @dataclass(frozen=True)
@@ -27,8 +59,9 @@ class MoxfieldClient:
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=MOXFIELD_API_BASE,
-            headers={"User-Agent": "MTG-Sorter/0.6"},
+            headers=_APP_HEADERS,
             timeout=30.0,
+            follow_redirects=True,
         )
 
     def close(self) -> None:
@@ -36,15 +69,37 @@ class MoxfieldClient:
             self._client.close()
 
     def fetch_deck(self, public_id: str) -> dict[str, Any]:
-        response = self._client.get(f"/v3/decks/all/{public_id}")
+        response = self._request_deck(public_id)
+        if response.status_code == 403:
+            # Some networks/Cloudflare setups reject the app User-Agent.
+            response = self._request_deck(public_id, headers=_BROWSER_HEADERS)
+        if response.status_code == 403:
+            raise MoxfieldError("forbidden", status=403)
         if response.status_code == 404:
-            # Older path some clients still use.
-            response = self._client.get(f"/v2/decks/all/{public_id}")
-        response.raise_for_status()
+            raise MoxfieldError("not_found", status=404)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise MoxfieldError("http", status=exc.response.status_code) from exc
         payload = response.json()
         if not isinstance(payload, dict):
-            raise ValueError("Unexpected Moxfield response shape")
+            raise MoxfieldError("bad_response")
         return payload
+
+    def _request_deck(
+        self,
+        public_id: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        kwargs: dict[str, Any] = {}
+        if headers is not None:
+            kwargs["headers"] = headers
+        response = self._client.get(f"/v3/decks/all/{public_id}", **kwargs)
+        if response.status_code == 404:
+            # Older path some clients still use.
+            response = self._client.get(f"/v2/decks/all/{public_id}", **kwargs)
+        return response
 
 
 def deck_export_from_payload(payload: dict[str, Any]) -> MoxfieldDeckExport:

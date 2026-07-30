@@ -6,9 +6,12 @@ import pytest
 from mtg_sorter.config import (
     DEFAULT_CARD_PREVIEW_WIDTH,
     DEFAULT_LOCALE,
+    DEFAULT_UI_THEME,
     SETTING_CARD_PREVIEW_WIDTH,
     SETTING_UI_LOCALE,
+    SETTING_UI_THEME,
     SETTING_WINDOW_GEOMETRY,
+    THEME_DARK,
 )
 from mtg_sorter.models import Base
 from mtg_sorter.services.settings_service import SettingsService
@@ -46,6 +49,31 @@ def test_get_ui_locale_falls_back_on_invalid_value(session: Session) -> None:
 def test_set_ui_locale_rejects_unsupported(session: Session) -> None:
     with pytest.raises(ValueError, match="Unsupported locale"):
         SettingsService(session).set_ui_locale("fr")
+
+
+def test_get_ui_theme_defaults_when_missing(session: Session) -> None:
+    assert SettingsService(session).get_ui_theme() == DEFAULT_UI_THEME
+
+
+def test_set_and_get_ui_theme(session: Session) -> None:
+    settings = SettingsService(session)
+
+    settings.set_ui_theme(THEME_DARK)
+
+    assert settings.get(SETTING_UI_THEME) == THEME_DARK
+    assert settings.get_ui_theme() == THEME_DARK
+
+
+def test_get_ui_theme_falls_back_on_invalid_value(session: Session) -> None:
+    settings = SettingsService(session)
+    settings.set(SETTING_UI_THEME, "neon")
+
+    assert settings.get_ui_theme() == DEFAULT_UI_THEME
+
+
+def test_set_ui_theme_rejects_unsupported(session: Session) -> None:
+    with pytest.raises(ValueError, match="Unsupported theme"):
+        SettingsService(session).set_ui_theme("neon")
 
 
 def test_show_card_images_defaults_to_enabled(session: Session) -> None:

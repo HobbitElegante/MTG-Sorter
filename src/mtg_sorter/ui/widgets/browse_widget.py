@@ -21,13 +21,21 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import httpx
 
 from mtg_sorter.config import (
     SCRYFALL_BULK_ORACLE_TYPE,
     SCRYFALL_BULK_UNIQUE_ARTWORK_TYPE,
+    THEME_DARK,
+    THEME_LIGHT,
+    THEME_SYSTEM,
 )
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
+from mtg_sorter.ui.error_text import (
+    format_scryfall_job_error,
+    network_failure_token,
+)
 from mtg_sorter.models.enums import ActivityCategory
 from mtg_sorter.services import (
     ActivityService,
@@ -82,6 +90,8 @@ class BulkSyncWorker(QThread):
                 finally:
                     bulk.close()
             self.finished_ok.emit(result.imported_cards, result.pack_type)
+        except httpx.HTTPError:
+            self.failed.emit(network_failure_token())
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -102,6 +112,8 @@ class CardDataRefreshWorker(QThread):
                 finally:
                     scryfall.close()
             self.finished_ok.emit(count)
+        except httpx.HTTPError:
+            self.failed.emit(network_failure_token())
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -128,6 +140,8 @@ class ImageDownloadWorker(QThread):
                 finally:
                     images.close()
             self.finished_ok.emit(result.downloaded, result.skipped)
+        except httpx.HTTPError:
+            self.failed.emit(network_failure_token())
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -152,6 +166,7 @@ class RemoteBulkStatusWorker(QThread):
 class BrowseWidget(QWidget):
     changed = Signal()
     locale_changed = Signal(str)
+    theme_changed = Signal(str)
     show_images_changed = Signal(bool)
     track_editions_changed = Signal(bool)
     warning_settings_changed = Signal()
@@ -165,6 +180,7 @@ class BrowseWidget(QWidget):
             self._track_editions = settings.get_track_editions()
             self._show_legality_warnings = settings.get_show_legality_warnings()
             self._show_rule_warnings = settings.get_show_rule_warnings()
+            self._ui_theme = settings.get_ui_theme()
         self._sync_worker: BulkSyncWorker | None = None
         self._card_data_worker: CardDataRefreshWorker | None = None
         self._image_worker: ImageDownloadWorker | None = None
@@ -206,6 +222,8 @@ class BrowseWidget(QWidget):
         self._update_oracle_button_label()
         self._language_group.setTitle(self._translator.t("config.language"))
         self._language_label.setText(self._translator.t("config.language"))
+        self._theme_group.setTitle(self._translator.t("config.theme"))
+        self._theme_label.setText(self._translator.t("config.theme"))
         self._inventory_summary_group.setTitle(
             self._translator.t("inventory.summary.title")
         )
@@ -288,6 +306,7 @@ class BrowseWidget(QWidget):
         )
         self._card_preview.retranslate()
         self._sync_language_combo()
+        self._sync_theme_combo()
         self._refresh_house_bans()
         self.refresh()
 
@@ -401,6 +420,14 @@ class BrowseWidget(QWidget):
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
         language_form.addRow(self._language_label, self._language_combo)
         display_layout.addWidget(self._language_group)
+
+        self._theme_group = QGroupBox(self._translator.t("config.theme"))
+        theme_form = QFormLayout(self._theme_group)
+        self._theme_label = QLabel(self._translator.t("config.theme"))
+        self._theme_combo = QComboBox()
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        theme_form.addRow(self._theme_label, self._theme_combo)
+        display_layout.addWidget(self._theme_group)
         layout.addWidget(self._display_group)
 
         self._warnings_group = QGroupBox(
@@ -448,6 +475,7 @@ class BrowseWidget(QWidget):
         layout.addWidget(self._house_ban_group, 1)
 
         self._sync_language_combo()
+        self._sync_theme_combo()
         self._refresh_house_bans()
         return panel
 
@@ -536,6 +564,25 @@ class BrowseWidget(QWidget):
         locale = self._language_combo.currentData()
         if isinstance(locale, str) and locale != self._translator.locale:
             self.locale_changed.emit(locale)
+
+    def _sync_theme_combo(self) -> None:
+        self._theme_combo.blockSignals(True)
+        self._theme_combo.clear()
+        for code, label_key in (
+            (THEME_SYSTEM, "theme.system"),
+            (THEME_LIGHT, "theme.light"),
+            (THEME_DARK, "theme.dark"),
+        ):
+            self._theme_combo.addItem(self._translator.t(label_key), code)
+        index = self._theme_combo.findData(self._ui_theme)
+        self._theme_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._theme_combo.blockSignals(False)
+
+    def _on_theme_changed(self) -> None:
+        theme = self._theme_combo.currentData()
+        if isinstance(theme, str) and theme != self._ui_theme:
+            self._ui_theme = theme
+            self.theme_changed.emit(theme)
 
     def _build_cards_panel(self) -> QWidget:
         panel = QWidget()
@@ -1246,7 +1293,7 @@ class BrowseWidget(QWidget):
         QMessageBox.critical(
             self,
             self._translator.t("common.error"),
-            message,
+            format_scryfall_job_error(self._translator, message, kind="sync"),
         )
 
     def _start_images_collection(self) -> None:
@@ -1293,7 +1340,7 @@ class BrowseWidget(QWidget):
         QMessageBox.critical(
             self,
             self._translator.t("common.error"),
-            message,
+            format_scryfall_job_error(self._translator, message, kind="images"),
         )
 
     def _start_card_data_refresh(self) -> None:
@@ -1325,5 +1372,5 @@ class BrowseWidget(QWidget):
         QMessageBox.critical(
             self,
             self._translator.t("common.error"),
-            message,
+            format_scryfall_job_error(self._translator, message, kind="card_data"),
         )

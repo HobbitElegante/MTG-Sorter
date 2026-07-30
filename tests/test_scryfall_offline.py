@@ -283,6 +283,71 @@ def test_card_from_scryfall_leaves_back_empty_for_split_cards() -> None:
     assert card.image_uri_back is None
 
 
+def test_card_from_scryfall_reversible_uses_face_oracle_id() -> None:
+    card = card_from_scryfall(
+        {
+            "layout": "reversible_card",
+            "name": "Ghalta, Primal Hunger // Ghalta, Primal Hunger",
+            "color_identity": ["G"],
+            "card_faces": [
+                {
+                    "oracle_id": "ghalta-oracle",
+                    "name": "Ghalta, Primal Hunger",
+                    "type_line": "Legendary Creature — Elder Dinosaur",
+                    "mana_cost": "{10}{G}{G}",
+                    "cmc": 12.0,
+                    "colors": ["G"],
+                    "image_uris": {"normal": "https://example.test/ghalta-front.jpg"},
+                },
+                {
+                    "oracle_id": "ghalta-oracle",
+                    "name": "Ghalta, Primal Hunger",
+                    "image_uris": {"normal": "https://example.test/ghalta-back.jpg"},
+                },
+            ],
+        }
+    )
+
+    assert card.oracle_id == "ghalta-oracle"
+    assert card.name == "Ghalta, Primal Hunger"
+    assert card.type_line == "Legendary Creature — Elder Dinosaur"
+    assert card.cmc == 12.0
+    assert card.colors == "G"
+    assert card.image_uri == "https://example.test/ghalta-front.jpg"
+    assert card.image_uri_back is None
+
+
+def test_bulk_sync_unique_artwork_skips_payloads_without_oracle_id(
+    session: Session,
+) -> None:
+    oracle_id = "11111111-1111-1111-1111-111111111111"
+    payloads = [
+        {
+            "layout": "reversible_card",
+            "name": "No Face Id // No Face Id",
+            "card_faces": [{"name": "No Face Id"}, {"name": "No Face Id"}],
+        },
+        {
+            "oracle_id": oracle_id,
+            "name": "Sol Ring",
+            "type_line": "Artifact",
+            "cmc": 1.0,
+            "colors": [],
+            "color_identity": [],
+            "image_uris": {"normal": "https://example.test/sol.jpg"},
+        },
+    ]
+    client = FakeScryfallClient(
+        payloads_by_type={"unique_artwork": payloads, "oracle_cards": []}
+    )
+    service = ScryfallBulkService(session, client)
+
+    result = service.sync_bulk("unique_artwork")
+
+    assert result.imported_cards == 1
+    assert session.get(Card, oracle_id) is not None
+
+
 def test_bulk_sync_unique_artwork_collapses_oracle_id(session: Session) -> None:
     oracle_id = "11111111-1111-1111-1111-111111111111"
     payloads = [

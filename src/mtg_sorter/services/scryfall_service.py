@@ -50,27 +50,83 @@ def _normal_image_uri(source: object) -> str | None:
     return normal if isinstance(normal, str) else None
 
 
+def oracle_id_from_scryfall(payload: dict) -> str | None:
+    """Resolve oracle_id from a Scryfall card object.
+
+    ``unique_artwork`` includes ``reversible_card`` prints with no top-level
+    ``oracle_id``; the identity lives on each face instead.
+    """
+    oracle_id = payload.get("oracle_id")
+    if isinstance(oracle_id, str) and oracle_id:
+        return oracle_id
+    faces = payload.get("card_faces")
+    if not isinstance(faces, list):
+        return None
+    for face in faces:
+        if not isinstance(face, dict):
+            continue
+        face_id = face.get("oracle_id")
+        if isinstance(face_id, str) and face_id:
+            return face_id
+    return None
+
+
 def card_from_scryfall(payload: dict) -> Card:
     faces = payload.get("card_faces")
     faces = faces if isinstance(faces, list) else []
+    primary = faces[0] if faces and isinstance(faces[0], dict) else None
+
+    oracle_id = oracle_id_from_scryfall(payload)
+    if oracle_id is None:
+        raise ValueError("Scryfall card payload is missing oracle_id")
+
+    name = payload.get("name")
+    # Reversible prints use "Name // Name"; prefer the face name for the cache.
+    if payload.get("layout") == "reversible_card" and primary and primary.get("name"):
+        name = primary["name"]
+    if not isinstance(name, str) or not name:
+        raise ValueError("Scryfall card payload is missing name")
 
     image_uri = _normal_image_uri(payload)
-    if image_uri is None and faces:
-        image_uri = _normal_image_uri(faces[0])
+    if image_uri is None and primary is not None:
+        image_uri = _normal_image_uri(primary)
     # Split/adventure cards carry a single top-level image, so only true
-    # double-faced layouts end up with a back image here.
-    image_uri_back = _normal_image_uri(faces[1]) if len(faces) > 1 else None
+    # double-faced layouts end up with a back image here. Reversible cards are
+    # the same oracle on both sides — do not treat the reverse as a DFC back.
+    if payload.get("layout") == "reversible_card":
+        image_uri_back = None
+    else:
+        image_uri_back = _normal_image_uri(faces[1]) if len(faces) > 1 else None
 
     type_line = payload.get("type_line")
+    if not type_line and primary is not None:
+        type_line = primary.get("type_line")
+
+    mana_cost = payload.get("mana_cost")
+    if mana_cost is None and primary is not None:
+        mana_cost = primary.get("mana_cost")
+
+    oracle_text = payload.get("oracle_text")
+    if oracle_text is None and primary is not None:
+        oracle_text = primary.get("oracle_text")
+
+    colors = payload.get("colors")
+    if colors is None and primary is not None:
+        colors = primary.get("colors")
+
+    cmc = payload.get("cmc")
+    if cmc is None and primary is not None:
+        cmc = primary.get("cmc")
+
     return Card(
-        oracle_id=payload["oracle_id"],
-        name=payload["name"],
-        mana_cost=payload.get("mana_cost"),
+        oracle_id=oracle_id,
+        name=name,
+        mana_cost=mana_cost,
         type_line=type_line,
-        oracle_text=payload.get("oracle_text"),
-        colors="".join(payload.get("colors") or []),
+        oracle_text=oracle_text,
+        colors="".join(colors or []),
         color_identity="".join(payload.get("color_identity") or []),
-        cmc=float(payload.get("cmc") or 0),
+        cmc=float(cmc or 0),
         image_uri=image_uri,
         image_uri_back=image_uri_back,
         commander_legality=commander_legality_from_payload(payload),

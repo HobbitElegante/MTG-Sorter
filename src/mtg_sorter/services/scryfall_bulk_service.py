@@ -21,7 +21,10 @@ from mtg_sorter.config import (
 )
 from mtg_sorter.models import Card
 from mtg_sorter.repositories import CardRepository, SettingsRepository
-from mtg_sorter.services.scryfall_service import card_from_scryfall
+from mtg_sorter.services.scryfall_service import (
+    card_from_scryfall,
+    oracle_id_from_scryfall,
+)
 
 
 @dataclass(frozen=True)
@@ -177,6 +180,9 @@ class ScryfallBulkService:
                 _iter_bulk_card_payloads(temp_path), start=1
             ):
                 if is_scryfall_art_series(payload):
+                    continue
+                # unique_artwork includes reversible prints without a usable id.
+                if oracle_id_from_scryfall(payload) is None:
                     continue
 
                 card = card_from_scryfall(payload)

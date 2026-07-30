@@ -37,6 +37,7 @@ from mtg_sorter.services import (
 from mtg_sorter.services.deck_export import load_deck_export_cards
 from mtg_sorter.services.deck_service import DeckCardSummary
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
+from mtg_sorter.ui.error_text import format_deck_url_error
 from mtg_sorter.ui.deck_list_display import (
     DeckListRow,
     DeckSortKey,
@@ -1130,7 +1131,7 @@ class DecksWidget(QWidget):
             QMessageBox.critical(
                 self,
                 self._translator.t("common.error"),
-                self._translator.t("decks.import.url_failed").format(error=str(exc)),
+                format_deck_url_error(self._translator, exc),
             )
             return
 
