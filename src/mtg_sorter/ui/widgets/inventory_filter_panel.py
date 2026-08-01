@@ -1,20 +1,23 @@
-"""Inventory filter dialog (type / colors / mana value)."""
+"""Inventory filter dialog (type / decks / colors / mana value)."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QSpinBox,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -38,57 +41,84 @@ class InventoryFilterDialog(QDialog):
         super().__init__(parent)
         self._translator = translator
         self._cmc_rows: list[tuple[QComboBox, QSpinBox, QPushButton]] = []
-        self._selected_types: set[str] = set()
+        self._selected_types: list[str] = []
+        self._selected_decks: list[tuple[int, str]] = []
+        self._armed_decks: list[tuple[int, str]] = []
         self.setModal(False)
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(420)
         self._build_ui()
 
     def _build_ui(self) -> None:
         body = QVBoxLayout(self)
+        hint_font = self.font()
+        hint_font.setPointSize(max(8, hint_font.pointSize() - 1))
 
-        # --- Type ---
+        # --- Type (Optimize-style picker) ---
         self._type_label = QLabel()
         body.addWidget(self._type_label)
         self._type_hint = QLabel()
         self._type_hint.setWordWrap(True)
-        hint_font = self._type_hint.font()
-        hint_font.setPointSize(max(8, hint_font.pointSize() - 1))
         self._type_hint.setFont(hint_font)
         body.addWidget(self._type_hint)
 
-        self._type_search = QLineEdit()
-        self._type_search.textChanged.connect(self._filter_type_list)
-        body.addWidget(self._type_search)
-
-        self._type_available = QListWidget()
-        self._type_available.setMinimumHeight(120)
-        self._type_available.setSelectionMode(
-            QListWidget.SelectionMode.SingleSelection
-        )
+        type_picker = QHBoxLayout()
+        self._type_combo = QComboBox()
+        self._configure_searchable_combo(self._type_combo)
         for type_name in CARD_TYPE_OPTIONS:
-            self._type_available.addItem(type_name)
-        self._type_available.itemDoubleClicked.connect(self._add_type_item)
-        body.addWidget(self._type_available)
-
-        type_buttons = QHBoxLayout()
+            self._type_combo.addItem(type_name, type_name)
+        self._type_combo.setCurrentIndex(-1)
         self._type_add_button = QPushButton()
-        self._type_add_button.clicked.connect(self._add_current_type)
-        self._type_remove_button = QPushButton()
-        self._type_remove_button.clicked.connect(self._remove_current_type)
-        type_buttons.addWidget(self._type_add_button)
-        type_buttons.addWidget(self._type_remove_button)
-        type_buttons.addStretch()
-        body.addLayout(type_buttons)
+        self._type_add_button.clicked.connect(self._add_selected_type)
+        type_picker.addWidget(self._type_combo, 1)
+        type_picker.addWidget(self._type_add_button)
+        body.addLayout(type_picker)
 
-        self._type_selected_label = QLabel()
-        body.addWidget(self._type_selected_label)
-        self._type_selected = QListWidget()
-        self._type_selected.setMinimumHeight(80)
-        self._type_selected.setSelectionMode(
-            QListWidget.SelectionMode.SingleSelection
-        )
-        self._type_selected.itemDoubleClicked.connect(self._remove_type_item)
-        body.addWidget(self._type_selected)
+        self._type_queue_group = QGroupBox()
+        type_queue_layout = QVBoxLayout(self._type_queue_group)
+        self._type_queue = QListWidget()
+        self._type_queue.setMaximumHeight(100)
+        self._type_queue.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._type_queue.itemDoubleClicked.connect(self._remove_type_item)
+        type_queue_layout.addWidget(self._type_queue)
+        self._type_remove_button = QPushButton()
+        self._type_remove_button.clicked.connect(self._remove_selected_type)
+        type_queue_layout.addWidget(self._type_remove_button)
+        body.addWidget(self._type_queue_group)
+        self._type_queue_group.setVisible(False)
+
+        # --- Decks ---
+        self._decks_label = QLabel()
+        body.addWidget(self._decks_label)
+        self._decks_hint = QLabel()
+        self._decks_hint.setWordWrap(True)
+        self._decks_hint.setFont(hint_font)
+        body.addWidget(self._decks_hint)
+
+        self._exclude_any_armed = QCheckBox()
+        self._exclude_any_armed.toggled.connect(self._on_filters_edited)
+        body.addWidget(self._exclude_any_armed)
+
+        deck_picker = QHBoxLayout()
+        self._deck_combo = QComboBox()
+        self._configure_searchable_combo(self._deck_combo)
+        self._deck_add_button = QPushButton()
+        self._deck_add_button.clicked.connect(self._add_selected_deck)
+        deck_picker.addWidget(self._deck_combo, 1)
+        deck_picker.addWidget(self._deck_add_button)
+        body.addLayout(deck_picker)
+
+        self._deck_queue_group = QGroupBox()
+        deck_queue_layout = QVBoxLayout(self._deck_queue_group)
+        self._deck_queue = QListWidget()
+        self._deck_queue.setMaximumHeight(100)
+        self._deck_queue.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._deck_queue.itemDoubleClicked.connect(self._remove_deck_item)
+        deck_queue_layout.addWidget(self._deck_queue)
+        self._deck_remove_button = QPushButton()
+        self._deck_remove_button.clicked.connect(self._remove_selected_deck)
+        deck_queue_layout.addWidget(self._deck_remove_button)
+        body.addWidget(self._deck_queue_group)
+        self._deck_queue_group.setVisible(False)
 
         # --- Colors ---
         self._colors_label = QLabel()
@@ -146,15 +176,56 @@ class InventoryFilterDialog(QDialog):
 
         self.retranslate()
 
+    def _configure_searchable_combo(self, combo: QComboBox) -> None:
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        combo.setMinimumContentsLength(24)
+        line_edit = combo.lineEdit()
+        assert line_edit is not None
+        line_edit.setClearButtonEnabled(True)
+        search_icon = self.style().standardIcon(
+            QStyle.StandardPixmap.SP_FileDialogContentsView
+        )
+        search_action = QAction(
+            search_icon if not search_icon.isNull() else QIcon(),
+            "",
+            self,
+        )
+        search_action.setEnabled(False)
+        line_edit.addAction(search_action, line_edit.ActionPosition.LeadingPosition)
+        completer = QCompleter(combo.model(), combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        combo.setCompleter(completer)
+        combo.activated.connect(lambda *_: self._commit_combo(combo))
+        line_edit.returnPressed.connect(lambda: self._commit_combo(combo))
+
     def retranslate(self) -> None:
         t = self._translator.t
         self.setWindowTitle(t("inventory.filters.title"))
         self._type_label.setText(t("inventory.filters.type"))
         self._type_hint.setText(t("inventory.filters.type_hint"))
-        self._type_search.setPlaceholderText(t("inventory.filters.type_search"))
-        self._type_selected_label.setText(t("inventory.filters.type_selected"))
+        type_edit = self._type_combo.lineEdit()
+        if type_edit is not None:
+            type_edit.setPlaceholderText(t("inventory.filters.type_search"))
         self._type_add_button.setText(t("inventory.filters.type_add"))
         self._type_remove_button.setText(t("inventory.filters.type_remove"))
+        self._type_queue_group.setTitle(t("inventory.filters.type_selected"))
+
+        self._decks_label.setText(t("inventory.filters.decks"))
+        self._decks_hint.setText(t("inventory.filters.decks_hint"))
+        self._exclude_any_armed.setText(t("inventory.filters.decks_any_armed"))
+        deck_edit = self._deck_combo.lineEdit()
+        if deck_edit is not None:
+            deck_edit.setPlaceholderText(t("inventory.filters.decks_search"))
+        self._deck_add_button.setText(t("inventory.filters.decks_add"))
+        self._deck_remove_button.setText(t("inventory.filters.decks_remove"))
+        self._deck_queue_group.setTitle(t("inventory.filters.decks_selected"))
+
         self._colors_label.setText(t("inventory.filters.colors"))
         self._colors_hint.setText(t("inventory.filters.colors_hint"))
         self._cmc_label.setText(t("inventory.filters.cmc"))
@@ -165,6 +236,42 @@ class InventoryFilterDialog(QDialog):
             self._close_button.setText(t("inventory.filters.close"))
         for _op, _spin, remove in self._cmc_rows:
             remove.setText(t("inventory.filters.cmc_remove"))
+
+    def set_armed_decks(self, decks: list[tuple[int, str]]) -> None:
+        """Refresh the armed-deck picker; drop queue entries that are no longer armed."""
+        self._armed_decks = list(decks)
+        valid_ids = {deck_id for deck_id, _name in self._armed_decks}
+
+        kept = [(deck_id, name) for deck_id, name in self._selected_decks if deck_id in valid_ids]
+        dropped = len(kept) != len(self._selected_decks)
+        self._selected_decks = kept
+        self._rebuild_deck_queue()
+
+        current = self._deck_combo.currentData()
+        self._deck_combo.blockSignals(True)
+        self._deck_combo.clear()
+        for deck_id, name in self._armed_decks:
+            self._deck_combo.addItem(name, deck_id)
+        completer = self._deck_combo.completer()
+        if completer is not None:
+            completer.setModel(self._deck_combo.model())
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        if isinstance(current, int):
+            index = self._deck_combo.findData(current)
+            if index >= 0:
+                self._deck_combo.setCurrentIndex(index)
+            else:
+                self._deck_combo.setCurrentIndex(-1)
+                line_edit = self._deck_combo.lineEdit()
+                if line_edit is not None:
+                    line_edit.clear()
+        else:
+            self._deck_combo.setCurrentIndex(-1)
+        self._deck_combo.blockSignals(False)
+
+        if dropped:
+            self.filters_changed.emit()
 
     def filter_state(self) -> InventoryFilterState:
         colors = {
@@ -180,12 +287,26 @@ class InventoryFilterDialog(QDialog):
             types=frozenset(self._selected_types),
             colors=frozenset(colors),
             cmc_conditions=conditions,
+            exclude_any_armed=self._exclude_any_armed.isChecked(),
+            exclude_deck_ids=frozenset(deck_id for deck_id, _ in self._selected_decks),
         )
 
     def clear_filters(self) -> None:
         self._selected_types.clear()
-        self._type_selected.clear()
-        self._type_search.clear()
+        self._rebuild_type_queue()
+        self._selected_decks.clear()
+        self._rebuild_deck_queue()
+        self._exclude_any_armed.blockSignals(True)
+        self._exclude_any_armed.setChecked(False)
+        self._exclude_any_armed.blockSignals(False)
+        type_edit = self._type_combo.lineEdit()
+        if type_edit is not None:
+            type_edit.clear()
+        self._type_combo.setCurrentIndex(-1)
+        deck_edit = self._deck_combo.lineEdit()
+        if deck_edit is not None:
+            deck_edit.clear()
+        self._deck_combo.setCurrentIndex(-1)
         for box in self._color_checks.values():
             box.blockSignals(True)
             box.setChecked(False)
@@ -194,47 +315,123 @@ class InventoryFilterDialog(QDialog):
             self._remove_cmc_row(self._cmc_rows[0][2])
         self.filters_changed.emit()
 
-    def _filter_type_list(self, text: str) -> None:
-        needle = text.strip().casefold()
-        for index in range(self._type_available.count()):
-            item = self._type_available.item(index)
-            if item is None:
-                continue
-            item.setHidden(bool(needle) and needle not in item.text().casefold())
-
-    def _add_type_item(self, item: QListWidgetItem) -> None:
-        self._add_type(item.text())
-
-    def _add_current_type(self) -> None:
-        item = self._type_available.currentItem()
-        if item is not None:
-            self._add_type(item.text())
-
-    def _add_type(self, type_name: str) -> None:
-        if type_name in self._selected_types:
+    def _commit_combo(self, combo: QComboBox) -> None:
+        data = self._combo_selection_data(combo)
+        if data is None:
             return
-        self._selected_types.add(type_name)
-        self._type_selected.addItem(type_name)
+        index = combo.findData(data)
+        if index < 0:
+            return
+        combo.blockSignals(True)
+        combo.setCurrentIndex(index)
+        combo.blockSignals(False)
+
+    def _combo_selection_data(self, combo: QComboBox) -> object | None:
+        typed = combo.currentText().strip()
+        if not typed:
+            return None
+        index = combo.currentIndex()
+        if index >= 0 and combo.itemText(index) == typed:
+            return combo.itemData(index)
+        needle = typed.casefold()
+        exact: list[object] = []
+        partial: list[object] = []
+        for i in range(combo.count()):
+            label = combo.itemText(i)
+            data = combo.itemData(i)
+            if label.casefold() == needle:
+                exact.append(data)
+            elif needle in label.casefold():
+                partial.append(data)
+        if len(exact) == 1:
+            return exact[0]
+        if not exact and len(partial) == 1:
+            return partial[0]
+        return None
+
+    def _add_selected_type(self) -> None:
+        data = self._combo_selection_data(self._type_combo)
+        if not isinstance(data, str):
+            return
+        if data in self._selected_types:
+            return
+        self._selected_types.append(data)
+        self._rebuild_type_queue()
+        line_edit = self._type_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.clear()
+        self._type_combo.setCurrentIndex(-1)
         self.filters_changed.emit()
 
     def _remove_type_item(self, item: QListWidgetItem) -> None:
         self._remove_type(item.text())
 
-    def _remove_current_type(self) -> None:
-        item = self._type_selected.currentItem()
+    def _remove_selected_type(self) -> None:
+        item = self._type_queue.currentItem()
         if item is not None:
             self._remove_type(item.text())
 
     def _remove_type(self, type_name: str) -> None:
         if type_name not in self._selected_types:
             return
-        self._selected_types.discard(type_name)
-        for index in range(self._type_selected.count()):
-            item = self._type_selected.item(index)
-            if item is not None and item.text() == type_name:
-                self._type_selected.takeItem(index)
-                break
+        self._selected_types = [t for t in self._selected_types if t != type_name]
+        self._rebuild_type_queue()
         self.filters_changed.emit()
+
+    def _rebuild_type_queue(self) -> None:
+        self._type_queue.clear()
+        for type_name in self._selected_types:
+            self._type_queue.addItem(type_name)
+        self._type_queue_group.setVisible(bool(self._selected_types))
+
+    def _add_selected_deck(self) -> None:
+        data = self._combo_selection_data(self._deck_combo)
+        if not isinstance(data, int):
+            return
+        if any(deck_id == data for deck_id, _ in self._selected_decks):
+            return
+        name = next(
+            (n for deck_id, n in self._armed_decks if deck_id == data),
+            self._deck_combo.currentText().strip(),
+        )
+        self._selected_decks.append((data, name))
+        self._rebuild_deck_queue()
+        line_edit = self._deck_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.clear()
+        self._deck_combo.setCurrentIndex(-1)
+        self.filters_changed.emit()
+
+    def _remove_deck_item(self, item: QListWidgetItem) -> None:
+        deck_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(deck_id, int):
+            self._remove_deck(deck_id)
+
+    def _remove_selected_deck(self) -> None:
+        item = self._deck_queue.currentItem()
+        if item is None:
+            return
+        deck_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(deck_id, int):
+            self._remove_deck(deck_id)
+
+    def _remove_deck(self, deck_id: int) -> None:
+        before = len(self._selected_decks)
+        self._selected_decks = [
+            (did, name) for did, name in self._selected_decks if did != deck_id
+        ]
+        if len(self._selected_decks) == before:
+            return
+        self._rebuild_deck_queue()
+        self.filters_changed.emit()
+
+    def _rebuild_deck_queue(self) -> None:
+        self._deck_queue.clear()
+        for deck_id, name in self._selected_decks:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, deck_id)
+            self._deck_queue.addItem(item)
+        self._deck_queue_group.setVisible(bool(self._selected_decks))
 
     def _add_cmc_condition(self) -> None:
         op = QComboBox()

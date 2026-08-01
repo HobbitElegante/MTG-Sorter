@@ -27,6 +27,7 @@ from mtg_sorter.algorithms.inventory_filters import filter_inventory_cards
 from mtg_sorter.api.scryfall_client import ScryfallClient
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
+from mtg_sorter.models.enums import DeckStatus
 from mtg_sorter.services import (
     BrowseService,
     ImportService,
@@ -35,7 +36,7 @@ from mtg_sorter.services import (
     SettingsService,
 )
 from mtg_sorter.services.browse_service import CardSummary, InventorySummaryRow
-from mtg_sorter.services.deck_service import CopyDetail
+from mtg_sorter.services.deck_service import CopyDetail, DeckService
 from mtg_sorter.ui.error_text import format_deck_url_error
 from mtg_sorter.ui.inventory_display import (
     format_color_identity,
@@ -539,6 +540,11 @@ class InventoryWidget(QWidget):
             self._rows = BrowseService(session).list_inventory(
                 include_editions=self._track_editions
             )
+            armed = [
+                (deck.id, deck.name)
+                for deck in DeckService(session).list_decks(status=DeckStatus.ARMED)
+            ]
+        self._filter_dialog.set_armed_decks(armed)
         self._populate_table()
 
     def _on_header_clicked(self, column: int) -> None:
@@ -608,6 +614,12 @@ class InventoryWidget(QWidget):
         self._search_timer.start()
 
     def _open_filters(self) -> None:
+        with get_session() as session:
+            armed = [
+                (deck.id, deck.name)
+                for deck in DeckService(session).list_decks(status=DeckStatus.ARMED)
+            ]
+        self._filter_dialog.set_armed_decks(armed)
         self._filter_dialog.retranslate()
         self._filter_dialog.show()
         self._filter_dialog.raise_()

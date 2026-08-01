@@ -47,13 +47,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.close": "Close",
         "inventory.filters.type": "Type",
         "inventory.filters.type_hint": (
-            "Double-click a type to add it, or use Add. Double-click a selected "
-            "type (or Remove) to drop it. Matching is OR."
+            "Search a type, then Add. Remove from the list below. Matching is OR."
         ),
         "inventory.filters.type_search": "Find a type…",
         "inventory.filters.type_selected": "Selected types",
         "inventory.filters.type_add": "Add",
         "inventory.filters.type_remove": "Remove",
+        "inventory.filters.decks": "Armed decks",
+        "inventory.filters.decks_hint": (
+            "Hide cards with a physical copy assigned to armed decks. "
+            "Use the checkbox for all armed decks, or add specific decks."
+        ),
+        "inventory.filters.decks_any_armed": "Hide cards in any armed deck",
+        "inventory.filters.decks_search": "Find an armed deck…",
+        "inventory.filters.decks_selected": "Excluded decks",
+        "inventory.filters.decks_add": "Add",
+        "inventory.filters.decks_remove": "Remove",
         "inventory.filters.colors": "Color identity",
         "inventory.filters.colors_hint": (
             "At most these colors (like id≤). Leave empty or check all five for no filter."
@@ -240,6 +249,32 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.cards.empty": "No cards in this deck",
         "decks.cards.line": "{qty}× {name}",
         "decks.cards.line_role": "{qty}× {name} ({role})",
+        "decks.cards.filter_by": "Filter by",
+        "decks.cards.sort.mana_value": "Mana value",
+        "decks.cards.sort.alphabetical": "Alphabetical",
+        "decks.cards.group_by_type": "Group by type",
+        "decks.cards.group_header": "{name}:",
+        "decks.cards.group.command_zone": "Command zone",
+        "decks.cards.group.other": "Other",
+        "decks.stats.lands": "Lands: {count} ({basic} basic)",
+        "decks.stats.avg_no_lands": "x̄ mana value (no lands): {value}",
+        "decks.stats.avg_with_lands": "x̄ mana value (with lands): {value}",
+        "decks.stats.avg_tooltip": "x̄ = average",
+        "decks.stats.types_title": "Types:",
+        "decks.stats.pips": "Mana pips: {value}",
+        "decks.stats.unknown": "{count} card(s) without cached data",
+        "decks.stats.type.creature": "Creatures",
+        "decks.stats.type.instant": "Instants",
+        "decks.stats.type.sorcery": "Sorceries",
+        "decks.stats.type.artifact": "Artifacts",
+        "decks.stats.type.enchantment": "Enchantments",
+        "decks.stats.type.planeswalker": "Planeswalkers",
+        "decks.stats.type.battle": "Battles",
+        "decks.stats.type.land": "Lands",
+        "decks.stats.curve.title": "Mana curve (lands excluded)",
+        "decks.stats.curve.creatures": "Creatures",
+        "decks.stats.curve.spells": "Non-creature",
+        "decks.stats.curve.empty": "No mana curve data",
         "decks.move_up": "Move up",
         "decks.move_down": "Move down",
         "decks.edit_details": "Edit name / commander",
@@ -587,13 +622,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.close": "Cerrar",
         "inventory.filters.type": "Tipo",
         "inventory.filters.type_hint": (
-            "Doble clic en un tipo para añadirlo, o usa Añadir. Doble clic en un "
-            "tipo seleccionado (o Quitar) para eliminarlo. La coincidencia es OR."
+            "Busca un tipo y pulsa Añadir. Quita desde la lista de abajo. "
+            "La coincidencia es OR."
         ),
         "inventory.filters.type_search": "Buscar un tipo…",
         "inventory.filters.type_selected": "Tipos seleccionados",
         "inventory.filters.type_add": "Añadir",
         "inventory.filters.type_remove": "Quitar",
+        "inventory.filters.decks": "Mazos armados",
+        "inventory.filters.decks_hint": (
+            "Oculta cartas con una copia física asignada a mazos armados. "
+            "Usa el checkbox para todos los armados, o añade mazos concretos."
+        ),
+        "inventory.filters.decks_any_armed": "Ocultar cartas en cualquier mazo armado",
+        "inventory.filters.decks_search": "Buscar un mazo armado…",
+        "inventory.filters.decks_selected": "Mazos excluidos",
+        "inventory.filters.decks_add": "Añadir",
+        "inventory.filters.decks_remove": "Quitar",
         "inventory.filters.colors": "Identidad de color",
         "inventory.filters.colors_hint": (
             "Como máximo estos colores (como id≤). Vacío o los cinco = sin filtro."
@@ -780,6 +825,32 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "decks.cards.empty": "Sin cartas en este mazo",
         "decks.cards.line": "{qty}× {name}",
         "decks.cards.line_role": "{qty}× {name} ({role})",
+        "decks.cards.filter_by": "Filtrar por",
+        "decks.cards.sort.mana_value": "Valor de maná",
+        "decks.cards.sort.alphabetical": "Alfabético",
+        "decks.cards.group_by_type": "Agrupar por tipo",
+        "decks.cards.group_header": "{name}:",
+        "decks.cards.group.command_zone": "Zona de mando",
+        "decks.cards.group.other": "Otros",
+        "decks.stats.lands": "Tierras: {count} ({basic} básicas)",
+        "decks.stats.avg_no_lands": "x̄ valor de maná (sin tierras): {value}",
+        "decks.stats.avg_with_lands": "x̄ valor de maná (con tierras): {value}",
+        "decks.stats.avg_tooltip": "x̄ = promedio",
+        "decks.stats.types_title": "Tipos:",
+        "decks.stats.pips": "Símbolos de maná: {value}",
+        "decks.stats.unknown": "{count} carta(s) sin datos cacheados",
+        "decks.stats.type.creature": "Criaturas",
+        "decks.stats.type.instant": "Instantáneos",
+        "decks.stats.type.sorcery": "Conjuros",
+        "decks.stats.type.artifact": "Artefactos",
+        "decks.stats.type.enchantment": "Encantamientos",
+        "decks.stats.type.planeswalker": "Planeswalkers",
+        "decks.stats.type.battle": "Batallas",
+        "decks.stats.type.land": "Tierras",
+        "decks.stats.curve.title": "Curva de maná (sin tierras)",
+        "decks.stats.curve.creatures": "Criaturas",
+        "decks.stats.curve.spells": "No criatura",
+        "decks.stats.curve.empty": "Sin datos para la curva de maná",
         "decks.move_up": "Subir",
         "decks.move_down": "Bajar",
         "decks.edit_details": "Editar nombre / commander",

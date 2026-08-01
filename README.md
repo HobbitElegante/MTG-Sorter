@@ -8,7 +8,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
 - Inventory table: Name · CMC · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
-- Search by card name; **Filter** dialog for type, color identity (`id≤`), and mana value
+- Search by card name; **Filter** dialog for type, armed-deck exclusion, color identity (`id≤`), and mana value
 - Add a single card or paste a whole list (multi-format / Moxfield or Archidekt URL) into free inventory
 - Optional **edition tracking**: turn it on in Browse → Customize to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)
@@ -21,6 +21,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Edit list (fixed size), **Update list** (replace from paste/file/URL with diff preview), export (5 formats), delete
 - Search, filter by status, ephemeral sort (number / name / armed status), and reorder decks (Move up/down when sorted by number ascending)
 - Selected deck: commander preview, full card list, and preview of the selected card (Partner / Companion / Background appear in the list)
+- Card list display controls above the selected-card preview: sort by mana value or alphabetically (ascending/descending) and **group by type** (Command zone / Creatures / Instants / … / Lands headers)
+- Deck statistics around the commander: lands / x̄ mana value (with and without lands) / type breakdown / mana pips above, and a mana-curve bar chart below (creatures vs non-creature, lands excluded); both hide automatically when the window is small
 - Advisory ⚠ that never blocks: Scryfall Commander legality, game-rule checks, and optional **house banlist** (Customize); legality/rules visibility is toggleable
 - Lock / unlock a deck so Optimize will not dismantle it (ɸ in the list)
 
@@ -92,7 +94,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-227 tests passing.
+230 tests passing.
 
 ## First-time setup
 
@@ -124,7 +126,9 @@ Export from Moxfield: `More → Export → Copy for MTGO` (or paste the deck URL
 - **Export list:** opens a dialog with a format picker (MTGO / Moxfield / Arena / Archidekt / MTGGoldfish); copy to clipboard.
 - **Delete list:** choose how many removable copies to drop per card; copies on other armed decks are never removed.
 - **Filter / sort / reorder:** search by deck or commander name; show All, Armed only, or Dismantled only; sort by number, name, or armed/dismantled (ascending/descending — display only; does not rewrite saved order). Move up / Move down persists custom order and is enabled only when sorted by number ascending (reorder does not refresh Inventory/Browse).
-- Selected deck: summary under the deck list (coverage / commander / secondary); to the right, commander image · full card list · image of the selected card. Secondary command-zone cards are in the list (no dedicated preview column).
+- Selected deck: summary under the deck list (coverage / commander / secondary); to the right, commander column · full card list · image of the selected card. Secondary command-zone cards are in the list (no dedicated preview column).
+- Above the selected-card image (separated from the deck filter row by a divider): **Filter by** mana value / alphabetical plus an ascending/descending toggle, and **Group by type** — the list splits into Command zone / Creatures / Instants / Sorceries / Artifacts / Enchantments / Planeswalkers / Battles / Lands / Other headers (a multi-type card lands in its first bucket, e.g. artifact creatures under Creatures; any land under Lands). Display-only and per-session, like the deck sort.
+- The commander column also shows deck statistics on top (lands with basics; x̄ mana value without and with lands — hover for “x̄ = average”; type breakdown in a two-column grid; mana pips) and a mana-curve chart at the bottom (X = mana value 0–7+, Y = card count; green = creatures, blue = non-creature; lands excluded). If the window is too short, stats and chart hide so the commander image keeps its space.
 - Decks with format-legality or rule issues show ⚠ left of `[Armed|Dismantled]` (hover for details).
 
 Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table grows when you resize the window. To add or remove cards beyond that — or to fully replace the list from Moxfield — use **Update list**.
@@ -134,7 +138,7 @@ Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table
 1. Open the **Inventory** tab.
 2. Table columns: **Name** · **CMC** · **Colors** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). CMC is the numeric mana value (e.g. GGG → 3; hover the header for the full label). Colors show WUBRG identity (— if colorless). Name is the wide column.
 3. Click a column header to sort (text A–Z / Z–A; numbers high→low first, then reverse). Hover **In decks** for the full list when a card is in several decks.
-4. Use the search bar to filter by card name. **Filter** opens a dialog for type (add/remove), color identity at most (`id≤`), and mana-value comparisons.
+4. Use the search bar to filter by card name. **Filter** opens a dialog for type (search/add), hide cards in armed decks (all or specific), color identity at most (`id≤`), and mana-value comparisons.
 5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
 6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
 7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
@@ -181,10 +185,12 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 ## Latest (v0.9.2)
 
-**v0.9.2** is the recommended build (once tagged). Prefer it over **v0.9.1** and earlier.
+**v0.9.2** is the recommended build. Prefer it over **v0.9.1** and earlier.
 
 - **Theme:** Browse → Customize → system / light / dark (persisted)
 - Fix: **unique-artwork** sync no longer crashes on Scryfall `reversible_card` prints (missing top-level `oracle_id`)
 - Fix: Moxfield URL import — better headers / browser UA retry on 403; clear EN/ES guidance to paste *Copy for MTGO* if Moxfield still blocks
 - Friendlier Scryfall sync / image / refresh error dialogs (network vs detail)
 - Inventory filters + CMC column and Customize / house banlist from **v0.9.1** / **v0.9.0**
+
+*(Unreleased on main, pending commit: Inventory Filter can hide cards assigned to armed decks — all or specific — with Optimize-style type/deck pickers; deck statistics + mana curve in the Decks detail pane; deck card list sort (mana value / alphabetical, asc/desc) and group-by-type controls above the selected-card preview.)*

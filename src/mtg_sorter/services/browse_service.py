@@ -48,6 +48,8 @@ class InventorySummaryRow:
     commander_legality: str | None = None
     is_basic_land: bool = False
     is_token: bool = False
+    # Deck ids that currently hold a physical copy of this card.
+    assigned_deck_ids: frozenset[int] = frozenset()
 
 
 def _sorted_editions(
@@ -132,6 +134,7 @@ class BrowseService:
                     commander_legality=commander_legality,
                     is_basic_land=is_basic_land,
                     is_token=is_token,
+                    assigned_deck_ids=self._decks.deck_ids_for_card(oracle_id),
                 )
             )
         return summaries

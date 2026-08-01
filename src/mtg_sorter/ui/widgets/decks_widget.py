@@ -3,10 +3,12 @@ from pathlib import Path
 from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QPainter, QShowEvent
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -38,6 +40,14 @@ from mtg_sorter.services.deck_export import load_deck_export_cards
 from mtg_sorter.services.deck_service import DeckCardSummary
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
 from mtg_sorter.ui.error_text import format_deck_url_error
+from mtg_sorter.ui.deck_cards_display import (
+    COMMAND_GROUP,
+    LAND_GROUP,
+    OTHER_GROUP,
+    DeckCardsSortKey,
+    group_deck_cards,
+    sort_deck_cards,
+)
 from mtg_sorter.ui.deck_list_display import (
     DeckListRow,
     DeckSortKey,
@@ -47,6 +57,7 @@ from mtg_sorter.ui.deck_list_display import (
 )
 from mtg_sorter.ui.inventory_display import format_deck_warning_tooltip
 from mtg_sorter.ui.widgets.card_preview import CardPreviewPanel, PREVIEW_MIN_WIDTH
+from mtg_sorter.ui.widgets.deck_stats import DeckStatsColumn
 from mtg_sorter.ui.widgets.import_dialogs import (
     AvailableCopiesDialog,
     CommandZoneFields,
@@ -77,6 +88,19 @@ _ROLE_I18N = {
     DeckCardRole.BACKGROUND: "decks.role.background",
     DeckCardRole.COMMANDER: "decks.details_edit.commander",
 }
+_GROUP_I18N = {
+    COMMAND_GROUP: "decks.cards.group.command_zone",
+    "Creature": "decks.stats.type.creature",
+    "Instant": "decks.stats.type.instant",
+    "Sorcery": "decks.stats.type.sorcery",
+    "Artifact": "decks.stats.type.artifact",
+    "Enchantment": "decks.stats.type.enchantment",
+    "Planeswalker": "decks.stats.type.planeswalker",
+    "Battle": "decks.stats.type.battle",
+    LAND_GROUP: "decks.stats.type.land",
+    OTHER_GROUP: "decks.cards.group.other",
+}
+_GROUP_CARD_INDENT = "    "
 
 
 class DeckListItemDelegate(QStyledItemDelegate):
@@ -195,6 +219,11 @@ class DecksWidget(QWidget):
         self._sort_key: DeckSortKey = "number"
         self._sort_ascending = True
         self._deck_rows: list[DeckListRow] = []
+        # Ephemeral display controls for the deck's card list (like deck sort).
+        self._cards_sort_key: DeckCardsSortKey = "alphabetical"
+        self._cards_sort_ascending = True
+        self._group_cards_by_type = False
+        self._deck_card_rows: list[DeckCardSummary] = []
         # Heavy list load waits until Mazos is shown (Browse is the startup tab).
         self._decks_loaded = False
         # Deck being re-synced from a paste/URL; None while importing a new deck.
@@ -239,7 +268,15 @@ class DecksWidget(QWidget):
         self._filter_label.setText(self._translator.t("decks.filter.label"))
         self._sort_label.setText(self._translator.t("decks.sort.by"))
         self._cards_label.setText(self._translator.t("decks.cards.title"))
+        self._cards_filter_label.setText(
+            self._translator.t("decks.cards.filter_by")
+        )
+        self._group_by_type_check.setText(
+            self._translator.t("decks.cards.group_by_type")
+        )
+        self._retranslate_cards_sort()
         self._commander_preview.retranslate()
+        self._commander_column.retranslate()
         self._card_preview.retranslate()
         self._retranslate_filter()
         self._retranslate_sort()
@@ -291,6 +328,44 @@ class DecksWidget(QWidget):
     def _update_sort_dir_button(self) -> None:
         key = "decks.sort.asc" if self._sort_ascending else "decks.sort.desc"
         self._sort_dir_button.setText(self._translator.t(key))
+
+    def _retranslate_cards_sort(self) -> None:
+        current = self._cards_sort_combo.currentData()
+        self._cards_sort_combo.blockSignals(True)
+        self._cards_sort_combo.clear()
+        self._cards_sort_combo.addItem(
+            self._translator.t("decks.cards.sort.mana_value"), "mana_value"
+        )
+        self._cards_sort_combo.addItem(
+            self._translator.t("decks.cards.sort.alphabetical"), "alphabetical"
+        )
+        index = self._cards_sort_combo.findData(
+            current if current is not None else self._cards_sort_key
+        )
+        self._cards_sort_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._cards_sort_combo.blockSignals(False)
+        self._update_cards_sort_dir_button()
+
+    def _update_cards_sort_dir_button(self) -> None:
+        key = (
+            "decks.sort.asc" if self._cards_sort_ascending else "decks.sort.desc"
+        )
+        self._cards_sort_dir_button.setText(self._translator.t(key))
+
+    def _on_cards_sort_changed(self) -> None:
+        data = self._cards_sort_combo.currentData()
+        if data in ("mana_value", "alphabetical"):
+            self._cards_sort_key = data
+        self._render_deck_cards()
+
+    def _toggle_cards_sort_direction(self) -> None:
+        self._cards_sort_ascending = not self._cards_sort_ascending
+        self._update_cards_sort_dir_button()
+        self._render_deck_cards()
+
+    def _on_group_by_type_toggled(self, checked: bool) -> None:
+        self._group_cards_by_type = bool(checked)
+        self._render_deck_cards()
 
     def _build_ui(self) -> None:
         self._main_layout = QVBoxLayout(self)
@@ -349,6 +424,9 @@ class DecksWidget(QWidget):
 
         self._commander_preview = CardPreviewPanel(self._translator)
         self._commander_preview.setVisible(self._show_card_images)
+        self._commander_column = DeckStatsColumn(
+            self._translator, self._commander_preview
+        )
 
         self._cards_label = QLabel(self._translator.t("decks.cards.title"))
         self._deck_cards = QListWidget()
@@ -362,11 +440,47 @@ class DecksWidget(QWidget):
         self._card_preview = CardPreviewPanel(self._translator, show_title=False)
         self._card_preview.setVisible(self._show_card_images)
 
+        # Controls for the card list live above the card preview, separated
+        # from the deck filter row by a divider (mirrors the stats column).
+        preview_column = QWidget()
+        preview_layout = QVBoxLayout(preview_column)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        cards_divider = QFrame()
+        cards_divider.setFrameShape(QFrame.Shape.HLine)
+        cards_divider.setFrameShadow(QFrame.Shadow.Sunken)
+        preview_layout.addWidget(cards_divider)
+        cards_controls = QHBoxLayout()
+        self._cards_filter_label = QLabel(
+            self._translator.t("decks.cards.filter_by")
+        )
+        self._cards_sort_combo = QComboBox()
+        self._cards_sort_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self._cards_sort_dir_button = QPushButton()
+        self._cards_sort_dir_button.clicked.connect(
+            self._toggle_cards_sort_direction
+        )
+        self._retranslate_cards_sort()
+        self._cards_sort_combo.currentIndexChanged.connect(
+            self._on_cards_sort_changed
+        )
+        cards_controls.addWidget(self._cards_filter_label)
+        cards_controls.addWidget(self._cards_sort_combo, 1)
+        cards_controls.addWidget(self._cards_sort_dir_button)
+        preview_layout.addLayout(cards_controls)
+        self._group_by_type_check = QCheckBox(
+            self._translator.t("decks.cards.group_by_type")
+        )
+        self._group_by_type_check.toggled.connect(self._on_group_by_type_toggled)
+        preview_layout.addWidget(self._group_by_type_check)
+        preview_layout.addWidget(self._card_preview, 1)
+
         self._detail_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._detail_splitter.addWidget(list_column)
-        self._detail_splitter.addWidget(self._commander_preview)
+        self._detail_splitter.addWidget(self._commander_column)
         self._detail_splitter.addWidget(cards_column)
-        self._detail_splitter.addWidget(self._card_preview)
+        self._detail_splitter.addWidget(preview_column)
         list_column.setMinimumWidth(240)
         cards_column.setMinimumWidth(220)
         self._detail_splitter.setCollapsible(0, False)
@@ -706,7 +820,9 @@ class DecksWidget(QWidget):
 
     def _clear_deck_detail_panels(self) -> None:
         self._commander_preview.clear()
+        self._commander_column.set_stats(None)
         self._card_preview.clear()
+        self._deck_card_rows = []
         self._deck_cards.blockSignals(True)
         self._deck_cards.clear()
         self._deck_cards.blockSignals(False)
@@ -729,31 +845,96 @@ class DecksWidget(QWidget):
             service = DeckService(session)
             cards = service.deck_card_summaries(deck_id)
             zone = service.command_zone_cards(deck_id)
+            stats = service.deck_statistics(deck_id)
 
+        self._commander_column.set_stats(stats)
         if zone:
             self._commander_preview.set_card(zone[0][0], zone[0][1])
         else:
             self._commander_preview.clear()
 
+        self._deck_card_rows = cards
+        self._render_deck_cards(select_oracle=zone[0][0] if zone else None)
+
+    def _make_group_header_item(self, group: str) -> QListWidgetItem:
+        item = QListWidgetItem(
+            self._translator.t("decks.cards.group_header").format(
+                name=self._translator.t(_GROUP_I18N[group])
+            )
+        )
+        # Visible but never selectable: headers carry no card to preview.
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        return item
+
+    def _make_deck_card_item(
+        self, card: DeckCardSummary, *, indented: bool
+    ) -> QListWidgetItem:
+        label = self._format_deck_card_label(card)
+        if indented:
+            label = _GROUP_CARD_INDENT + label
+        item = QListWidgetItem(label)
+        item.setData(CARD_ORACLE_ROLE, card.oracle_id)
+        item.setData(CARD_NAME_ROLE, card.name)
+        return item
+
+    def _render_deck_cards(self, select_oracle: str | None = None) -> None:
+        """Rebuild the card list from cache honoring sort / group controls."""
+        if select_oracle is None:
+            current = self._deck_cards.currentItem()
+            data = current.data(CARD_ORACLE_ROLE) if current is not None else None
+            if isinstance(data, str):
+                select_oracle = data
+
         self._deck_cards.blockSignals(True)
         self._deck_cards.clear()
-        if not cards:
-            empty = QListWidgetItem(self._translator.t("decks.cards.empty"))
-            self._deck_cards.addItem(empty)
+        if not self._deck_card_rows:
+            self._deck_cards.addItem(
+                QListWidgetItem(self._translator.t("decks.cards.empty"))
+            )
             self._deck_cards.blockSignals(False)
             self._card_preview.clear()
             return
 
-        commander_oracle = zone[0][0] if zone else None
-        select_row = 0
-        for index, card in enumerate(cards):
-            item = QListWidgetItem(self._format_deck_card_label(card))
-            item.setData(CARD_ORACLE_ROLE, card.oracle_id)
-            item.setData(CARD_NAME_ROLE, card.name)
-            self._deck_cards.addItem(item)
-            if commander_oracle and card.oracle_id == commander_oracle:
-                select_row = index
+        select_row: int | None = None
+        first_card_row: int | None = None
+        if self._group_cards_by_type:
+            groups = group_deck_cards(
+                self._deck_card_rows,
+                key=self._cards_sort_key,
+                ascending=self._cards_sort_ascending,
+            )
+            for group, cards in groups:
+                self._deck_cards.addItem(self._make_group_header_item(group))
+                for card in cards:
+                    self._deck_cards.addItem(
+                        self._make_deck_card_item(card, indented=True)
+                    )
+                    row = self._deck_cards.count() - 1
+                    if first_card_row is None:
+                        first_card_row = row
+                    if select_oracle and card.oracle_id == select_oracle:
+                        select_row = row
+        else:
+            cards = sort_deck_cards(
+                self._deck_card_rows,
+                key=self._cards_sort_key,
+                ascending=self._cards_sort_ascending,
+            )
+            for card in cards:
+                self._deck_cards.addItem(
+                    self._make_deck_card_item(card, indented=False)
+                )
+                row = self._deck_cards.count() - 1
+                if first_card_row is None:
+                    first_card_row = row
+                if select_oracle and card.oracle_id == select_oracle:
+                    select_row = row
         self._deck_cards.blockSignals(False)
+        if select_row is None:
+            select_row = first_card_row if first_card_row is not None else 0
         self._deck_cards.setCurrentRow(select_row)
 
     def _on_deck_card_selected(self) -> None:

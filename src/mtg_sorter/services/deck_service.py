@@ -8,6 +8,11 @@ from mtg_sorter.algorithms.commander_rules import (
     CommanderRuleIssue,
     evaluate_deck,
 )
+from mtg_sorter.algorithms.deck_stats import (
+    DeckStatistics,
+    DeckStatsCard,
+    compute_deck_statistics,
+)
 from mtg_sorter.models import CardCopy, Deck, DeckCard
 from mtg_sorter.models.enums import ActivityEventType, DeckCardRole, DeckStatus
 from mtg_sorter.repositories import CardRepository, CopyRepository, DeckRepository
@@ -48,6 +53,9 @@ class DeckCardSummary:
     name: str
     quantity: int
     role: DeckCardRole
+    # Cached Scryfall fields feeding the list's sort / group-by-type controls.
+    cmc: float | None = None
+    type_line: str | None = None
 
 
 @dataclass(frozen=True)
@@ -477,6 +485,8 @@ class DeckService:
                 name=card.name,
                 quantity=deck_card.quantity,
                 role=deck_card.role,
+                cmc=card.cmc,
+                type_line=card.type_line,
             )
             for deck_card, card in rows
         ]
@@ -484,6 +494,24 @@ class DeckService:
             summaries,
             key=lambda row: (priority.get(row.role, 99), row.name.casefold()),
         )
+
+    def deck_statistics(self, deck_id: int) -> DeckStatistics:
+        """Counts, average mana value, pips and mana curve for the detail pane."""
+        rows = self._decks.list_deck_cards_with_card(
+            deck_id, exclude_token=True, order_by_name=False
+        )
+        cards = [
+            DeckStatsCard(
+                name=card.name,
+                quantity=deck_card.quantity,
+                type_line=card.type_line,
+                cmc=card.cmc,
+                mana_cost=card.mana_cost,
+                is_basic_land=card.is_basic_land,
+            )
+            for deck_card, card in rows
+        ]
+        return compute_deck_statistics(cards)
 
     def deck_edit_rows(self, deck_id: int) -> list[DeckEditRow]:
         rows = self._decks.list_deck_cards_with_card(deck_id, exclude_token=True)

@@ -17,13 +17,21 @@ from mtg_sorter.algorithms.deck_optimizer import (
     OptimizationResult,
     find_all_optimal_solutions,
 )
+from mtg_sorter.algorithms.deck_stats import (
+    DeckStatistics,
+    DeckStatsCard,
+    compute_deck_statistics,
+)
 
 __all__ = [
     "CommanderCard",
     "CommanderRuleIssue",
     "CommanderRuleKind",
+    "DeckStatistics",
+    "DeckStatsCard",
     "DeckSupply",
     "OptimizationResult",
+    "compute_deck_statistics",
     "evaluate_deck",
     "find_all_optimal_solutions",
     "is_art_series_type_line",

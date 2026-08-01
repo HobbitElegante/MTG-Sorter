@@ -1,4 +1,4 @@
-"""Tests for inventory panel filters (type / id<= colors / CMC)."""
+"""Tests for inventory panel filters (type / id<= colors / CMC / decks)."""
 
 from mtg_sorter.algorithms.inventory_filters import (
     CmcCondition,
@@ -18,16 +18,22 @@ def _row(
     type_line: str = "Instant",
     color_identity: str | None = "R",
     cmc: float | None = 1,
+    assigned_deck_ids: frozenset[int] = frozenset(),
+    free_copies: int | None = None,
 ) -> InventorySummaryRow:
+    assigned = bool(assigned_deck_ids)
+    total = 1
+    free = free_copies if free_copies is not None else (0 if assigned else 1)
     return InventorySummaryRow(
         oracle_id=oracle_id,
         card_name=name,
-        total_copies=1,
-        free_copies=1,
+        total_copies=total,
+        free_copies=free,
         assigned_decks=(),
         color_identity=color_identity,
         type_line=type_line,
         cmc=cmc,
+        assigned_deck_ids=assigned_deck_ids,
     )
 
 
@@ -70,6 +76,61 @@ def test_cmc_multiple_conditions_and() -> None:
     assert not matches_panel_filters(
         _row(name="Big", oracle_id="big", cmc=5), state
     )
+
+
+def test_exclude_any_armed_hides_assigned_keeps_free() -> None:
+    free = _row()
+    assigned = _row(name="Sol Ring", oracle_id="sol", assigned_deck_ids=frozenset({7}))
+    state = InventoryFilterState(exclude_any_armed=True)
+    assert matches_panel_filters(free, state)
+    assert not matches_panel_filters(assigned, state)
+    assert InventoryFilterState(exclude_any_armed=True).is_active
+
+
+def test_exclude_deck_ids_only_intersecting() -> None:
+    in_a = _row(name="A", oracle_id="a", assigned_deck_ids=frozenset({1}))
+    in_b = _row(name="B", oracle_id="b", assigned_deck_ids=frozenset({2}))
+    free = _row()
+    state = InventoryFilterState(exclude_deck_ids=frozenset({1}))
+    assert not matches_panel_filters(in_a, state)
+    assert matches_panel_filters(in_b, state)
+    assert matches_panel_filters(free, state)
+
+
+def test_exclude_deck_or_any_armed_with_type() -> None:
+    creature_free = _row(
+        name="Elf",
+        oracle_id="elf",
+        type_line="Creature — Elf",
+        color_identity="G",
+    )
+    creature_armed = _row(
+        name="Bear",
+        oracle_id="bear",
+        type_line="Creature — Bear",
+        color_identity="G",
+        assigned_deck_ids=frozenset({3}),
+    )
+    instant_armed = _row(
+        name="Bolt",
+        oracle_id="bolt2",
+        type_line="Instant",
+        assigned_deck_ids=frozenset({9}),
+    )
+    state = InventoryFilterState(
+        types=frozenset({"Creature"}),
+        exclude_any_armed=True,
+    )
+    assert matches_panel_filters(creature_free, state)
+    assert not matches_panel_filters(creature_armed, state)
+    assert not matches_panel_filters(instant_armed, state)
+
+    specific = InventoryFilterState(
+        types=frozenset({"Creature"}),
+        exclude_deck_ids=frozenset({3}),
+    )
+    assert matches_panel_filters(creature_free, specific)
+    assert not matches_panel_filters(creature_armed, specific)
 
 
 def test_filter_combines_name_panel_and_scryfall_ids() -> None:

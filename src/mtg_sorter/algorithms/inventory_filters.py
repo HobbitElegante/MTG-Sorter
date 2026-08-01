@@ -1,8 +1,11 @@
-"""Local inventory panel filters (type / color identity / mana value).
+"""Local inventory panel filters (type / color / mana value / armed decks).
 
 Independent of Scryfall syntax. Color identity uses Scryfall ``id<=`` semantics:
 at most the selected colors (colorless included). Zero or all five color
 checkboxes means no color filter.
+
+Deck exclusion uses physical assignments (``CardAssignment``): hide cards that
+have a copy assigned to any armed deck, or to selected deck ids.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ class FilterableCard(Protocol):
     type_line: str | None
     color_identity: str | None
     cmc: float | None
+    assigned_deck_ids: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,10 @@ class InventoryFilterState:
     # Subset of WUBRG. Empty or all five → no color filter.
     colors: frozenset[str] = frozenset()
     cmc_conditions: tuple[CmcCondition, ...] = ()
+    # Hide cards with any physical assignment to an armed deck.
+    exclude_any_armed: bool = False
+    # Hide cards with a physical assignment to any of these deck ids.
+    exclude_deck_ids: frozenset[int] = frozenset()
 
     @property
     def color_filter_active(self) -> bool:
@@ -61,7 +69,13 @@ class InventoryFilterState:
 
     @property
     def is_active(self) -> bool:
-        return bool(self.types) or self.color_filter_active or bool(self.cmc_conditions)
+        return (
+            bool(self.types)
+            or self.color_filter_active
+            or bool(self.cmc_conditions)
+            or self.exclude_any_armed
+            or bool(self.exclude_deck_ids)
+        )
 
 
 def color_identity_letters(color_identity: str | None) -> frozenset[str]:
@@ -122,6 +136,11 @@ def matches_panel_filters(card: FilterableCard, state: InventoryFilterState) -> 
     for condition in state.cmc_conditions:
         if not matches_cmc(card.cmc, condition):
             return False
+    assigned = card.assigned_deck_ids
+    if state.exclude_any_armed and assigned:
+        return False
+    if state.exclude_deck_ids and assigned & state.exclude_deck_ids:
+        return False
     return True
 
 

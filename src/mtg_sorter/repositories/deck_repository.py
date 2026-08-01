@@ -284,6 +284,17 @@ class DeckRepository:
             ).all()
         )
 
+    def deck_ids_for_card(self, oracle_id: str) -> frozenset[int]:
+        return frozenset(
+            self._session.scalars(
+                select(Deck.id)
+                .join(CardAssignment, CardAssignment.deck_id == Deck.id)
+                .join(CardCopy, CardCopy.id == CardAssignment.card_copy_id)
+                .where(CardCopy.card_id == oracle_id)
+                .distinct()
+            ).all()
+        )
+
     def inventory_copy_rows(
         self,
     ) -> list[
