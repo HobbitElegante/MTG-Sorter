@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.2)
+## Features (v0.9.3)
 
 ### Collection
 
@@ -183,14 +183,11 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.9.2)
+## Latest (v0.9.3)
 
-**v0.9.2** is the recommended build. Prefer it over **v0.9.1** and earlier.
+**v0.9.3** is the recommended build. Prefer it over **v0.9.2** and earlier.
 
-- **Theme:** Browse → Customize → system / light / dark (persisted)
-- Fix: **unique-artwork** sync no longer crashes on Scryfall `reversible_card` prints (missing top-level `oracle_id`)
-- Fix: Moxfield URL import — better headers / browser UA retry on 403; clear EN/ES guidance to paste *Copy for MTGO* if Moxfield still blocks
-- Friendlier Scryfall sync / image / refresh error dialogs (network vs detail)
-- Inventory filters + CMC column and Customize / house banlist from **v0.9.1** / **v0.9.0**
-
-*(Unreleased on main, pending commit: Inventory Filter can hide cards assigned to armed decks — all or specific — with Optimize-style type/deck pickers; deck statistics + mana curve in the Decks detail pane; deck card list sort (mana value / alphabetical, asc/desc) and group-by-type controls above the selected-card preview.)*
+- **Inventory → Filter:** hide cards assigned to armed decks — all of them or specific decks — with Optimize-style type/deck pickers
+- **Decks detail:** deck statistics around the commander (lands, x̄ mana value with/without lands, type breakdown, mana pips) plus a mana-curve bar chart (creatures vs non-creature); both auto-hide on small windows
+- **Decks detail:** card list display controls above the selected-card preview — sort by mana value or alphabetically (asc/desc) and group by type (Command zone / Creatures / … / Lands headers)
+- Theme selector, unique-artwork and Moxfield URL import fixes from **v0.9.2**
