@@ -229,7 +229,7 @@ class BrowseWidget(QWidget):
             self._translator.t("inventory.summary.title")
         )
         self._inventory_search.setPlaceholderText(
-            self._translator.t("inventory.search.collection")
+            self._translator.t("inventory.search.name")
         )
         self._inventory_hint.setText(self._translator.t("inventory.search.hint"))
         self._cards_table.setHorizontalHeaderLabels(
@@ -658,7 +658,7 @@ class BrowseWidget(QWidget):
 
         self._inventory_search = QLineEdit()
         self._inventory_search.setPlaceholderText(
-            self._translator.t("inventory.search.collection")
+            self._translator.t("inventory.search.name")
         )
         self._inventory_search.textChanged.connect(self._refresh_inventory)
         layout.addWidget(self._inventory_search)

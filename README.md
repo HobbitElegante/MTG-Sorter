@@ -40,8 +40,8 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 - Offline card cache via Scryfall bulk (`oracle_cards` / optional `unique_artwork`); Art Series excluded; reversible prints handled in unique-artwork sync
 - Local JPEGs under `data/images/`; refresh legality + image URLs for the collection without a full re-bulk
-- Browse: Overview, **Customize** (display incl. light/dark/system theme, warning toggles, house banlist), card search, availability, activity **History** (filter, load more, CSV, undo / redo last), Scryfall
-- UI in English or Spanish; theme preference persisted
+- Browse: Overview, **Customize** (display incl. dark/light/system theme — default dark, warning toggles, house banlist), card search, availability (name filter), activity **History** (filter, load more, CSV, undo / redo last), Scryfall
+- UI in English or Spanish; theme preference persisted (new installs default to dark)
 
 ## Download
 
@@ -102,7 +102,7 @@ uv run pytest
 2. **Browse → Scryfall → Download oracle-cards bulk pack** (one-time, ~170 MB, requires network).
 3. Optional: **Use unique-artwork** for better default art; **Download images (collection)** for local JPEGs of owned/list cards.
 4. Import decks from the **Decks** tab (**Import new list**).
-5. Optional: **Browse → Customize** → switch language or theme (system / light / dark), toggle images / edition tracking / deck warnings, or edit the house banlist (all persisted).
+5. Optional: **Browse → Customize** → switch language or theme (dark default; also light / system), toggle images / edition tracking / deck warnings, or edit the house banlist (all persisted).
 
 ## Importing a deck
 

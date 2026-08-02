@@ -67,15 +67,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.colors_hint": (
             "At most these colors (like id≤). Leave empty or check all five for no filter."
         ),
+        "inventory.filters.color.W": "W: White",
+        "inventory.filters.color.U": "U: Blue",
+        "inventory.filters.color.B": "B: Black",
+        "inventory.filters.color.R": "R: Red",
+        "inventory.filters.color.G": "G: Green",
         "inventory.filters.rarity": "Rarity",
         "inventory.filters.rarity_hint": (
             "Match any selected rarity (C/U/R/M). Empty or all four = no filter. "
             "Needs Scryfall data; with editions on, uses the copy’s set when known."
         ),
-        "inventory.filters.rarity.C": "C: common",
-        "inventory.filters.rarity.U": "U: uncommon",
-        "inventory.filters.rarity.R": "R: rare",
-        "inventory.filters.rarity.M": "M: mythic rare",
+        "inventory.filters.rarity.C": "C: Common",
+        "inventory.filters.rarity.U": "U: Uncommon",
+        "inventory.filters.rarity.R": "R: Rare",
+        "inventory.filters.rarity.M": "M: Mythic rare",
         "inventory.filters.cmc": "Mana value",
         "inventory.filters.cmc_hint": (
             "Add one or more comparisons; all must match (AND)."
@@ -654,15 +659,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.colors_hint": (
             "Como máximo estos colores (como id≤). Vacío o los cinco = sin filtro."
         ),
+        "inventory.filters.color.W": "W: Blanco",
+        "inventory.filters.color.U": "U: Azul",
+        "inventory.filters.color.B": "B: Negro",
+        "inventory.filters.color.R": "R: Rojo",
+        "inventory.filters.color.G": "G: Verde",
         "inventory.filters.rarity": "Rareza",
         "inventory.filters.rarity_hint": (
             "Coincide con cualquiera de las rarezas (C/U/R/M). Vacío o las cuatro = sin filtro. "
             "Requiere datos de Scryfall; con ediciones ON usa el set de la copia si se conoce."
         ),
-        "inventory.filters.rarity.C": "C: common",
-        "inventory.filters.rarity.U": "U: uncommon",
-        "inventory.filters.rarity.R": "R: rare",
-        "inventory.filters.rarity.M": "M: mythic rare",
+        "inventory.filters.rarity.C": "C: Común",
+        "inventory.filters.rarity.U": "U: Poco común",
+        "inventory.filters.rarity.R": "R: Rara",
+        "inventory.filters.rarity.M": "M: Mítica",
         "inventory.filters.cmc": "Valor de maná",
         "inventory.filters.cmc_hint": (
             "Añade una o más comparaciones; todas deben cumplirse (AND)."

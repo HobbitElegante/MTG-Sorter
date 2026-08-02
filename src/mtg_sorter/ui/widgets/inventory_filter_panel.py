@@ -250,6 +250,8 @@ class InventoryFilterDialog(QDialog):
 
         self._colors_label.setText(t("inventory.filters.colors"))
         self._colors_hint.setText(t("inventory.filters.colors_hint"))
+        for letter, box in self._color_checks.items():
+            box.setToolTip(t(f"inventory.filters.color.{letter}"))
         self._rarity_label.setText(t("inventory.filters.rarity"))
         self._rarity_hint.setText(t("inventory.filters.rarity_hint"))
         for code, box in self._rarity_checks.items():
