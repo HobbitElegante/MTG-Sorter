@@ -38,13 +38,15 @@ class HouseBanService:
             self._session.flush()
         return removed
 
-    def house_ban_issues(self, deck_id: int) -> list[CommanderLegalityIssue]:
-        banned = self._bans.oracle_ids()
-        if not banned:
+    def house_ban_issues(
+        self, deck_id: int, *, banned: set[str] | None = None
+    ) -> list[CommanderLegalityIssue]:
+        banned_ids = self._bans.oracle_ids() if banned is None else banned
+        if not banned_ids:
             return []
         issues: list[CommanderLegalityIssue] = []
         for oracle_id, name, _legality in self._decks.commander_legality_rows(deck_id):
-            if oracle_id not in banned:
+            if oracle_id not in banned_ids:
                 continue
             issues.append(
                 CommanderLegalityIssue(

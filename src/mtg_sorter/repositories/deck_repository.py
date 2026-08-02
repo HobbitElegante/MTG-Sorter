@@ -295,6 +295,42 @@ class DeckRepository:
             ).all()
         )
 
+    def assignment_decks_by_card(
+        self,
+    ) -> dict[str, tuple[tuple[int, str], ...]]:
+        """Deck id/name holding each card, grouped by oracle id (one query).
+
+        Deck names within each card are ordered alphabetically (same as
+        ``deck_names_for_card``).
+        """
+        rows = self._session.execute(
+            select(CardCopy.card_id, Deck.id, Deck.name)
+            .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
+            .join(Deck, Deck.id == CardAssignment.deck_id)
+            .distinct()
+            .order_by(CardCopy.card_id, Deck.name)
+        ).all()
+        grouped: dict[str, list[tuple[int, str]]] = {}
+        for card_id, deck_id, deck_name in rows:
+            grouped.setdefault(card_id, []).append((int(deck_id), deck_name))
+        return {
+            card_id: tuple(entries) for card_id, entries in grouped.items()
+        }
+
+    def commander_names_by_deck(self) -> dict[int, str]:
+        """Commander display name for every deck that has one (one query)."""
+        rows = self._session.execute(
+            select(DeckCard.deck_id, Card.name)
+            .join(Card, Card.oracle_id == DeckCard.card_id)
+            .where(DeckCard.role == DeckCardRole.COMMANDER)
+            .order_by(DeckCard.deck_id, Card.name)
+        ).all()
+        names: dict[int, str] = {}
+        for deck_id, name in rows:
+            # First name wins if a deck somehow has multiple COMMANDER rows.
+            names.setdefault(int(deck_id), name)
+        return names
+
     def inventory_copy_rows(
         self,
     ) -> list[
@@ -306,6 +342,7 @@ class DeckRepository:
             str | None,
             str | None,
             float | None,
+            str | None,
             str | None,
             str | None,
             bool,
@@ -321,6 +358,7 @@ class DeckRepository:
                 Card.type_line,
                 Card.colors,
                 Card.cmc,
+                Card.rarity,
                 Card.oracle_text,
                 Card.commander_legality,
                 Card.is_basic_land,
@@ -334,6 +372,7 @@ class DeckRepository:
                 Card.type_line,
                 Card.colors,
                 Card.cmc,
+                Card.rarity,
                 Card.oracle_text,
                 Card.commander_legality,
                 Card.is_basic_land,
@@ -350,6 +389,7 @@ class DeckRepository:
                 type_line,
                 colors,
                 cmc,
+                rarity,
                 oracle_text,
                 commander_legality,
                 bool(is_basic_land),
@@ -363,6 +403,7 @@ class DeckRepository:
                 type_line,
                 colors,
                 cmc,
+                rarity,
                 oracle_text,
                 commander_legality,
                 is_basic_land,

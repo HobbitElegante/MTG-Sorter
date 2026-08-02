@@ -1,9 +1,25 @@
 from mtg_sorter.algorithms.card_utils import is_commander_legality_issue
 from mtg_sorter.algorithms.commander_rules import CommanderRuleIssue, CommanderRuleKind
+from mtg_sorter.algorithms.inventory_filters import RARITY_BY_CODE
 from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services.browse_service import InventorySummaryRow
 from mtg_sorter.services.deck_service import CommanderLegalityIssue
+
+# Display letters for Scryfall rarities (filter uses C/U/R/M only).
+_RARITY_LETTER: dict[str, str] = {name: code for code, name in RARITY_BY_CODE.items()}
+_RARITY_LETTER.update({"special": "S", "bonus": "B"})
+
+# Ascending inventory sort: C → U → R → M (then special/bonus/unknown).
+_RARITY_SORT_RANK: dict[str, int] = {
+    "common": 0,
+    "uncommon": 1,
+    "rare": 2,
+    "mythic": 3,
+    "special": 4,
+    "bonus": 5,
+}
+_UNKNOWN_RARITY_RANK = 6
 
 
 def format_mana_value(cmc: float | None, translator: Translator) -> str:
@@ -23,6 +39,36 @@ def format_color_identity(
     if not color_identity:
         return translator.t("inventory.table.colorless")
     return color_identity
+
+
+def _row_rarities(row: InventorySummaryRow) -> frozenset[str]:
+    if row.rarities:
+        return row.rarities
+    if row.rarity:
+        return frozenset({row.rarity})
+    return frozenset()
+
+
+def format_rarity_summary(row: InventorySummaryRow, translator: Translator) -> str:
+    """C/U/R/M letter(s) for the row; mixed rarities listed in CURM order."""
+    rarities = _row_rarities(row)
+    if not rarities:
+        return translator.t("inventory.table.colorless")
+    ordered = sorted(
+        rarities, key=lambda name: _RARITY_SORT_RANK.get(name, _UNKNOWN_RARITY_RANK)
+    )
+    letters = [_RARITY_LETTER.get(name, "?") for name in ordered]
+    if len(letters) == 1:
+        return letters[0]
+    return ", ".join(letters)
+
+
+def rarity_sort_rank(row: InventorySummaryRow) -> int:
+    """Sort key for rarity: lower = earlier in C→U→R→M."""
+    rarities = _row_rarities(row)
+    if not rarities:
+        return _UNKNOWN_RARITY_RANK
+    return min(_RARITY_SORT_RANK.get(name, _UNKNOWN_RARITY_RANK) for name in rarities)
 
 
 def format_edition_summary(row: InventorySummaryRow) -> str:

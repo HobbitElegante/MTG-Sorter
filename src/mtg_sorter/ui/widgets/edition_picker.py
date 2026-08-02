@@ -12,6 +12,10 @@ from mtg_sorter.config import UNSPECIFIED_EDITION_LABEL
 from mtg_sorter.database import get_session
 from mtg_sorter.i18n import Translator
 from mtg_sorter.services import ScryfallService
+from mtg_sorter.ui.combo import (
+    EDITION_COMBO_CONTENTS_LENGTH,
+    configure_data_combo,
+)
 
 
 def normalize_edition(text: str) -> str | None:
@@ -43,6 +47,7 @@ class EditionComboBox(QComboBox):
         self._loaded = False
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        configure_data_combo(self, min_contents=EDITION_COMBO_CONTENTS_LENGTH)
         self._populate([], current)
 
     def _populate(self, prints: list[tuple[str, str | None]], current: str | None) -> None:
@@ -99,7 +104,9 @@ class CopyEditionTable(QTableWidget):
         self.setHorizontalHeaderLabels(self._header_labels())
         header = self.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        # Stretch keeps EditionComboBox usable under Windows; ResizeToContents
+        # can starve the cell when the dialog is narrow.
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.verticalHeader().setVisible(False)
         self.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
 

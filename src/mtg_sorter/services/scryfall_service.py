@@ -118,6 +118,12 @@ def card_from_scryfall(payload: dict) -> Card:
     if cmc is None and primary is not None:
         cmc = primary.get("cmc")
 
+    rarity = payload.get("rarity")
+    if not isinstance(rarity, str) or not rarity.strip():
+        rarity = None
+    else:
+        rarity = rarity.strip().casefold()
+
     return Card(
         oracle_id=oracle_id,
         name=name,
@@ -127,6 +133,7 @@ def card_from_scryfall(payload: dict) -> Card:
         colors="".join(colors or []),
         color_identity="".join(payload.get("color_identity") or []),
         cmc=float(cmc or 0),
+        rarity=rarity,
         image_uri=image_uri,
         image_uri_back=image_uri_back,
         commander_legality=commander_legality_from_payload(payload),
@@ -135,9 +142,14 @@ def card_from_scryfall(payload: dict) -> Card:
     )
 
 
-def prints_from_scryfall(payloads: list[dict]) -> list[tuple[str, str | None, str | None]]:
-    """Collapse Scryfall printings to one row per set, newest release kept."""
-    by_code: dict[str, tuple[str, str | None, str | None]] = {}
+def prints_from_scryfall(
+    payloads: list[dict],
+) -> list[tuple[str, str | None, str | None, str | None]]:
+    """Collapse Scryfall printings to one row per set, newest release kept.
+
+    Each row is ``(set_code, set_name, released_at, rarity)``.
+    """
+    by_code: dict[str, tuple[str, str | None, str | None, str | None]] = {}
     for entry in payloads:
         set_code = entry.get("set")
         if not isinstance(set_code, str) or not set_code.strip():
@@ -145,10 +157,17 @@ def prints_from_scryfall(payloads: list[dict]) -> list[tuple[str, str | None, st
         code = set_code.strip().upper()
         set_name = entry.get("set_name")
         released_at = entry.get("released_at")
+        rarity_raw = entry.get("rarity")
+        rarity = (
+            rarity_raw.strip().casefold()
+            if isinstance(rarity_raw, str) and rarity_raw.strip()
+            else None
+        )
         by_code[code] = (
             code,
             set_name if isinstance(set_name, str) else None,
             released_at if isinstance(released_at, str) else None,
+            rarity,
         )
     return sorted(by_code.values(), key=lambda row: (row[2] or "", row[0]))
 
@@ -223,6 +242,7 @@ class ScryfallService:
             card.colors = refreshed.colors
             card.color_identity = refreshed.color_identity
             card.cmc = refreshed.cmc
+            card.rarity = refreshed.rarity
             card.image_uri = refreshed.image_uri
             card.image_uri_back = refreshed.image_uri_back
             card.commander_legality = refreshed.commander_legality
@@ -275,7 +295,7 @@ class ScryfallService:
         if not rows:
             return []
         self._prints.replace_for_card(oracle_id, rows)
-        return [(set_code, set_name) for set_code, set_name, _ in rows]
+        return [(set_code, set_name) for set_code, set_name, _released, _rarity in rows]
 
     def cached_card_count(self) -> int:
         return self._cards.count_all()
@@ -339,6 +359,8 @@ class ScryfallService:
                     card.image_uri = refreshed.image_uri
                 if refreshed.image_uri_back:
                     card.image_uri_back = refreshed.image_uri_back
+                if refreshed.rarity:
+                    card.rarity = refreshed.rarity
 
             self._cards.flush()
 

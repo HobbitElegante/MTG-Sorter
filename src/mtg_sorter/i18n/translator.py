@@ -67,6 +67,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.colors_hint": (
             "At most these colors (like id≤). Leave empty or check all five for no filter."
         ),
+        "inventory.filters.rarity": "Rarity",
+        "inventory.filters.rarity_hint": (
+            "Match any selected rarity (C/U/R/M). Empty or all four = no filter. "
+            "Needs Scryfall data; with editions on, uses the copy’s set when known."
+        ),
+        "inventory.filters.rarity.C": "C: common",
+        "inventory.filters.rarity.U": "U: uncommon",
+        "inventory.filters.rarity.R": "R: rare",
+        "inventory.filters.rarity.M": "M: mythic rare",
         "inventory.filters.cmc": "Mana value",
         "inventory.filters.cmc_hint": (
             "Add one or more comparisons; all must match (AND)."
@@ -125,6 +134,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.cmc": "CMC",
         "inventory.table.cmc_tip": "Mana value (converted mana cost)",
         "inventory.table.color": "Colors",
+        "inventory.table.rarity": "Rarity",
+        "inventory.table.rarity_tip": "C common · U uncommon · R rare · M mythic (sort C→U→R→M)",
         "inventory.table.edition": "Edition",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",
@@ -643,6 +654,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.filters.colors_hint": (
             "Como máximo estos colores (como id≤). Vacío o los cinco = sin filtro."
         ),
+        "inventory.filters.rarity": "Rareza",
+        "inventory.filters.rarity_hint": (
+            "Coincide con cualquiera de las rarezas (C/U/R/M). Vacío o las cuatro = sin filtro. "
+            "Requiere datos de Scryfall; con ediciones ON usa el set de la copia si se conoce."
+        ),
+        "inventory.filters.rarity.C": "C: common",
+        "inventory.filters.rarity.U": "U: uncommon",
+        "inventory.filters.rarity.R": "R: rare",
+        "inventory.filters.rarity.M": "M: mythic rare",
         "inventory.filters.cmc": "Valor de maná",
         "inventory.filters.cmc_hint": (
             "Añade una o más comparaciones; todas deben cumplirse (AND)."
@@ -701,6 +721,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "inventory.table.cmc": "CMC",
         "inventory.table.cmc_tip": "Coste de maná convertido",
         "inventory.table.color": "Colores",
+        "inventory.table.rarity": "Rareza",
+        "inventory.table.rarity_tip": "C common · U uncommon · R rare · M mythic (orden C→U→R→M)",
         "inventory.table.edition": "Edición",
         "inventory.table.colorless": "—",
         "inventory.table.no_decks": "—",

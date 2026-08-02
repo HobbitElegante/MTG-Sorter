@@ -15,6 +15,9 @@ class Card(Base):
     colors: Mapped[str | None] = mapped_column(String(16))
     color_identity: Mapped[str | None] = mapped_column(String(16))
     cmc: Mapped[float | None] = mapped_column()
+    # Scryfall rarity of the representative print (bulk / lookup). Print-level
+    # rarities for tracked editions live on CardPrint.
+    rarity: Mapped[str | None] = mapped_column(String(16))
     image_uri: Mapped[str | None] = mapped_column(String(512))
     # Back face of double-faced cards; None for single-faced cards.
     image_uri_back: Mapped[str | None] = mapped_column(String(512))
@@ -45,6 +48,8 @@ class CardPrint(Base):
     set_code: Mapped[str] = mapped_column(String(16), nullable=False)
     set_name: Mapped[str | None] = mapped_column(String(255))
     released_at: Mapped[str | None] = mapped_column(String(16))
+    # Scryfall rarity for this set (common / uncommon / rare / mythic / …).
+    rarity: Mapped[str | None] = mapped_column(String(16))
 
 
 class CardCopy(Base):

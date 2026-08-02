@@ -133,3 +133,7 @@ def test_legacy_database_receives_migrations_past_the_baseline(legacy_engine) ->
     assert "card_prints" in set(inspect(legacy_engine).get_table_names())
     assert "house_bans" in set(inspect(legacy_engine).get_table_names())
     assert "is_locked" in _deck_columns(legacy_engine)
+    assert "rarity" in _card_columns(legacy_engine)
+    assert "rarity" in {
+        col["name"] for col in inspect(legacy_engine).get_columns("card_prints")
+    }

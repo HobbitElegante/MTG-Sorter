@@ -52,6 +52,7 @@ from mtg_sorter.services.import_service import (
     InventoryListCard,
     TrackableDeckCard,
 )
+from mtg_sorter.ui.combo import configure_data_combo
 from mtg_sorter.ui.inventory_display import format_card_legality_tooltip
 from mtg_sorter.ui.widgets.card_preview import (
     CardPreviewPanel,
@@ -349,6 +350,7 @@ class ExportDeckDialog(QDialog):
         format_row = QHBoxLayout()
         self._format_label = QLabel(translator.t("decks.export.format"))
         self._format_combo = QComboBox()
+        configure_data_combo(self._format_combo)
         for fmt, key in self._FORMAT_KEYS:
             self._format_combo.addItem(translator.t(key), fmt)
         index = self._format_combo.findData(initial_format)

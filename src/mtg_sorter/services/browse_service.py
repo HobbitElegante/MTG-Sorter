@@ -2,7 +2,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from mtg_sorter.repositories import CardRepository, CopyRepository, DeckRepository
+from mtg_sorter.repositories import (
+    CardPrintRepository,
+    CardRepository,
+    CopyRepository,
+    DeckRepository,
+)
 from mtg_sorter.services.scryfall_bulk_service import BulkSyncStatus, ScryfallBulkService
 
 
@@ -44,6 +49,11 @@ class InventorySummaryRow:
     type_line: str | None = None
     colors: str | None = None
     cmc: float | None = None
+    # Representative Scryfall rarity (bulk / lookup).
+    rarity: str | None = None
+    # Effective rarities for filtering: Card.rarity and/or per-edition CardPrint
+    # rarities when editions are tracked (falls back to Card.rarity).
+    rarities: frozenset[str] = frozenset()
     oracle_text: str | None = None
     commander_legality: str | None = None
     is_basic_land: bool = False
@@ -64,12 +74,38 @@ def _sorted_editions(
     )
 
 
+def _effective_rarities(
+    card_rarity: str | None,
+    editions: tuple[tuple[str | None, int], ...],
+    *,
+    include_editions: bool,
+    print_rarities: dict[tuple[str, str], str | None],
+    oracle_id: str,
+) -> frozenset[str]:
+    """Rarities present on this inventory row (path A, or A+B with editions)."""
+    if not include_editions or not editions:
+        return frozenset({card_rarity}) if card_rarity else frozenset()
+
+    found: set[str] = set()
+    for set_code, _count in editions:
+        if set_code:
+            print_rarity = print_rarities.get((oracle_id, set_code.upper()))
+            if print_rarity:
+                found.add(print_rarity)
+            elif card_rarity:
+                found.add(card_rarity)
+        elif card_rarity:
+            found.add(card_rarity)
+    return frozenset(found)
+
+
 class BrowseService:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._cards = CardRepository(session)
         self._copies = CopyRepository(session)
         self._decks = DeckRepository(session)
+        self._prints = CardPrintRepository(session)
 
     def overview(self) -> OverviewStats:
         return OverviewStats(
@@ -103,6 +139,14 @@ class BrowseService:
         self, *, include_editions: bool = False
     ) -> list[InventorySummaryRow]:
         edition_counts = self._copies.edition_counts() if include_editions else {}
+        raw_rows = list(self._decks.inventory_copy_rows())
+        assigned_counts = self._copies.assigned_counts()
+        decks_by_card = self._decks.assignment_decks_by_card()
+        print_rarities: dict[tuple[str, str], str | None] = {}
+        if include_editions and raw_rows:
+            print_rarities = self._prints.rarities_by_card_set(
+                oracle_id for oracle_id, *_rest in raw_rows
+            )
         summaries: list[InventorySummaryRow] = []
         for (
             oracle_id,
@@ -112,29 +156,42 @@ class BrowseService:
             type_line,
             colors,
             cmc,
+            rarity,
             oracle_text,
             commander_legality,
             is_basic_land,
             is_token,
-        ) in self._decks.inventory_copy_rows():
-            assigned_count = self._copies.count_assigned(oracle_id)
+        ) in raw_rows:
+            editions = _sorted_editions(edition_counts.get(oracle_id, {}))
+            assigned_count = assigned_counts.get(oracle_id, 0)
+            deck_entries = decks_by_card.get(oracle_id, ())
             summaries.append(
                 InventorySummaryRow(
                     oracle_id=oracle_id,
                     card_name=name,
                     total_copies=total,
                     free_copies=total - assigned_count,
-                    assigned_decks=self._decks.deck_names_for_card(oracle_id),
+                    assigned_decks=tuple(deck_name for _id, deck_name in deck_entries),
                     color_identity=color_identity,
-                    editions=_sorted_editions(edition_counts.get(oracle_id, {})),
+                    editions=editions,
                     type_line=type_line,
                     colors=colors,
                     cmc=cmc,
+                    rarity=rarity,
+                    rarities=_effective_rarities(
+                        rarity,
+                        editions,
+                        include_editions=include_editions,
+                        print_rarities=print_rarities,
+                        oracle_id=oracle_id,
+                    ),
                     oracle_text=oracle_text,
                     commander_legality=commander_legality,
                     is_basic_land=is_basic_land,
                     is_token=is_token,
-                    assigned_deck_ids=self._decks.deck_ids_for_card(oracle_id),
+                    assigned_deck_ids=frozenset(
+                        deck_id for deck_id, _name in deck_entries
+                    ),
                 )
             )
         return summaries

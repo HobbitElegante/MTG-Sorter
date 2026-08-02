@@ -241,6 +241,8 @@ class ScryfallBulkService:
         target.colors = source.colors
         target.color_identity = source.color_identity
         target.cmc = source.cmc
+        if source.rarity:
+            target.rarity = source.rarity
         if source.image_uri:
             target.image_uri = source.image_uri
         if source.image_uri_back:

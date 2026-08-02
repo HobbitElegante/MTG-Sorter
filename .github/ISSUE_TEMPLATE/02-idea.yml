@@ -1,0 +1,37 @@
+name: Idea
+description: Pedido o mejora para la app
+title: "[Idea]: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por la idea. Issues = bugs y pedidos; para charla abierta usa [Discussions](https://github.com/HobbitElegante/MTG-Sorter/discussions).
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Qué quieres / para qué
+      description: Describe la mejora y el beneficio (qué te permitiría hacer).
+      placeholder: Me gustaría filtrar el inventario por… para poder…
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Inventory
+        - Decks
+        - Optimize
+        - Browse
+        - Otro / varias
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: ¿Hay workaround hoy?
+      description: ¿Cómo lo resuelves ahora, si aplica?
+      placeholder: Hoy lo hago a mano / no hay forma…
+    validations:
+      required: false

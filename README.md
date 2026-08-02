@@ -2,13 +2,13 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.4)
+## Features (v0.9.4; working tree → v0.9.5)
 
 ### Collection
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
-- Inventory table: Name · CMC · Colors (WUBRG) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
-- Search by card name; **Filter** dialog for type, armed-deck exclusion, color identity (`id≤`), and mana value
+- Inventory table: Name · CMC · Colors (WUBRG) · **Rarity** (C/U/R/M; sort C→U→R→M) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
+- Search by card name; **Filter** dialog for type, armed-deck exclusion, color identity (`id≤`), **rarity (C/U/R/M)**, and mana value
 - Add a single card or paste a whole list (multi-format / Moxfield or Archidekt URL) into free inventory
 - Optional **edition tracking**: turn it on in Browse → Customize to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)

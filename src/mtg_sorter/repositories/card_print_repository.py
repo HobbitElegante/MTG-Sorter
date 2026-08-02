@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from sqlalchemy import delete, select
 
 from sqlalchemy.orm import Session
@@ -26,8 +28,27 @@ class CardPrintRepository:
             is not None
         )
 
+    def rarities_by_card_set(
+        self, oracle_ids: Iterable[str]
+    ) -> dict[tuple[str, str], str | None]:
+        """Map ``(oracle_id, set_code)`` → Scryfall rarity string (or None)."""
+        ids = list(oracle_ids)
+        if not ids:
+            return {}
+        rows = self._session.execute(
+            select(CardPrint.oracle_id, CardPrint.set_code, CardPrint.rarity).where(
+                CardPrint.oracle_id.in_(ids)
+            )
+        ).all()
+        return {
+            (oracle_id, set_code.upper()): rarity
+            for oracle_id, set_code, rarity in rows
+        }
+
     def replace_for_card(
-        self, oracle_id: str, prints: list[tuple[str, str | None, str | None]]
+        self,
+        oracle_id: str,
+        prints: list[tuple[str, str | None, str | None, str | None]],
     ) -> list[CardPrint]:
         self._session.execute(
             delete(CardPrint).where(CardPrint.oracle_id == oracle_id)
@@ -38,8 +59,9 @@ class CardPrintRepository:
                 set_code=set_code,
                 set_name=set_name,
                 released_at=released_at,
+                rarity=rarity,
             )
-            for set_code, set_name, released_at in prints
+            for set_code, set_name, released_at, rarity in prints
         ]
         self._session.add_all(rows)
         self._session.flush()

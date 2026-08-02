@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -43,6 +44,8 @@ from mtg_sorter.ui.inventory_display import (
     format_edition_summary,
     format_inventory_decks,
     format_mana_value,
+    format_rarity_summary,
+    rarity_sort_rank,
 )
 from mtg_sorter.ui.scryfall_icon import scryfall_icon
 from mtg_sorter.ui.widgets.card_preview import (
@@ -63,11 +66,12 @@ SCRYFALL_INVENTORY_SEARCH_ENABLED = False
 COL_NAME = 0
 COL_CMC = 1
 COL_COLOR = 2
-COL_EDITION = 3
-COL_TOTAL = 4
-COL_FREE = 5
-COL_ASSIGNED = 6
-COL_DECKS = 7
+COL_RARITY = 3
+COL_EDITION = 4
+COL_TOTAL = 5
+COL_FREE = 6
+COL_ASSIGNED = 7
+COL_DECKS = 8
 
 
 class InventorySearchWorker(QThread):
@@ -329,8 +333,14 @@ class InventoryWidget(QWidget):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
         self._search_timer.timeout.connect(self._populate_table)
+        self._needs_reload = False
         self._build_ui()
         self.refresh()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt override)
+        super().showEvent(event)
+        if self._needs_reload:
+            self._reload()
 
     def set_show_card_images(self, enabled: bool) -> None:
         self._show_card_images = enabled
@@ -379,6 +389,7 @@ class InventoryWidget(QWidget):
             self._translator.t("browse.cards.name"),
             self._translator.t("inventory.table.cmc"),
             self._translator.t("inventory.table.color"),
+            self._translator.t("inventory.table.rarity"),
             self._translator.t("inventory.table.edition"),
             self._translator.t("inventory.table.total"),
             self._translator.t("inventory.table.free"),
@@ -390,6 +401,9 @@ class InventoryWidget(QWidget):
         header = self._table.horizontalHeaderItem(COL_CMC)
         if header is not None:
             header.setToolTip(self._translator.t("inventory.table.cmc_tip"))
+        rarity = self._table.horizontalHeaderItem(COL_RARITY)
+        if rarity is not None:
+            rarity.setToolTip(self._translator.t("inventory.table.rarity_tip"))
 
     def _build_ui(self) -> None:
         self._main_layout = QVBoxLayout(self)
@@ -458,7 +472,7 @@ class InventoryWidget(QWidget):
         self._filter_dialog = InventoryFilterDialog(self._translator, self)
         self._filter_dialog.filters_changed.connect(self._on_filters_changed)
 
-        self._table = QTableWidget(0, 8)
+        self._table = QTableWidget(0, 9)
         self._table.setHorizontalHeaderLabels(self._header_labels())
         self._apply_header_tooltips()
         self._table.setColumnHidden(COL_EDITION, not self._track_editions)
@@ -470,6 +484,7 @@ class InventoryWidget(QWidget):
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_CMC, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(COL_RARITY, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_EDITION, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(COL_TOTAL, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_FREE, QHeaderView.ResizeMode.Fixed)
@@ -478,6 +493,7 @@ class InventoryWidget(QWidget):
         header.setMinimumSectionSize(60)
         header.resizeSection(COL_CMC, 56)
         header.resizeSection(COL_COLOR, 72)
+        header.resizeSection(COL_RARITY, 56)
         header.resizeSection(COL_EDITION, 110)
         header.resizeSection(COL_TOTAL, 64)
         header.resizeSection(COL_FREE, 64)
@@ -536,6 +552,14 @@ class InventoryWidget(QWidget):
         self._main_layout.setStretchFactor(self._collection_panel, 1)
 
     def refresh(self) -> None:
+        """Reload inventory rows. Defers work while this tab is hidden."""
+        if not self.isVisible():
+            self._needs_reload = True
+            return
+        self._reload()
+
+    def _reload(self) -> None:
+        self._needs_reload = False
         with get_session() as session:
             self._rows = BrowseService(session).list_inventory(
                 include_editions=self._track_editions
@@ -556,6 +580,7 @@ class InventoryWidget(QWidget):
             self._sort_ascending = column in (
                 COL_NAME,
                 COL_COLOR,
+                COL_RARITY,
                 COL_EDITION,
                 COL_DECKS,
             )
@@ -576,6 +601,8 @@ class InventoryWidget(QWidget):
             return -1.0 if row.cmc is None else float(row.cmc)
         if self._sort_column == COL_COLOR:
             return (row.color_identity or "").casefold()
+        if self._sort_column == COL_RARITY:
+            return rarity_sort_rank(row)
         if self._sort_column == COL_EDITION:
             return format_edition_summary(row).casefold()
         if self._sort_column == COL_TOTAL:
@@ -863,6 +890,14 @@ class InventoryWidget(QWidget):
                     color_item.flags() & ~Qt.ItemFlag.ItemIsEditable
                 )
 
+                rarity_item = QTableWidgetItem(
+                    format_rarity_summary(row, self._translator)
+                )
+                rarity_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                rarity_item.setFlags(
+                    rarity_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                )
+
                 edition_item = QTableWidgetItem(format_edition_summary(row))
                 edition_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 edition_item.setFlags(
@@ -895,6 +930,7 @@ class InventoryWidget(QWidget):
                 table.setItem(index, COL_NAME, name_item)
                 table.setItem(index, COL_CMC, cmc_item)
                 table.setItem(index, COL_COLOR, color_item)
+                table.setItem(index, COL_RARITY, rarity_item)
                 table.setItem(index, COL_EDITION, edition_item)
                 table.setItem(index, COL_TOTAL, total_item)
                 table.setItem(index, COL_FREE, free_item)

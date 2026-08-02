@@ -206,6 +206,9 @@ class DeckService:
     def commander_name(self, deck_id: int) -> str | None:
         return self.role_card_name(deck_id, DeckCardRole.COMMANDER)
 
+    def commander_names_by_deck(self) -> dict[int, str]:
+        return self._decks.commander_names_by_deck()
+
     def role_card_name(self, deck_id: int, role: DeckCardRole) -> str | None:
         return self._decks.role_card_name(deck_id, role)
 

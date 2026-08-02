@@ -250,6 +250,7 @@ def test_card_from_scryfall_reads_both_faces_of_a_dfc() -> None:
             "name": "Delver of Secrets // Insectile Aberration",
             "type_line": "Creature — Human Wizard",
             "cmc": 1.0,
+            "rarity": "Rare",
             "card_faces": [
                 {
                     "name": "Delver of Secrets",
@@ -265,6 +266,7 @@ def test_card_from_scryfall_reads_both_faces_of_a_dfc() -> None:
 
     assert card.image_uri == "https://example.test/front.jpg"
     assert card.image_uri_back == "https://example.test/back.jpg"
+    assert card.rarity == "rare"
 
 
 def test_card_from_scryfall_leaves_back_empty_for_split_cards() -> None:

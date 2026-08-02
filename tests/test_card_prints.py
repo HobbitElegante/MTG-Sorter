@@ -43,24 +43,49 @@ class _FakePrintsClient:
 def test_prints_from_scryfall_dedupes_by_set_and_sorts_by_release() -> None:
     rows = prints_from_scryfall(
         [
-            {"set": "c21", "set_name": "Commander 2021", "released_at": "2021-04-23"},
-            {"set": "c21", "set_name": "Commander 2021", "released_at": "2021-04-23"},
-            {"set": "ltr", "set_name": "The Lord of the Rings", "released_at": "2023-06-23"},
+            {
+                "set": "c21",
+                "set_name": "Commander 2021",
+                "released_at": "2021-04-23",
+                "rarity": "rare",
+            },
+            {
+                "set": "c21",
+                "set_name": "Commander 2021",
+                "released_at": "2021-04-23",
+                "rarity": "rare",
+            },
+            {
+                "set": "ltr",
+                "set_name": "The Lord of the Rings",
+                "released_at": "2023-06-23",
+                "rarity": "mythic",
+            },
             {"set_name": "No code"},
         ]
     )
 
     assert rows == [
-        ("C21", "Commander 2021", "2021-04-23"),
-        ("LTR", "The Lord of the Rings", "2023-06-23"),
+        ("C21", "Commander 2021", "2021-04-23", "rare"),
+        ("LTR", "The Lord of the Rings", "2023-06-23", "mythic"),
     ]
 
 
 def test_list_prints_caches_after_first_lookup(session: Session) -> None:
     client = _FakePrintsClient(
         [
-            {"set": "c21", "set_name": "Commander 2021", "released_at": "2021-04-23"},
-            {"set": "ltr", "set_name": "The Lord of the Rings", "released_at": "2023-06-23"},
+            {
+                "set": "c21",
+                "set_name": "Commander 2021",
+                "released_at": "2021-04-23",
+                "rarity": "uncommon",
+            },
+            {
+                "set": "ltr",
+                "set_name": "The Lord of the Rings",
+                "released_at": "2023-06-23",
+                "rarity": "rare",
+            },
         ]
     )
     service = ScryfallService(session, client=client)
@@ -72,6 +97,10 @@ def test_list_prints_caches_after_first_lookup(session: Session) -> None:
     assert second == first
     assert client.calls == 1
     assert session.query(CardPrint).count() == 2
+    rarities = {
+        row.set_code: row.rarity for row in session.query(CardPrint).all()
+    }
+    assert rarities == {"C21": "uncommon", "LTR": "rare"}
 
 
 def test_list_prints_falls_back_to_cache_when_offline(session: Session) -> None:

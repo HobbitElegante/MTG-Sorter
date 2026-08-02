@@ -1,8 +1,12 @@
-"""Local inventory panel filters (type / color / mana value / armed decks).
+"""Local inventory panel filters (type / color / rarity / mana value / armed decks).
 
 Independent of Scryfall syntax. Color identity uses Scryfall ``id<=`` semantics:
 at most the selected colors (colorless included). Zero or all five color
 checkboxes means no color filter.
+
+Rarity uses Scryfall print rarities (``common`` / ``uncommon`` / ``rare`` /
+``mythic``). UI letters C/U/R/M; empty or all four = no filter. Match is OR
+across selected rarities. ``special`` / ``bonus`` are not offered in the UI.
 
 Deck exclusion uses physical assignments (``CardAssignment``): hide cards that
 have a copy assigned to any armed deck, or to selected deck ids.
@@ -15,6 +19,15 @@ from dataclasses import dataclass
 from typing import Protocol
 
 WUBRG = ("W", "U", "B", "R", "G")
+
+# Filter UI codes → Scryfall rarity strings.
+RARITY_CODES = ("C", "U", "R", "M")
+RARITY_BY_CODE: dict[str, str] = {
+    "C": "common",
+    "U": "uncommon",
+    "R": "rare",
+    "M": "mythic",
+}
 
 # Card types / common type-line tokens offered in the type picker.
 CARD_TYPE_OPTIONS: tuple[str, ...] = (
@@ -41,6 +54,7 @@ class FilterableCard(Protocol):
     type_line: str | None
     color_identity: str | None
     cmc: float | None
+    rarities: frozenset[str]
     assigned_deck_ids: frozenset[int]
 
 
@@ -57,6 +71,8 @@ class InventoryFilterState:
     types: frozenset[str] = frozenset()
     # Subset of WUBRG. Empty or all five → no color filter.
     colors: frozenset[str] = frozenset()
+    # Subset of RARITY_CODES (C/U/R/M). Empty or all four → no rarity filter.
+    rarities: frozenset[str] = frozenset()
     cmc_conditions: tuple[CmcCondition, ...] = ()
     # Hide cards with any physical assignment to an armed deck.
     exclude_any_armed: bool = False
@@ -68,10 +84,15 @@ class InventoryFilterState:
         return bool(self.colors) and self.colors != frozenset(WUBRG)
 
     @property
+    def rarity_filter_active(self) -> bool:
+        return bool(self.rarities) and self.rarities != frozenset(RARITY_CODES)
+
+    @property
     def is_active(self) -> bool:
         return (
             bool(self.types)
             or self.color_filter_active
+            or self.rarity_filter_active
             or bool(self.cmc_conditions)
             or self.exclude_any_armed
             or bool(self.exclude_deck_ids)
@@ -82,6 +103,12 @@ def color_identity_letters(color_identity: str | None) -> frozenset[str]:
     if not color_identity:
         return frozenset()
     return frozenset(letter for letter in color_identity.upper() if letter in WUBRG)
+
+
+def rarities_for_codes(codes: frozenset[str]) -> frozenset[str]:
+    return frozenset(
+        RARITY_BY_CODE[code] for code in codes if code in RARITY_BY_CODE
+    )
 
 
 def matches_cmc(card_cmc: float | None, condition: CmcCondition) -> bool:
@@ -127,11 +154,24 @@ def matches_color_identity_at_most(
     return have <= allowed
 
 
+def matches_rarity(
+    card_rarities: frozenset[str], selected_codes: frozenset[str]
+) -> bool:
+    """OR: any of the card's Scryfall rarities is among the selected codes."""
+    wanted = rarities_for_codes(selected_codes)
+    if not wanted:
+        return True
+    return bool(card_rarities & wanted)
+
+
 def matches_panel_filters(card: FilterableCard, state: InventoryFilterState) -> bool:
     if state.types and not matches_type_line(card.type_line, state.types):
         return False
     if state.color_filter_active:
         if not matches_color_identity_at_most(card.color_identity, state.colors):
+            return False
+    if state.rarity_filter_active:
+        if not matches_rarity(card.rarities, state.rarities):
             return False
     for condition in state.cmc_conditions:
         if not matches_cmc(card.cmc, condition):
@@ -170,4 +210,3 @@ def filter_inventory_cards(
             continue
         result.append(row)
     return result
-

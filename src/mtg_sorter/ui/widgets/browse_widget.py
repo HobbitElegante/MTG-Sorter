@@ -36,6 +36,7 @@ from mtg_sorter.ui.error_text import (
     format_scryfall_job_error,
     network_failure_token,
 )
+from mtg_sorter.ui.combo import configure_data_combo
 from mtg_sorter.models.enums import ActivityCategory
 from mtg_sorter.services import (
     ActivityService,
@@ -65,6 +66,7 @@ INV_COL_FREE = 2
 INV_COL_ASSIGNED = 3
 INV_COL_DECKS = 4
 CUSTOMIZE_SECTION_INDEX = 1
+AVAILABILITY_SECTION_INDEX = 3
 SCRYFALL_SECTION_INDEX = 5
 CARD_ORACLE_ID_ROLE = Qt.ItemDataRole.UserRole
 HOUSE_BAN_ORACLE_ROLE = Qt.ItemDataRole.UserRole
@@ -187,6 +189,7 @@ class BrowseWidget(QWidget):
         self._remote_worker: RemoteBulkStatusWorker | None = None
         self._bulk_status: BulkSyncStatus | None = None
         self._scryfall_busy = False
+        self._availability_dirty = True
         self._build_ui()
         self.refresh()
 
@@ -348,6 +351,8 @@ class BrowseWidget(QWidget):
         self._panels.setCurrentIndex(index)
         if index == CUSTOMIZE_SECTION_INDEX:
             self._refresh_house_bans()
+        if index == AVAILABILITY_SECTION_INDEX and self._availability_dirty:
+            self._refresh_inventory()
         if index == SCRYFALL_SECTION_INDEX:
             self._start_remote_status_check()
 
@@ -419,18 +424,12 @@ class BrowseWidget(QWidget):
         )
         self._language_label = QLabel(self._translator.t("config.language"))
         self._language_combo = QComboBox()
-        self._language_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self._language_combo.setMinimumContentsLength(12)
+        configure_data_combo(self._language_combo)
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
         display_form.addRow(self._language_label, self._language_combo)
         self._theme_label = QLabel(self._translator.t("config.theme"))
         self._theme_combo = QComboBox()
-        self._theme_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self._theme_combo.setMinimumContentsLength(12)
+        configure_data_combo(self._theme_combo)
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         display_form.addRow(self._theme_label, self._theme_combo)
         display_layout.addLayout(display_form)
@@ -704,6 +703,7 @@ class BrowseWidget(QWidget):
             self._translator.t("browse.history.filter")
         )
         self._history_filter = QComboBox()
+        configure_data_combo(self._history_filter)
         self._history_filter.currentIndexChanged.connect(self._refresh_history)
         filter_row.addWidget(self._history_filter_label)
         filter_row.addWidget(self._history_filter, stretch=1)
@@ -969,7 +969,9 @@ class BrowseWidget(QWidget):
     def refresh(self) -> None:
         self._refresh_overview()
         self._refresh_cards()
-        self._refresh_inventory()
+        self._availability_dirty = True
+        if self._section_list.currentRow() == AVAILABILITY_SECTION_INDEX:
+            self._refresh_inventory()
         self._refresh_history()
         self._refresh_scryfall_status()
         if self._section_list.currentRow() == SCRYFALL_SECTION_INDEX:
@@ -979,9 +981,12 @@ class BrowseWidget(QWidget):
         """Update overview + availability + history after deck/inventory changes.
 
         Skips rebuilding the full Scryfall cards table (tens of thousands of rows).
+        Availability is rebuilt only when that Browse section is visible.
         """
         self._refresh_overview()
-        self._refresh_inventory()
+        self._availability_dirty = True
+        if self._section_list.currentRow() == AVAILABILITY_SECTION_INDEX:
+            self._refresh_inventory()
         self._refresh_history()
         if self._card_search.text().strip():
             self._refresh_cards()
@@ -1050,6 +1055,7 @@ class BrowseWidget(QWidget):
             self._cards_table.setItem(row, 4, QTableWidgetItem(", ".join(flags)))
 
     def _refresh_inventory(self) -> None:
+        self._availability_dirty = False
         with get_session() as session:
             all_rows = BrowseService(session).list_inventory()
 
@@ -1290,7 +1296,12 @@ class BrowseWidget(QWidget):
             )
         )
         self._bulk_status = None
-        self.refresh()
+        # Status + overview only here; Inventory/Decks/Optimize reload when shown.
+        self._refresh_scryfall_status()
+        self._refresh_overview()
+        self._availability_dirty = True
+        if self._card_search.text().strip():
+            self._refresh_cards()
         self.changed.emit()
 
     def _on_sync_failed(self, message: str) -> None:
@@ -1369,7 +1380,10 @@ class BrowseWidget(QWidget):
         self._sync_progress_label.setText(
             self._translator.t("browse.scryfall.card_data_done").format(count=count)
         )
-        self.refresh()
+        # Legalities / rarity / image URLs changed — mark other tabs dirty via
+        # changed; avoid a full Browse refresh (history/overview unchanged).
+        self._refresh_scryfall_status()
+        self._availability_dirty = True
         self.changed.emit()
 
     def _on_card_data_failed(self, message: str) -> None:

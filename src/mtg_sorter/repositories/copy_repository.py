@@ -58,6 +58,15 @@ class CopyRepository:
             or 0
         )
 
+    def assigned_counts(self) -> dict[str, int]:
+        """Assigned copy counts grouped by oracle id (one query)."""
+        rows = self._session.execute(
+            select(CardCopy.card_id, func.count(CardCopy.id))
+            .join(CardAssignment, CardAssignment.card_copy_id == CardCopy.id)
+            .group_by(CardCopy.card_id)
+        ).all()
+        return {card_id: int(count) for card_id, count in rows}
+
     def count_all(self) -> int:
         return int(
             self._session.scalar(select(func.count()).select_from(CardCopy)) or 0

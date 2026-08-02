@@ -1,4 +1,4 @@
-"""Inventory filter dialog (type / decks / colors / mana value)."""
+"""Inventory filter dialog (type / decks / colors / rarity / mana value)."""
 
 from __future__ import annotations
 
@@ -25,12 +25,16 @@ from PySide6.QtWidgets import (
 from mtg_sorter.algorithms.inventory_filters import (
     CARD_TYPE_OPTIONS,
     CMC_OPS,
+    RARITY_CODES,
     CmcCondition,
     InventoryFilterState,
     WUBRG,
 )
 from mtg_sorter.i18n import Translator
-
+from mtg_sorter.ui.combo import (
+    SEARCHABLE_COMBO_CONTENTS_LENGTH,
+    configure_data_combo,
+)
 
 class InventoryFilterDialog(QDialog):
     """Popup filter form. Emits ``filters_changed`` on any edit."""
@@ -138,6 +142,24 @@ class InventoryFilterDialog(QDialog):
         colors_row.addStretch()
         body.addLayout(colors_row)
 
+        # --- Rarity (same letter-checkbox style as colors) ---
+        self._rarity_label = QLabel()
+        body.addWidget(self._rarity_label)
+        self._rarity_hint = QLabel()
+        self._rarity_hint.setWordWrap(True)
+        self._rarity_hint.setFont(hint_font)
+        body.addWidget(self._rarity_hint)
+
+        rarity_row = QHBoxLayout()
+        self._rarity_checks: dict[str, QCheckBox] = {}
+        for code in RARITY_CODES:
+            box = QCheckBox(code)
+            box.toggled.connect(self._on_filters_edited)
+            self._rarity_checks[code] = box
+            rarity_row.addWidget(box)
+        rarity_row.addStretch()
+        body.addLayout(rarity_row)
+
         # --- Mana value ---
         self._cmc_label = QLabel()
         body.addWidget(self._cmc_label)
@@ -151,6 +173,7 @@ class InventoryFilterDialog(QDialog):
 
         cmc_add_row = QHBoxLayout()
         self._cmc_op = QComboBox()
+        configure_data_combo(self._cmc_op, min_contents=4)
         for op in CMC_OPS:
             self._cmc_op.addItem(op)
         self._cmc_value = QSpinBox()
@@ -179,10 +202,9 @@ class InventoryFilterDialog(QDialog):
     def _configure_searchable_combo(self, combo: QComboBox) -> None:
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        configure_data_combo(
+            combo, min_contents=SEARCHABLE_COMBO_CONTENTS_LENGTH
         )
-        combo.setMinimumContentsLength(24)
         line_edit = combo.lineEdit()
         assert line_edit is not None
         line_edit.setClearButtonEnabled(True)
@@ -228,6 +250,10 @@ class InventoryFilterDialog(QDialog):
 
         self._colors_label.setText(t("inventory.filters.colors"))
         self._colors_hint.setText(t("inventory.filters.colors_hint"))
+        self._rarity_label.setText(t("inventory.filters.rarity"))
+        self._rarity_hint.setText(t("inventory.filters.rarity_hint"))
+        for code, box in self._rarity_checks.items():
+            box.setToolTip(t(f"inventory.filters.rarity.{code}"))
         self._cmc_label.setText(t("inventory.filters.cmc"))
         self._cmc_hint.setText(t("inventory.filters.cmc_hint"))
         self._cmc_add_button.setText(t("inventory.filters.cmc_add"))
@@ -279,6 +305,9 @@ class InventoryFilterDialog(QDialog):
             for letter, box in self._color_checks.items()
             if box.isChecked()
         }
+        rarities = {
+            code for code, box in self._rarity_checks.items() if box.isChecked()
+        }
         conditions = tuple(
             CmcCondition(op.currentText(), float(spin.value()))
             for op, spin, _remove in self._cmc_rows
@@ -286,6 +315,7 @@ class InventoryFilterDialog(QDialog):
         return InventoryFilterState(
             types=frozenset(self._selected_types),
             colors=frozenset(colors),
+            rarities=frozenset(rarities),
             cmc_conditions=conditions,
             exclude_any_armed=self._exclude_any_armed.isChecked(),
             exclude_deck_ids=frozenset(deck_id for deck_id, _ in self._selected_decks),
@@ -308,6 +338,10 @@ class InventoryFilterDialog(QDialog):
             deck_edit.clear()
         self._deck_combo.setCurrentIndex(-1)
         for box in self._color_checks.values():
+            box.blockSignals(True)
+            box.setChecked(False)
+            box.blockSignals(False)
+        for box in self._rarity_checks.values():
             box.blockSignals(True)
             box.setChecked(False)
             box.blockSignals(False)
@@ -435,6 +469,7 @@ class InventoryFilterDialog(QDialog):
 
     def _add_cmc_condition(self) -> None:
         op = QComboBox()
+        configure_data_combo(op, min_contents=4)
         for symbol in CMC_OPS:
             op.addItem(symbol)
         op.setCurrentText(self._cmc_op.currentText())

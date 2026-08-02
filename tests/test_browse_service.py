@@ -100,6 +100,7 @@ def test_list_inventory_groups_copies_by_card(session: Session) -> None:
     assert rows[0].total_copies == 3
     assert rows[0].free_copies == 2
     assert rows[0].assigned_decks == ("Test Deck",)
+    assert rows[0].assigned_deck_ids == frozenset({deck.id})
     assert rows[0].color_identity == ""
 
 

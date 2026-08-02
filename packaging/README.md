@@ -88,3 +88,4 @@ The packaging scripts, workflow (`.github/workflows/release.yml`), and related c
 - Alembic migration scripts are bundled under `_MEIPASS/mtg_sorter/database/alembic`.
 - Workflow file: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 - **Smoke Windows-like UI on Linux:** `QT_STYLE_OVERRIDE=Windows uv run mtg-sorter` (forces the Qt Windows style; useful for layout bugs that only show under the native style, e.g. zero-width combos). Not a substitute for a real Windows VM when validating the `.exe`.
+- **Combo standard:** every data `QComboBox` should go through `mtg_sorter.ui.combo.configure_data_combo` (minimum contents length). Do not nest a `QGroupBox` that only wraps a combo inside another group box — that collapsed Language/Theme under native Windows in `v0.9.3`.

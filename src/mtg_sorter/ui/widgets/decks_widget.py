@@ -40,6 +40,7 @@ from mtg_sorter.services.deck_export import load_deck_export_cards
 from mtg_sorter.services.deck_service import DeckCardSummary
 from mtg_sorter.services.decklist_parser import DecklistFormat, detect_format
 from mtg_sorter.ui.error_text import format_deck_url_error
+from mtg_sorter.ui.combo import configure_data_combo
 from mtg_sorter.ui.deck_cards_display import (
     COMMAND_GROUP,
     LAND_GROUP,
@@ -226,6 +227,7 @@ class DecksWidget(QWidget):
         self._deck_card_rows: list[DeckCardSummary] = []
         # Heavy list load waits until Mazos is shown (Browse is the startup tab).
         self._decks_loaded = False
+        self._needs_reload = False
         # Deck being re-synced from a paste/URL; None while importing a new deck.
         self._update_deck_id: int | None = None
         self._update_deck_name = ""
@@ -235,8 +237,8 @@ class DecksWidget(QWidget):
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt override)
         super().showEvent(event)
-        if not self._decks_loaded:
-            self.refresh()
+        if not self._decks_loaded or self._needs_reload:
+            self._reload()
 
     def set_show_card_images(self, enabled: bool) -> None:
         self._show_card_images = enabled
@@ -381,16 +383,12 @@ class DecksWidget(QWidget):
         self._search.textChanged.connect(lambda _text: self._populate_deck_list())
         self._filter_label = QLabel(self._translator.t("decks.filter.label"))
         self._filter_combo = QComboBox()
-        self._filter_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
+        configure_data_combo(self._filter_combo)
         self._retranslate_filter()
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
         self._sort_label = QLabel(self._translator.t("decks.sort.by"))
         self._sort_combo = QComboBox()
-        self._sort_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
+        configure_data_combo(self._sort_combo)
         self._sort_dir_button = QPushButton()
         self._sort_dir_button.clicked.connect(self._toggle_sort_direction)
         self._retranslate_sort()
@@ -454,9 +452,7 @@ class DecksWidget(QWidget):
             self._translator.t("decks.cards.filter_by")
         )
         self._cards_sort_combo = QComboBox()
-        self._cards_sort_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
+        configure_data_combo(self._cards_sort_combo)
         self._cards_sort_dir_button = QPushButton()
         self._cards_sort_dir_button.clicked.connect(
             self._toggle_cards_sort_direction
@@ -647,7 +643,15 @@ class DecksWidget(QWidget):
         return self._translator.t("decks.status.dismantled")
 
     def refresh(self) -> None:
+        """Reload deck list + warnings. Defers while this tab is hidden."""
+        if not self.isVisible():
+            self._needs_reload = True
+            return
+        self._reload()
+
+    def _reload(self) -> None:
         self._decks_loaded = True
+        self._needs_reload = False
         selected_id = self._selected_deck_id()
         rows: list[DeckListRow] = []
         with get_session() as session:
@@ -656,11 +660,17 @@ class DecksWidget(QWidget):
             show_legality = settings.get_show_legality_warnings()
             show_rules = settings.get_show_rule_warnings()
             house = HouseBanService(session)
+            banned_ids = house.oracle_ids()
+            commander_names = service.commander_names_by_deck()
             for deck in service.list_decks():
                 legality_issues = (
                     service.commander_legality_issues(deck.id) if show_legality else []
                 )
-                house_issues = house.house_ban_issues(deck.id)
+                house_issues = (
+                    house.house_ban_issues(deck.id, banned=banned_ids)
+                    if banned_ids
+                    else []
+                )
                 issues = legality_issues + house_issues
                 rule_issues = (
                     service.commander_rule_issues(deck.id) if show_rules else []
@@ -682,7 +692,7 @@ class DecksWidget(QWidget):
                         status=deck.status,
                         sort_order=deck.sort_order,
                         is_locked=deck.is_locked,
-                        commander_name=service.commander_name(deck.id),
+                        commander_name=commander_names.get(deck.id),
                         has_warning=has_warning,
                         tooltip="\n\n".join(tip_parts),
                     )

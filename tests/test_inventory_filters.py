@@ -1,4 +1,4 @@
-"""Tests for inventory panel filters (type / id<= colors / CMC / decks)."""
+"""Tests for inventory panel filters (type / id<= colors / rarity / CMC / decks)."""
 
 from mtg_sorter.algorithms.inventory_filters import (
     CmcCondition,
@@ -6,6 +6,7 @@ from mtg_sorter.algorithms.inventory_filters import (
     filter_inventory_cards,
     matches_color_identity_at_most,
     matches_panel_filters,
+    matches_rarity,
     matches_type_line,
 )
 from mtg_sorter.services.browse_service import InventorySummaryRow
@@ -18,12 +19,17 @@ def _row(
     type_line: str = "Instant",
     color_identity: str | None = "R",
     cmc: float | None = 1,
+    rarity: str | None = "common",
+    rarities: frozenset[str] | None = None,
     assigned_deck_ids: frozenset[int] = frozenset(),
     free_copies: int | None = None,
 ) -> InventorySummaryRow:
     assigned = bool(assigned_deck_ids)
     total = 1
     free = free_copies if free_copies is not None else (0 if assigned else 1)
+    effective = rarities if rarities is not None else (
+        frozenset({rarity}) if rarity else frozenset()
+    )
     return InventorySummaryRow(
         oracle_id=oracle_id,
         card_name=name,
@@ -33,6 +39,8 @@ def _row(
         color_identity=color_identity,
         type_line=type_line,
         cmc=cmc,
+        rarity=rarity,
+        rarities=effective,
         assigned_deck_ids=assigned_deck_ids,
     )
 
@@ -157,3 +165,34 @@ def test_filter_combines_name_panel_and_scryfall_ids() -> None:
         scryfall_oracle_ids={"bolt", "bop", "wrath"},
     )
     assert [row.oracle_id for row in hits] == ["bolt", "wrath"]
+
+
+def test_rarity_filter_inactive_when_empty_or_all_four() -> None:
+    assert not InventoryFilterState(rarities=frozenset()).rarity_filter_active
+    assert not InventoryFilterState(
+        rarities=frozenset("CURM")
+    ).rarity_filter_active
+    assert InventoryFilterState(rarities=frozenset({"R", "M"})).rarity_filter_active
+
+
+def test_rarity_match_is_or_across_selected() -> None:
+    assert matches_rarity(frozenset({"rare"}), frozenset({"R"}))
+    assert matches_rarity(frozenset({"mythic", "common"}), frozenset({"M", "U"}))
+    assert not matches_rarity(frozenset({"common"}), frozenset({"R", "M"}))
+    assert not matches_rarity(frozenset(), frozenset({"C"}))
+    assert not matches_rarity(frozenset({"special"}), frozenset({"R"}))
+
+
+def test_rarity_panel_filter() -> None:
+    common = _row(rarity="common")
+    mythic = _row(name="Omniscience", oracle_id="omni", rarity="mythic", cmc=10)
+    mixed = _row(
+        name="Shock",
+        oracle_id="shock",
+        rarity="common",
+        rarities=frozenset({"common", "rare"}),
+    )
+    state = InventoryFilterState(rarities=frozenset({"R", "M"}))
+    assert not matches_panel_filters(common, state)
+    assert matches_panel_filters(mythic, state)
+    assert matches_panel_filters(mixed, state)

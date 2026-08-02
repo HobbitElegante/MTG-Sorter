@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QFont, QIcon
+from PySide6.QtGui import QAction, QFont, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
@@ -32,6 +32,10 @@ from mtg_sorter.services.optimization_service import (
     unique_donors_for_sequence,
 )
 from mtg_sorter.services.settings_service import SettingsService
+from mtg_sorter.ui.combo import (
+    SEARCHABLE_COMBO_CONTENTS_LENGTH,
+    configure_data_combo,
+)
 from mtg_sorter.ui.widgets.edition_picker import CopyEditionTable
 
 
@@ -100,10 +104,16 @@ class OptimizerWidget(QWidget):
         self._current_plan: AssemblyPlan | None = None
         self._selection_committed = False
         self._recomputing_queue = False
+        self._needs_reload = False
         with get_session() as session:
             self._track_editions = SettingsService(session).get_track_editions()
         self._build_ui()
         self.refresh_decks()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt override)
+        super().showEvent(event)
+        if self._needs_reload:
+            self._reload_decks()
 
     def set_track_editions(self, enabled: bool) -> None:
         self._track_editions = enabled
@@ -131,14 +141,14 @@ class OptimizerWidget(QWidget):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
         picker_row = QHBoxLayout()
         self._deck_combo = QComboBox()
         self._deck_combo.setEditable(True)
         self._deck_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._deck_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-        )
-        self._deck_combo.setMinimumContentsLength(32)
+        configure_data_combo(self._deck_combo, min_contents=32)
         line_edit = self._deck_combo.lineEdit()
         line_edit.setPlaceholderText(self._translator.t("optimize.target.search"))
         line_edit.setClearButtonEnabled(True)
@@ -200,6 +210,9 @@ class OptimizerWidget(QWidget):
         self._solution_group = QGroupBox()
         solution_layout = QVBoxLayout(self._solution_group)
         self._solution_combo = QComboBox()
+        configure_data_combo(
+            self._solution_combo, min_contents=SEARCHABLE_COMBO_CONTENTS_LENGTH
+        )
         self._solution_combo.currentIndexChanged.connect(self._on_solution_changed)
         solution_layout.addWidget(self._solution_combo)
         self._step_combos_host = QWidget()
@@ -352,13 +365,22 @@ class OptimizerWidget(QWidget):
         self._set_combo_committed(True)
 
     def refresh_decks(self) -> None:
+        """Reload the target picker. Defers while this tab is hidden."""
+        if not self.isVisible():
+            self._needs_reload = True
+            return
+        self._reload_decks()
+
+    def _reload_decks(self) -> None:
+        self._needs_reload = False
         current = self._deck_combo.currentData()
         self._deck_combo.blockSignals(True)
         self._deck_combo.clear()
         with get_session() as session:
             service = DeckService(session)
+            commander_names = service.commander_names_by_deck()
             for deck in service.list_decks():
-                commander = service.commander_name(deck.id)
+                commander = commander_names.get(deck.id)
                 label = self._picker_label(
                     deck.name, commander, deck.status == DeckStatus.ARMED
                 )
@@ -740,6 +762,9 @@ class OptimizerWidget(QWidget):
                 row_layout.setContentsMargins(0, 0, 0, 0)
                 label = QLabel(plan.target_deck_name)
                 combo = QComboBox()
+                configure_data_combo(
+                    combo, min_contents=SEARCHABLE_COMBO_CONTENTS_LENGTH
+                )
                 preferred = self._chosen_solutions.get(plan.target_deck_id)
                 select_index = 0
                 for index, solution in enumerate(plan.result.solutions):
