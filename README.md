@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.5)
+## Features (v0.9.6)
 
 ### Collection
 
@@ -183,12 +183,12 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.9.5)
+## Latest (v0.9.6)
 
-**v0.9.5** is the recommended build. Prefer it over **v0.9.4** and earlier.
+**v0.9.6** is the recommended build. Prefer it over **v0.9.5** and earlier.
 
-- **Inventory rarity:** C/U/R/M column and Filter checkboxes (from Scryfall `Card.rarity` / optional `CardPrint.rarity`); sort C→U→R→M
-- **Windows-safe combos:** data `QComboBox` widgets use a shared minimum-contents helper so native Windows style does not collapse dropdowns
-- **Issue templates:** Bug and Idea forms in Spanish; blank issues redirected to Discussions
-- Faster inventory list refresh and lighter Scryfall “update finished” UI refresh
+- **Default theme dark** for new installs (light / system still available in Customize)
+- Availability search placeholder is name-only (no inactive Scryfall-syntax hint)
+- Inventory Filter tooltips: localized capitalized rarity + WUBRG color names
+- **v0.9.5:** Inventory rarity column/filter; Windows-safe combos; Issue templates; inventory refresh perf
 - **v0.9.4:** Customize language/theme dropdowns fixed on Windows
