@@ -2,7 +2,7 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.4; working tree → v0.9.5)
+## Features (v0.9.5)
 
 ### Collection
 
@@ -183,11 +183,12 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.9.4)
+## Latest (v0.9.5)
 
-**v0.9.4** is the recommended build. Prefer it over **v0.9.3** and earlier.
+**v0.9.5** is the recommended build. Prefer it over **v0.9.4** and earlier.
 
-- **Windows fix:** Browse → Customize language and theme dropdowns were invisible under the native Windows style (nested group boxes left zero-width combos and duplicate “Language” / “Theme” labels). Layout flattened so the combos show and work.
-- **Inventory → Filter:** hide cards assigned to armed decks — all of them or specific decks — with Optimize-style type/deck pickers (from **v0.9.3**)
-- **Decks detail:** deck statistics, mana curve, and card-list sort/group controls (from **v0.9.3**)
-- Theme selector, unique-artwork and Moxfield URL import fixes from **v0.9.2**
+- **Inventory rarity:** C/U/R/M column and Filter checkboxes (from Scryfall `Card.rarity` / optional `CardPrint.rarity`); sort C→U→R→M
+- **Windows-safe combos:** data `QComboBox` widgets use a shared minimum-contents helper so native Windows style does not collapse dropdowns
+- **Issue templates:** Bug and Idea forms in Spanish; blank issues redirected to Discussions
+- Faster inventory list refresh and lighter Scryfall “update finished” UI refresh
+- **v0.9.4:** Customize language/theme dropdowns fixed on Windows

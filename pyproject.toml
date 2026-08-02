@@ -1,6 +1,6 @@
 [project]
 name = "mtg-sorter"
-version = "0.9.4"
+version = "0.9.5"
 description = "Desktop app to manage a physical MTG Commander collection and optimize deck reassembly."
 readme = "README.md"
 requires-python = ">=3.13"
