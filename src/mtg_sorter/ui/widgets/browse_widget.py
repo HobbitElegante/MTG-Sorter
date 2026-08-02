@@ -220,9 +220,7 @@ class BrowseWidget(QWidget):
         )
         self._scryfall_info.setText(self._translator.t("browse.scryfall.info"))
         self._update_oracle_button_label()
-        self._language_group.setTitle(self._translator.t("config.language"))
         self._language_label.setText(self._translator.t("config.language"))
-        self._theme_group.setTitle(self._translator.t("config.theme"))
         self._theme_label.setText(self._translator.t("config.theme"))
         self._inventory_summary_group.setTitle(
             self._translator.t("inventory.summary.title")
@@ -413,21 +411,29 @@ class BrowseWidget(QWidget):
         self._show_images_check.toggled.connect(self._on_show_images_toggled)
         display_layout.addWidget(self._show_images_check)
 
-        self._language_group = QGroupBox(self._translator.t("config.language"))
-        language_form = QFormLayout(self._language_group)
+        # Flat form rows (no nested QGroupBox): on Windows the nested
+        # Language/Theme boxes showed duplicate titles and zero-width combos.
+        display_form = QFormLayout()
+        display_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
         self._language_label = QLabel(self._translator.t("config.language"))
         self._language_combo = QComboBox()
+        self._language_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._language_combo.setMinimumContentsLength(12)
         self._language_combo.currentIndexChanged.connect(self._on_language_changed)
-        language_form.addRow(self._language_label, self._language_combo)
-        display_layout.addWidget(self._language_group)
-
-        self._theme_group = QGroupBox(self._translator.t("config.theme"))
-        theme_form = QFormLayout(self._theme_group)
+        display_form.addRow(self._language_label, self._language_combo)
         self._theme_label = QLabel(self._translator.t("config.theme"))
         self._theme_combo = QComboBox()
+        self._theme_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._theme_combo.setMinimumContentsLength(12)
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        theme_form.addRow(self._theme_label, self._theme_combo)
-        display_layout.addWidget(self._theme_group)
+        display_form.addRow(self._theme_label, self._theme_combo)
+        display_layout.addLayout(display_form)
         layout.addWidget(self._display_group)
 
         self._warnings_group = QGroupBox(
