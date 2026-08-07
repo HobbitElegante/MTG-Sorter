@@ -58,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: dist/MTG-Sorter-*.AppImage
+          path: dist/MTG-Rebuilder-*.AppImage
           if-no-files-found: error
 
   build-windows:
@@ -80,7 +80,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-zip
-          path: dist/MTG-Sorter-windows-x64.zip
+          path: dist/MTG-Rebuilder-windows-x64.zip
           if-no-files-found: error
 
   release:
@@ -105,15 +105,15 @@ jobs:
             Release **${{ github.ref_name }}**.
 
             ### Downloads
-            - **Linux:** `MTG-Sorter-*.AppImage` — mark executable (`chmod +x`) and run.
-            - **Windows:** `MTG-Sorter-windows-x64.zip` — unzip and run `MTG-Sorter.exe`.
+            - **Linux:** `MTG-Rebuilder-*.AppImage` — mark executable (`chmod +x`) and run. Optional application-menu install (from a repo checkout): `./scripts/install_linux_desktop.sh /path/to/MTG-Rebuilder-*.AppImage`.
+            - **Windows:** `MTG-Rebuilder-windows-x64.zip` — unzip and run `MTG-Rebuilder.exe`.
 
-            Data (database + card images) is stored in the platform user-data folder. Override with `MTG_SORTER_DATA_DIR` if needed.
+            Data (database + card images) is stored in the platform user-data folder. Override with `MTG_REBUILDER_DATA_DIR` if needed (legacy `MTG_SORTER_DATA_DIR` still accepted).
 
-            See the [README](https://github.com/HobbitElegante/MTG-Sorter#readme) for features and first-time setup (Scryfall bulk download after install).
+            See the [README](https://github.com/HobbitElegante/MTG-Rebuilder#readme) for features and first-time setup (Scryfall bulk download after install).
           files: |
-            artifacts/MTG-Sorter-*.AppImage
-            artifacts/MTG-Sorter-windows-x64.zip
+            artifacts/MTG-Rebuilder-*.AppImage
+            artifacts/MTG-Rebuilder-windows-x64.zip
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

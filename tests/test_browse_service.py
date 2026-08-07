@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.browse_service import BrowseService
+from mtg_rebuilder.models import Base, Card, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.browse_service import BrowseService
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ def test_list_cards_excludes_art_series(session: Session) -> None:
 
 
 def test_list_inventory_groups_copies_by_card(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
+    from mtg_rebuilder.models import CardAssignment
 
     card = Card(
         oracle_id="abc",

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Gracias por la idea. Issues = bugs y pedidos; para charla abierta usa [Discussions](https://github.com/HobbitElegante/MTG-Sorter/discussions).
+        Gracias por la idea. Issues = bugs y pedidos; para charla abierta usa [Discussions](https://github.com/HobbitElegante/MTG-Rebuilder/discussions).
   - type: textarea
     id: proposal
     attributes:

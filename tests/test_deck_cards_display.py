@@ -1,6 +1,6 @@
-from mtg_sorter.models.enums import DeckCardRole
-from mtg_sorter.services.deck_service import DeckCardSummary
-from mtg_sorter.ui.deck_cards_display import (
+from mtg_rebuilder.models.enums import DeckCardRole
+from mtg_rebuilder.services.deck_service import DeckCardSummary
+from mtg_rebuilder.ui.deck_cards_display import (
     COMMAND_GROUP,
     group_deck_cards,
     primary_card_type,

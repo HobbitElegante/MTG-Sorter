@@ -1,5 +1,5 @@
-from mtg_sorter.models.enums import DeckStatus
-from mtg_sorter.ui.deck_list_display import (
+from mtg_rebuilder.models.enums import DeckStatus
+from mtg_rebuilder.ui.deck_list_display import (
     DeckListRow,
     coerce_deck_status,
     filter_deck_rows,

@@ -3,16 +3,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import ActivityEvent, Base, Card, Deck, DeckCard
-from mtg_sorter.models.enums import (
+from mtg_rebuilder.models import ActivityEvent, Base, Card, Deck, DeckCard
+from mtg_rebuilder.models.enums import (
     ActivityCategory,
     ActivityEventType,
     DeckCardRole,
     DeckStatus,
 )
-from mtg_sorter.services.activity_service import ActivityService
-from mtg_sorter.services.deck_service import DeckService, InventoryService
-from mtg_sorter.services.optimization_service import OptimizationService
+from mtg_rebuilder.services.activity_service import ActivityService
+from mtg_rebuilder.services.deck_service import DeckService, InventoryService
+from mtg_rebuilder.services.optimization_service import OptimizationService
 
 
 @pytest.fixture

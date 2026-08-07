@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.algorithms.deck_stats import (
+from mtg_rebuilder.algorithms.deck_stats import (
     DeckStatsCard,
     compute_deck_statistics,
     count_pips,
 )
-from mtg_sorter.models import Base, Card, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService
+from mtg_rebuilder.models import Base, Card, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_service import DeckService
 
 
 def _card(

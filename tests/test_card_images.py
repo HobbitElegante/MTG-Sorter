@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from mtg_sorter.models import Base, Card, CardCopy
-from mtg_sorter.services.card_image_service import (
+from mtg_rebuilder.models import Base, Card, CardCopy
+from mtg_rebuilder.services.card_image_service import (
     CardImageService,
     ImageDownloadScope,
     image_path_for,

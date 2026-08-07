@@ -1,4 +1,4 @@
-from mtg_sorter.algorithms.deck_optimizer import DeckSupply, find_all_optimal_solutions
+from mtg_rebuilder.algorithms.deck_optimizer import DeckSupply, find_all_optimal_solutions
 
 
 def test_no_dismantle_when_inventory_covers_everything() -> None:

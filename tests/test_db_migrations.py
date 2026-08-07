@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from alembic.script import ScriptDirectory
 
-from mtg_sorter.database.migrate import (
+from mtg_rebuilder.database.migrate import (
     BASELINE_REVISION,
     alembic_config,
     upgrade_database,

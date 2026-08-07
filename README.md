@@ -2,13 +2,16 @@
 
 Desktop application to manage a physical Magic: The Gathering Commander collection and compute optimal deck reassembly plans using integer linear programming (OR-Tools).
 
-## Features (v0.9.6)
+## Features (v1.0.0)
+
+First stable release of **MTG-Rebuilder** (repo / package / binaries). The window title remains *MTG Commander Collection Manager*. Prebuilt **Downloads** below will be **v1.0.0** after the tag. Includes the rename from `mtg-sorter`, Inventory **Image view**, Linux **application-menu install**, and Optimize **Viable plans**.
 
 ### Collection
 
 - Physical inventory in SQLite, grouped by card: total / free / assigned
 - Inventory table: Name · CMC · Colors (WUBRG) · **Rarity** (C/U/R/M; sort C→U→R→M) · Total · Free · Assigned · In decks; sortable columns; **read-only cells** (edit only via Edit copy count)
 - Search by card name; **Filter** dialog for type, armed-deck exclusion, color identity (`id≤`), **rarity (C/U/R/M)**, and mana value
+- **Image view** *(requires card images on)*: virtualized grid ≤5 faces/row; on-demand download as tiles appear; **Sort by** + Asc/Desc without leaving the grid (same order as the table); field list under the side preview
 - Add a single card or paste a whole list (multi-format / Moxfield or Archidekt URL) into free inventory
 - Optional **edition tracking**: turn it on in Browse → Customize to get an Edition column, per-copy set codes, and a prompt after rebuilding a deck
 - Card image preview beside the table (on-demand download; flip for double-faced cards)
@@ -35,6 +38,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 - Equally optimal plans are ordered so the one drawing the most cards from a single donor comes first; every plan stays selectable
 - Confirm / cancel to apply; searchable target picker; clear status when already armed or infeasible
 - Free inventory + unlimited basics count toward coverage; tokens are ignored (not stored on lists)
+- **Viable plans** sub-tab: explore which sets of N decks fit physical stock (names only). Cache per N/ɸ, background calculate, filter by deck (only decks that appear in results), collapsible combination groups, commander image grid / inline image view, **Send to assembly plan** (alphabetical queue)
 
 ### Browse & data
 
@@ -45,12 +49,18 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 ## Download
 
-Prebuilt binaries: **https://github.com/HobbitElegante/MTG-Sorter/releases/latest**
+Prebuilt binaries: **https://github.com/HobbitElegante/MTG-Rebuilder/releases/latest**
 
 - Linux: `.AppImage` — `chmod +x` then run.
-- Windows: `.zip` — unzip and run `MTG-Sorter.exe`.
+  - Optional application menu:
+    ```bash
+    chmod +x MTG-Rebuilder-*.AppImage
+    ./scripts/install_linux_desktop.sh /path/to/MTG-Rebuilder-*.AppImage
+    ```
+    (`--uninstall` removes the menu entry and the copied AppImage; your database stays in the user-data folder.)
+- Windows: `.zip` — unzip and run `MTG-Rebuilder.exe`.
 
-Feedback: [Issues](https://github.com/HobbitElegante/MTG-Sorter/issues) · [Discussions](https://github.com/HobbitElegante/MTG-Sorter/discussions) · Support: [Ko-fi](https://ko-fi.com/hobbitelegante)
+Feedback: [Issues](https://github.com/HobbitElegante/MTG-Rebuilder/issues) · [Discussions](https://github.com/HobbitElegante/MTG-Rebuilder/discussions) · Support: [Ko-fi](https://ko-fi.com/hobbitelegante)
 
 Local development setup is below.
 
@@ -62,7 +72,7 @@ Local development setup is below.
 ## Setup
 
 ```bash
-cd MTG-Sorter
+cd MTG-Rebuilder
 uv sync --all-extras
 ```
 
@@ -77,16 +87,16 @@ pip install -e ".[dev]"
 ## Run
 
 ```bash
-uv run mtg-sorter
+uv run mtg-rebuilder
 ```
 
 Or:
 
 ```bash
-python -m mtg_sorter
+python -m mtg_rebuilder
 ```
 
-In development, the SQLite database is created at `data/mtg_sorter.db` (gitignored) and optional card images under `data/images/`. Packaged builds (AppImage / Windows folder) store the same files in the platform user-data directory; override anytime with `MTG_SORTER_DATA_DIR`. On every launch, Alembic applies any pending schema migrations automatically (fresh clone → baseline schema; older local DBs → one-time bridge + stamp).
+In development, the SQLite database is created at `data/mtg_rebuilder.db` (gitignored) and optional card images under `data/images/`. Packaged builds (AppImage / Windows folder) store the same files in the platform user-data directory; override anytime with `MTG_REBUILDER_DATA_DIR`. On every launch, Alembic applies any pending schema migrations automatically (fresh clone → baseline schema; older local DBs → one-time bridge + stamp).
 
 ## Tests
 
@@ -94,7 +104,7 @@ In development, the SQLite database is created at `data/mtg_sorter.db` (gitignor
 uv run pytest
 ```
 
-230 tests passing.
+271 tests passing locally (includes path-migration cases after rename).
 
 ## First-time setup
 
@@ -136,13 +146,14 @@ Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table
 ## Inventory
 
 1. Open the **Inventory** tab.
-2. Table columns: **Name** · **CMC** · **Colors** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). CMC is the numeric mana value (e.g. GGG → 3; hover the header for the full label). Colors show WUBRG identity (— if colorless). Name is the wide column.
+2. Table columns: **Name** · **CMC** · **Colors** · **Rarity** · **Total** · **Free** · **Assigned** · **In decks** (deck names only, or — if fully free). With edition tracking on, an **Edition** column appears. CMC is the numeric mana value (e.g. GGG → 3; hover the header for the full label). Colors show WUBRG identity (— if colorless). Name is the wide column.
 3. Click a column header to sort (text A–Z / Z–A; numbers high→low first, then reverse). Hover **In decks** for the full list when a card is in several decks.
-4. Use the search bar to filter by card name. **Filter** opens a dialog for type (search/add), hide cards in armed decks (all or specific), color identity at most (`id≤`), and mana-value comparisons.
-5. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
-6. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
-7. Select a row → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
-8. The panel on the right shows the selected card. Missing images are fetched from Scryfall in the background and cached; drag the splitter to resize it.
+4. Use the search bar to filter by card name. **Filter** opens a dialog for type (search/add), hide cards in armed decks (all or specific), color identity at most (`id≤`), rarity (C/U/R/M), and mana-value comparisons.
+5. **Image view** *(next to Filter; requires card images enabled in Customize)* replaces the table with a scrollable grid (up to five faces per row). Missing local JPEGs download in the background as tiles appear. While Image view is on, **Sort by** and ascending/descending reorder the grid using the same keys as the table headers. Select a tile to refresh the side preview and the field list under it.
+6. **Add new card to collection** — search the local Scryfall cache and add free copies (−/+). Basics and tokens are excluded (unlimited / not trackable).
+7. **Add list to collection** — opens a full-tab paste area (Load file · Confirm list · Cancel). After confirm, adjust how many copies to add per identified card (starts at 1; 0 or Remove excludes), replace mis-resolved cards, and on the right edit unrecognized lines then **Recheck** or **Remove** them. Confirm adds free inventory copies.
+8. Select a row (or a grid tile) → **Edit copy count** — change total physical copies (floor = copies assigned to armed decks).
+9. The panel on the right shows the selected card and inventory fields. Missing preview images are fetched from Scryfall in the background and cached; drag the splitter to resize it.
 
 ## Optimizer
 
@@ -167,7 +178,7 @@ Tip: **Edit list** keeps the list size fixed (open slots only); the dialog table
 ## Project layout
 
 ```
-src/mtg_sorter/
+src/mtg_rebuilder/
   algorithms/     # ILP deck dismantle optimizer, card helpers (incl. legality)
   api/            # Scryfall + Moxfield HTTP clients (bulk + CDN image download)
   database/       # SQLite + Alembic (session, migrate, alembic/versions)
@@ -175,20 +186,26 @@ src/mtg_sorter/
   models/         # SQLAlchemy models (ActivityEvent, Card.commander_legality/image_uri_back, …)
   repositories/   # Thin data-access layer (Card, Copy, Deck, Activity, Settings)
   services/       # Business logic / orchestration (uses repositories for SQL)
-  ui/             # PySide6 desktop UI (+ deck_list_display, inventory_display, card_preview, import/update dialogs)
+  ui/             # PySide6 desktop UI (+ deck_list_display, inventory_display, card_preview, inventory_image_grid, …)
 tests/
   fixtures/       # Sample exports (kellan, arena, archidekt, mtgo .dek)
+scripts/          # build_linux.sh, build_windows.ps1, install_linux_desktop.sh
+packaging/        # PyInstaller spec, AppImage .desktop + icon
 alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 ```
 
 **Changing the schema:** add a revision with `alembic -c alembic.ini revision --autogenerate -m "…"`, review it under `database/alembic/versions/`, then launch the app (migrations run on startup).
 
-## Latest (v0.9.6)
+## Latest (v1.0.0)
 
-**v0.9.6** is the recommended build. Prefer it over **v0.9.5** and earlier.
+**v1.0.0** is the first stable release of **MTG-Rebuilder** (GitHub repo, Python package `mtg_rebuilder`, CLI `mtg-rebuilder`, AppImage / Windows binaries). The window title stays *MTG Commander Collection Manager*. Existing user data under `mtg-sorter` is migrated automatically on first launch of a packaged build.
 
-- **Default theme dark** for new installs (light / system still available in Customize)
-- Availability search placeholder is name-only (no inactive Scryfall-syntax hint)
-- Inventory Filter tooltips: localized capitalized rarity + WUBRG color names
-- **v0.9.5:** Inventory rarity column/filter; Windows-safe combos; Issue templates; inventory refresh perf
+- **Viable plans** (Optimize): explore simultaneous N-deck sets vs physical stock; cache / background calc; deck filter (viable decks only); collapsible combinations; commander images (side 3-column grid or inline image view); **Send to assembly plan**
+- Inventory **Image view** (virtualized grid; works with or without a prior table selection) and `scripts/install_linux_desktop.sh` (user-local `.desktop` + icon)
+- User-data dir / DB filename / env override: `mtg-rebuilder` / `mtg_rebuilder.db` / `MTG_REBUILDER_DATA_DIR` (legacy `MTG_SORTER_DATA_DIR` still accepted)
+- Browse Overview ASCII mark: **MTG-R** (was MTG-S)
+- **v0.9.6:** Default theme dark; Availability name-only placeholder; Filter tooltips localized
+- **v0.9.5:** Inventory rarity column/filter; Windows-safe combos; Issue templates
 - **v0.9.4:** Customize language/theme dropdowns fixed on Windows
+
+**Next (after tag):** editions v2 · optional Scryfall inventory search · Optimize advanced (priorities / cards moved / plan stats / print preference).

@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.algorithms.card_utils import (
+from mtg_rebuilder.algorithms.card_utils import (
     commander_legality_from_payload,
     is_commander_legality_issue,
 )
-from mtg_sorter.models import Base, Card, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService
-from mtg_sorter.services.scryfall_service import ScryfallService
+from mtg_rebuilder.models import Base, Card, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_service import DeckService
+from mtg_rebuilder.services.scryfall_service import ScryfallService
 
 
 @pytest.fixture

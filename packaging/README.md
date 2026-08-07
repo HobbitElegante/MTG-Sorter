@@ -1,6 +1,8 @@
 # Packaging
 
-Build portable binaries with **PyInstaller** (`onedir`). Linux wraps the folder in an **AppImage**. Windows produces `dist/MTG-Sorter/MTG-Sorter.exe` and zips it for distribution.
+Build portable binaries with **PyInstaller** (`onedir`). Linux wraps the folder in an **AppImage**. Windows produces `dist/MTG-Rebuilder/MTG-Rebuilder.exe` and zips it for distribution.
+
+**Published Release:** still **`v0.9.6`** on GitHub. Working tree / metadatos = **`1.0.0`** (first stable: rename to MTG-Rebuilder + Inventory Image view + Linux desktop install + ASCII `MTG-R` + Viable plans) — tag when ready.
 
 Published builds appear on the repository **Releases** page when a version tag is pushed.
 
@@ -16,16 +18,38 @@ Published builds appear on the repository **Releases** page when a version tag i
 ./scripts/build_linux.sh
 ```
 
-Output: `dist/MTG-Sorter-x86_64.AppImage` (arch name follows `uname -m`).
+Output: `dist/MTG-Rebuilder-x86_64.AppImage` (arch name follows `uname -m`).
 
 Smoke with an isolated data dir:
 
 ```bash
 TMP=$(mktemp -d)
-MTG_SORTER_DATA_DIR="$TMP" QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 \
-  ./dist/MTG-Sorter-x86_64.AppImage &
-# then quit the window / kill the process; check $TMP/mtg_sorter.db exists
+MTG_REBUILDER_DATA_DIR="$TMP" QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 \
+  ./dist/MTG-Rebuilder-x86_64.AppImage &
+# then quit the window / kill the process; check $TMP/mtg_rebuilder.db exists
 ```
+
+### Application menu (user-local `.desktop`)
+
+Register the AppImage in the desktop menu without root (mirrors “unzip Windows zip → keep the `.exe`”):
+
+```bash
+./scripts/install_linux_desktop.sh                    # uses dist/MTG-Rebuilder-$(uname -m).AppImage
+./scripts/install_linux_desktop.sh /path/to/app.AppImage
+./scripts/install_linux_desktop.sh --uninstall
+```
+
+Installs to:
+
+| What | Path |
+|------|------|
+| AppImage | `~/.local/share/mtg-rebuilder/MTG-Rebuilder.AppImage` |
+| Desktop entry | `~/.local/share/applications/mtg-rebuilder.desktop` |
+| Icon | `~/.local/share/icons/hicolor/256x256/apps/mtg-rebuilder.png` |
+
+Does **not** touch the SQLite DB / card images (XDG user-data). The AppImage-embedded `packaging/mtg-rebuilder.desktop` is unchanged in role (`Exec=MTG-Rebuilder` for appimagetool).
+
+Without a repo checkout, friends can still `chmod +x` and run the AppImage from Downloads; the install script is the optional menu step.
 
 ## Windows
 
@@ -37,8 +61,8 @@ Run on Windows (or `windows-latest` in GitHub Actions):
 
 Output:
 
-- `dist\MTG-Sorter\MTG-Sorter.exe`
-- `dist\MTG-Sorter-windows-x64.zip` (folder zipped for Releases)
+- `dist\MTG-Rebuilder\MTG-Rebuilder.exe`
+- `dist\MTG-Rebuilder-windows-x64.zip` (folder zipped for Releases)
 
 ## Publishing a GitHub Release
 
@@ -47,7 +71,7 @@ CI builds and publishes automatically when you **push a version tag**. Binaries 
 ### Checklist (each version)
 
 1. Code ready on `main` — local tests green: `uv run pytest`.
-2. Version string in `pyproject.toml` matches the tag you will create (e.g. `0.7.1`).
+2. Version string in `pyproject.toml` / `src/mtg_rebuilder/__init__.py` / README Features+Latest matches the tag you will create (e.g. `1.0.0`).
 3. Commit and push:
    ```bash
    git push origin main
@@ -84,8 +108,8 @@ The packaging scripts, workflow (`.github/workflows/release.yml`), and related c
 
 ## Notes
 
-- User data (SQLite + images) goes to the platform user-data dir when frozen; override with `MTG_SORTER_DATA_DIR`.
-- Alembic migration scripts are bundled under `_MEIPASS/mtg_sorter/database/alembic`.
+- User data (SQLite + images) goes to the platform user-data dir when frozen; override with `MTG_REBUILDER_DATA_DIR`.
+- Alembic migration scripts are bundled under `_MEIPASS/mtg_rebuilder/database/alembic`.
 - Workflow file: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
-- **Smoke Windows-like UI on Linux:** `QT_STYLE_OVERRIDE=Windows uv run mtg-sorter` (forces the Qt Windows style; useful for layout bugs that only show under the native style, e.g. zero-width combos). Not a substitute for a real Windows VM when validating the `.exe`.
-- **Combo standard:** every data `QComboBox` should go through `mtg_sorter.ui.combo.configure_data_combo` (minimum contents length). Do not nest a `QGroupBox` that only wraps a combo inside another group box — that collapsed Language/Theme under native Windows in `v0.9.3`.
+- **Smoke Windows-like UI on Linux:** `QT_STYLE_OVERRIDE=Windows uv run mtg-rebuilder` (forces the Qt Windows style; useful for layout bugs that only show under the native style, e.g. zero-width combos). Not a substitute for a real Windows VM when validating the `.exe`.
+- **Combo standard:** every data `QComboBox` should go through `mtg_rebuilder.ui.combo.configure_data_combo` (minimum contents length). Do not nest a `QGroupBox` that only wraps a combo inside another group box — that collapsed Language/Theme under native Windows in `v0.9.3`.

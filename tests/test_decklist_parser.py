@@ -4,14 +4,14 @@ import pytest
 
 import httpx
 
-from mtg_sorter.api.archidekt_client import deck_export_from_payload as archidekt_export
-from mtg_sorter.api.moxfield_client import (
+from mtg_rebuilder.api.archidekt_client import deck_export_from_payload as archidekt_export
+from mtg_rebuilder.api.moxfield_client import (
     MoxfieldClient,
     MoxfieldError,
     deck_export_from_payload,
 )
-from mtg_sorter.models.enums import DeckCardRole
-from mtg_sorter.services.decklist_parser import (
+from mtg_rebuilder.models.enums import DeckCardRole
+from mtg_rebuilder.services.decklist_parser import (
     DecklistFormat,
     detect_format,
     extract_archidekt_deck_id,

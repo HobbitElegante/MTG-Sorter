@@ -1,6 +1,6 @@
 """Tests for inventory panel filters (type / id<= colors / rarity / CMC / decks)."""
 
-from mtg_sorter.algorithms.inventory_filters import (
+from mtg_rebuilder.algorithms.inventory_filters import (
     CmcCondition,
     InventoryFilterState,
     filter_inventory_cards,
@@ -9,7 +9,7 @@ from mtg_sorter.algorithms.inventory_filters import (
     matches_rarity,
     matches_type_line,
 )
-from mtg_sorter.services.browse_service import InventorySummaryRow
+from mtg_rebuilder.services.browse_service import InventorySummaryRow
 
 
 def _row(

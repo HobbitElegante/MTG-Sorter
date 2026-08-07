@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService
-from mtg_sorter.services.import_service import ImportService
+from mtg_rebuilder.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_service import DeckService
+from mtg_rebuilder.services.import_service import ImportService
 
 
 @pytest.fixture

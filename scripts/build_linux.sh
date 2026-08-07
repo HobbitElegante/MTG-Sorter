@@ -10,19 +10,19 @@ APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/con
 TOOLS_DIR="$ROOT/tools"
 APPIMAGETOOL="$TOOLS_DIR/appimagetool-${ARCH}.AppImage"
 DIST_DIR="$ROOT/dist"
-APPDIR="$DIST_DIR/MTG-Sorter.AppDir"
-ONEDIR="$DIST_DIR/MTG-Sorter"
-OUT_APPIMAGE="$DIST_DIR/MTG-Sorter-${ARCH}.AppImage"
+APPDIR="$DIST_DIR/MTG-Rebuilder.AppDir"
+ONEDIR="$DIST_DIR/MTG-Rebuilder"
+OUT_APPIMAGE="$DIST_DIR/MTG-Rebuilder-${ARCH}.AppImage"
 
 echo "==> Syncing packaging extras"
 uv sync --extra packaging --extra dev
 
 echo "==> Running PyInstaller"
-rm -rf "$ONEDIR" "$ROOT/build/mtg_sorter" "$APPDIR"
-uv run pyinstaller --noconfirm --clean "$ROOT/packaging/mtg_sorter.spec"
+rm -rf "$ONEDIR" "$ROOT/build/mtg_rebuilder" "$APPDIR"
+uv run pyinstaller --noconfirm --clean "$ROOT/packaging/mtg_rebuilder.spec"
 
-if [[ ! -x "$ONEDIR/MTG-Sorter" ]]; then
-  echo "error: expected executable at $ONEDIR/MTG-Sorter" >&2
+if [[ ! -x "$ONEDIR/MTG-Rebuilder" ]]; then
+  echo "error: expected executable at $ONEDIR/MTG-Rebuilder" >&2
   exit 1
 fi
 
@@ -48,14 +48,14 @@ cp -a "$ONEDIR/." "$APPDIR/usr/bin/"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/MTG-Sorter" "$@"
+exec "$HERE/usr/bin/MTG-Rebuilder" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-cp "$ROOT/packaging/mtg-sorter.desktop" "$APPDIR/mtg-sorter.desktop"
-cp "$ROOT/packaging/mtg-sorter.desktop" "$APPDIR/usr/share/applications/mtg-sorter.desktop"
-cp "$ROOT/packaging/mtg-sorter.png" "$APPDIR/mtg-sorter.png"
-cp "$ROOT/packaging/mtg-sorter.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/mtg-sorter.png"
+cp "$ROOT/packaging/mtg-rebuilder.desktop" "$APPDIR/mtg-rebuilder.desktop"
+cp "$ROOT/packaging/mtg-rebuilder.desktop" "$APPDIR/usr/share/applications/mtg-rebuilder.desktop"
+cp "$ROOT/packaging/mtg-rebuilder.png" "$APPDIR/mtg-rebuilder.png"
+cp "$ROOT/packaging/mtg-rebuilder.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/mtg-rebuilder.png"
 
 echo "==> Building AppImage"
 rm -f "$OUT_APPIMAGE"

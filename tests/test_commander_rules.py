@@ -1,4 +1,4 @@
-from mtg_sorter.algorithms.commander_rules import (
+from mtg_rebuilder.algorithms.commander_rules import (
     COMMANDER_DECK_SIZE,
     CommanderCard,
     CommanderRuleKind,

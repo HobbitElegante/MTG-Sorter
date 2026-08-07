@@ -1,6 +1,6 @@
-from mtg_sorter.i18n import Translator
-from mtg_sorter.services.browse_service import InventorySummaryRow
-from mtg_sorter.ui.inventory_display import (
+from mtg_rebuilder.i18n import Translator
+from mtg_rebuilder.services.browse_service import InventorySummaryRow
+from mtg_rebuilder.ui.inventory_display import (
     format_color_identity,
     format_inventory_decks,
     format_rarity_summary,

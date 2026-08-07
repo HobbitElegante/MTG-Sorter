@@ -6,12 +6,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from mtg_sorter.models import AppSetting, Base, Card
-from mtg_sorter.services.scryfall_bulk_service import (
+from mtg_rebuilder.models import AppSetting, Base, Card
+from mtg_rebuilder.services.scryfall_bulk_service import (
     ScryfallBulkService,
     _iter_bulk_card_payloads,
 )
-from mtg_sorter.services.scryfall_service import (
+from mtg_rebuilder.services.scryfall_service import (
     ScryfallOfflineError,
     ScryfallService,
     card_from_scryfall,

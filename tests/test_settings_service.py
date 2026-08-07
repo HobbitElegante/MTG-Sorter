@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.config import (
+from mtg_rebuilder.config import (
     DEFAULT_CARD_PREVIEW_WIDTH,
     DEFAULT_LOCALE,
     DEFAULT_UI_THEME,
@@ -13,8 +13,8 @@ from mtg_sorter.config import (
     SETTING_WINDOW_GEOMETRY,
     THEME_DARK,
 )
-from mtg_sorter.models import Base
-from mtg_sorter.services.settings_service import SettingsService
+from mtg_rebuilder.models import Base
+from mtg_rebuilder.services.settings_service import SettingsService
 
 
 @pytest.fixture

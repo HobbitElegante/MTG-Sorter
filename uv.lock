@@ -260,8 +260,8 @@ wheels = [
 ]
 
 [[package]]
-name = "mtg-sorter"
-version = "0.9.6"
+name = "mtg-rebuilder"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

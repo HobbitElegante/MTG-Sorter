@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService, FreeCoverage, InventoryService
+from mtg_rebuilder.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_service import DeckService, FreeCoverage, InventoryService
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ def test_delete_deck_can_remove_selected_copies(session: Session) -> None:
 def test_apply_deck_edit_replace_keeps_outgoing_copies_and_creates_free(
     session: Session,
 ) -> None:
-    from mtg_sorter.services.deck_service import DeckEditLine
+    from mtg_rebuilder.services.deck_service import DeckEditLine
 
     old = Card(oracle_id="old", name="Old Card", is_basic_land=False, is_token=False)
     new = Card(oracle_id="new", name="New Card", is_basic_land=False, is_token=False)
@@ -232,7 +232,7 @@ def test_apply_deck_edit_replace_keeps_outgoing_copies_and_creates_free(
 
 
 def test_apply_deck_edit_replace_can_remove_outgoing_copies(session: Session) -> None:
-    from mtg_sorter.services.deck_service import DeckEditLine
+    from mtg_rebuilder.services.deck_service import DeckEditLine
 
     old = Card(oracle_id="old", name="Old Card", is_basic_land=False, is_token=False)
     new = Card(oracle_id="new", name="New Card", is_basic_land=False, is_token=False)
@@ -256,7 +256,7 @@ def test_apply_deck_edit_replace_can_remove_outgoing_copies(session: Session) ->
 
 
 def test_apply_deck_edit_armed_roundtrip(session: Session) -> None:
-    from mtg_sorter.services.deck_service import DeckEditLine
+    from mtg_rebuilder.services.deck_service import DeckEditLine
 
     sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
     signet = Card(

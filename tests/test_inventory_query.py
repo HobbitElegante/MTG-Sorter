@@ -1,10 +1,10 @@
-from mtg_sorter.algorithms.inventory_query import (
+from mtg_rebuilder.algorithms.inventory_query import (
     build_online_search_query,
     filter_inventory_rows,
     matches_local_query,
     parse_inventory_query,
 )
-from mtg_sorter.services.browse_service import InventorySummaryRow
+from mtg_rebuilder.services.browse_service import InventorySummaryRow
 
 
 def _row(

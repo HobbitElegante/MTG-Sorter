@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MTG Rebuilder
+Name[es]=MTG Rebuilder
+Comment=MTG Commander collection manager
+Comment[es]=Administrador de colección Commander de MTG
+Exec=MTG-Rebuilder
+Icon=mtg-rebuilder
+Categories=Game;CardGame;
+Keywords=Magic;MTG;Commander;deck;inventory;collection;
+StartupWMClass=MTG-Rebuilder
+Terminal=false

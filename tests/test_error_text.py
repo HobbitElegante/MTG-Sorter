@@ -1,6 +1,6 @@
-from mtg_sorter.api.moxfield_client import MoxfieldError
-from mtg_sorter.i18n.translator import Translator
-from mtg_sorter.ui.error_text import (
+from mtg_rebuilder.api.moxfield_client import MoxfieldError
+from mtg_rebuilder.i18n.translator import Translator
+from mtg_rebuilder.ui.error_text import (
     format_deck_url_error,
     format_scryfall_job_error,
     network_failure_token,

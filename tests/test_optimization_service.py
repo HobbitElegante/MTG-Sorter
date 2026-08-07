@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.optimization_service import (
+from mtg_rebuilder.models import Base, Card, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.optimization_service import (
     OptimizationService,
     allocate_solution_cards,
     sort_solutions_by_concentration,
@@ -339,7 +339,7 @@ def test_plan_assembly_orders_solutions_without_dropping_any(session: Session) -
 
 
 def test_apply_assembly_plan_dismantles_then_arms(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
+    from mtg_rebuilder.models import CardAssignment
 
     ring = Card(oracle_id="ring", name="Sol Ring", is_basic_land=False, is_token=False)
     target = Deck(name="Target", status=DeckStatus.DISMANTLED)
@@ -388,7 +388,7 @@ def test_apply_assembly_plan_dismantles_then_arms(session: Session) -> None:
 def test_locked_armed_deck_is_not_a_donor_but_shows_in_missing(
     session: Session,
 ) -> None:
-    from mtg_sorter.models import CardAssignment
+    from mtg_rebuilder.models import CardAssignment
 
     sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
     target = Deck(name="Target", status=DeckStatus.DISMANTLED)
@@ -421,7 +421,7 @@ def test_locked_armed_deck_is_not_a_donor_but_shows_in_missing(
 
 
 def test_plan_assembly_sequence_simulates_prior_steps(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
+    from mtg_rebuilder.models import CardAssignment
 
     a = Card(oracle_id="a", name="Card A", is_basic_land=False, is_token=False)
     b = Card(oracle_id="b", name="Card B", is_basic_land=False, is_token=False)
@@ -458,8 +458,8 @@ def test_plan_assembly_sequence_simulates_prior_steps(session: Session) -> None:
 
 
 def test_armed_deck_in_sequence_is_not_a_donor(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
-    from mtg_sorter.services.optimization_service import sequence_is_viable
+    from mtg_rebuilder.models import CardAssignment
+    from mtg_rebuilder.services.optimization_service import sequence_is_viable
 
     sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
     kept = Deck(name="Kept Armed", status=DeckStatus.ARMED)
@@ -493,8 +493,8 @@ def test_armed_deck_in_sequence_is_not_a_donor(session: Session) -> None:
 
 
 def test_prior_target_is_not_donor_for_later_step(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
-    from mtg_sorter.services.optimization_service import (
+    from mtg_rebuilder.models import CardAssignment
+    from mtg_rebuilder.services.optimization_service import (
         sequence_is_viable,
         unique_donors_for_sequence,
     )
@@ -537,8 +537,8 @@ def test_prior_target_is_not_donor_for_later_step(session: Session) -> None:
 
 
 def test_unique_donors_counts_union_across_viable_steps(session: Session) -> None:
-    from mtg_sorter.models import CardAssignment
-    from mtg_sorter.services.optimization_service import (
+    from mtg_rebuilder.models import CardAssignment
+    from mtg_rebuilder.services.optimization_service import (
         sequence_is_viable,
         unique_donors_for_sequence,
     )
@@ -574,3 +574,84 @@ def test_unique_donors_counts_union_across_viable_steps(session: Session) -> Non
 
     assert sequence_is_viable(plans)
     assert unique_donors_for_sequence(plans) == frozenset({str(d1.id), str(d2.id)})
+
+
+def test_list_viable_plans_fixed_n_and_max(session: Session) -> None:
+    a = Card(oracle_id="a", name="A", is_basic_land=False, is_token=False)
+    b = Card(oracle_id="b", name="B", is_basic_land=False, is_token=False)
+    c = Card(oracle_id="c", name="C", is_basic_land=False, is_token=False)
+    d1 = Deck(name="Alpha", status=DeckStatus.DISMANTLED)
+    d2 = Deck(name="Bravo", status=DeckStatus.DISMANTLED)
+    d3 = Deck(name="Charlie", status=DeckStatus.DISMANTLED)
+    session.add_all([a, b, c, d1, d2, d3])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(deck_id=d1.id, card_id="a", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=d2.id, card_id="b", quantity=1, role=DeckCardRole.MAIN),
+            DeckCard(deck_id=d3.id, card_id="c", quantity=1, role=DeckCardRole.MAIN),
+            CardCopy(card_id="a"),
+            CardCopy(card_id="b"),
+            CardCopy(card_id="c"),
+        ]
+    )
+    session.flush()
+
+    service = OptimizationService(session)
+    pairs = service.list_viable_plans(n=2)
+    assert pairs.size == 2
+    assert len(pairs.plans) == 3
+    labels = {plan.label() for plan in pairs.plans}
+    assert labels == {"Alpha · Bravo", "Alpha · Charlie", "Bravo · Charlie"}
+
+    maximum = service.list_viable_plans(n=None)
+    assert maximum.size == 3
+    assert len(maximum.plans) == 1
+    assert maximum.plans[0].label() == "Alpha · Bravo · Charlie"
+
+
+def test_list_viable_plans_respect_locked(session: Session) -> None:
+    from mtg_rebuilder.models import CardAssignment
+
+    sol = Card(oracle_id="sol", name="Sol Ring", is_basic_land=False, is_token=False)
+    cultivate = Card(
+        oracle_id="cultivate", name="Cultivate", is_basic_land=False, is_token=False
+    )
+    free_deck = Deck(name="Needs Sol", status=DeckStatus.DISMANTLED)
+    other = Deck(name="Needs Cultivate", status=DeckStatus.DISMANTLED)
+    locked = Deck(name="Locked", status=DeckStatus.ARMED, is_locked=True)
+    session.add_all([sol, cultivate, free_deck, other, locked])
+    session.flush()
+    session.add_all(
+        [
+            DeckCard(
+                deck_id=free_deck.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+            ),
+            DeckCard(
+                deck_id=other.id,
+                card_id="cultivate",
+                quantity=1,
+                role=DeckCardRole.MAIN,
+            ),
+            DeckCard(
+                deck_id=locked.id, card_id="sol", quantity=1, role=DeckCardRole.MAIN
+            ),
+        ]
+    )
+    copies = [CardCopy(card_id="sol"), CardCopy(card_id="cultivate")]
+    session.add_all(copies)
+    session.flush()
+    session.add(CardAssignment(card_copy_id=copies[0].id, deck_id=locked.id))
+    session.flush()
+
+    service = OptimizationService(session)
+    global_pairs = service.list_viable_plans(n=2, respect_locked=False)
+    global_labels = {plan.label() for plan in global_pairs.plans}
+    assert "Needs Cultivate · Needs Sol" in global_labels
+    assert "Locked · Needs Cultivate" in global_labels
+
+    hybrid = service.list_viable_plans(n=2, respect_locked=True)
+    hybrid_labels = {plan.label() for plan in hybrid.plans}
+    # Sol reserved by locked → Needs Sol + Needs Cultivate fails
+    assert "Needs Cultivate · Needs Sol" not in hybrid_labels
+    assert "Locked · Needs Cultivate" in hybrid_labels

@@ -3,16 +3,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_export import (
+from mtg_rebuilder.models import Base, Card, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_export import (
     ExportFormat,
     format_deck_export,
     load_deck_export_cards,
 )
-from mtg_sorter.services.decklist_parser import parse_decklist
-from mtg_sorter.services.import_service import ImportService
-from mtg_sorter.services.scryfall_service import ScryfallService
+from mtg_rebuilder.services.decklist_parser import parse_decklist
+from mtg_rebuilder.services.import_service import ImportService
+from mtg_rebuilder.services.scryfall_service import ScryfallService
 
 
 @pytest.fixture

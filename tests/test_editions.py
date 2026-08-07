@@ -2,15 +2,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from mtg_sorter.i18n import Translator
-from mtg_sorter.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.browse_service import BrowseService, InventorySummaryRow
-from mtg_sorter.services.deck_service import InventoryService
-from mtg_sorter.services.decklist_parser import parse_decklist
-from mtg_sorter.services.optimization_service import OptimizationService
-from mtg_sorter.services.settings_service import SettingsService
-from mtg_sorter.ui.inventory_display import format_edition_summary
+from mtg_rebuilder.i18n import Translator
+from mtg_rebuilder.models import Base, Card, CardAssignment, CardCopy, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.browse_service import BrowseService, InventorySummaryRow
+from mtg_rebuilder.services.deck_service import InventoryService
+from mtg_rebuilder.services.decklist_parser import parse_decklist
+from mtg_rebuilder.services.optimization_service import OptimizationService
+from mtg_rebuilder.services.settings_service import SettingsService
+from mtg_rebuilder.ui.inventory_display import format_edition_summary
 
 
 @pytest.fixture

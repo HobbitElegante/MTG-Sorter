@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from mtg_sorter.models import Base, Card, CardPrint
-from mtg_sorter.services.scryfall_service import ScryfallService, prints_from_scryfall
+from mtg_rebuilder.models import Base, Card, CardPrint
+from mtg_rebuilder.services.scryfall_service import ScryfallService, prints_from_scryfall
 
 
 @pytest.fixture

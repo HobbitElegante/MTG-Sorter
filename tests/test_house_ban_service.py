@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import pytest
 
-from mtg_sorter.models import Base, Card, Deck, DeckCard
-from mtg_sorter.models.enums import DeckCardRole, DeckStatus
-from mtg_sorter.services.deck_service import DeckService
-from mtg_sorter.services.house_ban_service import HouseBanService
+from mtg_rebuilder.models import Base, Card, Deck, DeckCard
+from mtg_rebuilder.models.enums import DeckCardRole, DeckStatus
+from mtg_rebuilder.services.deck_service import DeckService
+from mtg_rebuilder.services.house_ban_service import HouseBanService
 
 
 @pytest.fixture
