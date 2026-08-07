@@ -4,7 +4,7 @@ Desktop application to manage a physical Magic: The Gathering Commander collecti
 
 ## Features (v1.0.0)
 
-First stable release of **MTG-Rebuilder** (repo / package / binaries). The window title remains *MTG Commander Collection Manager*. Prebuilt **Downloads** below will be **v1.0.0** after the tag. Includes the rename from `mtg-sorter`, Inventory **Image view**, Linux **application-menu install**, and Optimize **Viable plans**.
+First stable release of **MTG-Rebuilder** (repo / package / binaries). The window title remains *MTG Commander Collection Manager*. Prebuilt **Downloads** are **v1.0.0** once the Release workflow for that tag finishes (until then `/releases/latest` may still show **v0.9.6**). Includes the rename from `mtg-sorter`, Inventory **Image view**, Linux **application-menu install**, and Optimize **Viable plans**.
 
 ### Collection
 
@@ -104,7 +104,7 @@ In development, the SQLite database is created at `data/mtg_rebuilder.db` (gitig
 uv run pytest
 ```
 
-271 tests passing locally (includes path-migration cases after rename).
+289 tests passing locally (includes path-migration cases after rename).
 
 ## First-time setup
 
@@ -186,7 +186,7 @@ src/mtg_rebuilder/
   models/         # SQLAlchemy models (ActivityEvent, Card.commander_legality/image_uri_back, …)
   repositories/   # Thin data-access layer (Card, Copy, Deck, Activity, Settings)
   services/       # Business logic / orchestration (uses repositories for SQL)
-  ui/             # PySide6 desktop UI (+ deck_list_display, inventory_display, card_preview, inventory_image_grid, …)
+  ui/             # PySide6 desktop UI (+ deck_list_display, inventory_display, inventory_image_layout, card_preview, inventory_image_grid, …)
 tests/
   fixtures/       # Sample exports (kellan, arena, archidekt, mtgo .dek)
 scripts/          # build_linux.sh, build_windows.ps1, install_linux_desktop.sh
@@ -208,4 +208,4 @@ alembic.ini       # Dev CLI for new revisions (`alembic -c alembic.ini …`)
 - **v0.9.5:** Inventory rarity column/filter; Windows-safe combos; Issue templates
 - **v0.9.4:** Customize language/theme dropdowns fixed on Windows
 
-**Next (after tag):** editions v2 · optional Scryfall inventory search · Optimize advanced (priorities / cards moved / plan stats / print preference).
+**Next:** editions v2 · optional Scryfall inventory search · Optimize advanced (priorities / cards moved / plan stats / print preference).

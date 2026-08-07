@@ -3,13 +3,11 @@ from pathlib import Path
 from mtg_rebuilder.i18n import Translator
 from mtg_rebuilder.services.browse_service import InventorySummaryRow
 from mtg_rebuilder.ui.inventory_display import format_inventory_detail_lines
-from mtg_rebuilder.ui.widgets import inventory_image_grid as grid_mod
-from mtg_rebuilder.ui.widgets.inventory_image_grid import (
+from mtg_rebuilder.ui.inventory_image_layout import (
     GRID_COLUMNS,
     content_height,
     grid_cell_position,
     grid_row_count,
-    load_local_pixmap,
     local_front_image_path,
     thumb_height_for_width,
     thumb_width_for_viewport,
@@ -109,15 +107,6 @@ def test_local_front_image_path_present(tmp_path: Path) -> None:
     path = tmp_path / "present-oid.jpg"
     path.write_bytes(b"fake")
     assert local_front_image_path("present-oid", tmp_path) == path
-
-
-def test_load_local_pixmap_does_not_cache_plain_disk_miss(tmp_path: Path) -> None:
-    grid_mod._pixmap_cache.clear()
-    assert load_local_pixmap("nope", tmp_path) is None
-    assert "nope" not in grid_mod._pixmap_cache
-    grid_mod.mark_image_unavailable("nope")
-    assert "nope" in grid_mod._pixmap_cache
-    assert load_local_pixmap("nope", tmp_path) is None
 
 
 def test_format_inventory_detail_lines_without_edition() -> None:

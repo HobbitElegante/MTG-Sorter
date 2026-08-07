@@ -2,7 +2,9 @@
 
 Build portable binaries with **PyInstaller** (`onedir`). Linux wraps the folder in an **AppImage**. Windows produces `dist/MTG-Rebuilder/MTG-Rebuilder.exe` and zips it for distribution.
 
-**Published Release:** still **`v0.9.6`** on GitHub. Working tree / metadatos = **`1.0.0`** (first stable: rename to MTG-Rebuilder + Inventory Image view + Linux desktop install + ASCII `MTG-R` + Viable plans) — tag when ready.
+**Version / tag:** metadatos = **`1.0.0`** (first stable: rename to MTG-Rebuilder + Inventory Image view + Linux desktop install + ASCII `MTG-R` + Viable plans).
+
+**Published binaries on GitHub:** still **`v0.9.6`** until the **`v1.0.0`** Release workflow completes green. Tag `v1.0.0` was pushed once and CI failed (`libEGL` via Inventory image-view tests); fix is `ui/inventory_image_layout.py` (Qt-free helpers) — commit on `main`, then **move/recreate** the tag (see below) so Actions rebuilds assets.
 
 Published builds appear on the repository **Releases** page when a version tag is pushed.
 
@@ -78,28 +80,29 @@ CI builds and publishes automatically when you **push a version tag**. Binaries 
    ```
 4. Create and push the tag:
    ```bash
-   git tag v0.7.1
-   git push origin v0.7.1
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 5. Open the repo **Actions** tab — wait for the **Release** workflow (tests + Linux AppImage + Windows zip). Often ~10–20 minutes.
-6. Open **Releases** — `v0.7.1` should list the AppImage and the Windows zip.
+6. Open **Releases** — `v1.0.0` should list the AppImage and the Windows zip.
 7. Optional: edit the release notes.
 
 ### If the workflow fails
 
 1. Open the red job log in **Actions** and fix the issue on `main`.
-2. Either bump to a new tag (`v0.7.2`) after pushing the fix, or delete the bad tag and recreate it:
+2. Either bump to a new tag (`v1.0.1`) after pushing the fix, or delete the bad tag and recreate it on the fixed commit (keeps the same version string):
    ```bash
-   git tag -d v0.7.1
-   git push origin :refs/tags/v0.7.1
-   git tag v0.7.1
-   git push origin v0.7.1
+   git tag -d v1.0.0
+   git push origin :refs/tags/v1.0.0
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 Known headless pitfalls already handled in `.github/workflows/release.yml`:
 
 - Do **not** install `pytest-qt` in the test job (it auto-loads Qt). Entry point name is `pytest-qt` (hyphen), not `pytestqt`.
 - `ui/__init__.py` must stay lazy so formatter tests do not import PySide6.
+- Layout helpers for Inventory image view live in `ui/inventory_image_layout.py` (no Qt); do not import `widgets.inventory_image_grid` from unit tests.
 - Linux build needs system libs (`libegl1`, …) because PyInstaller imports PySide6.
 
 ### Prerequisite
